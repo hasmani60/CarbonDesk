@@ -17,39 +17,58 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // Verify token and get user data
-      verifyToken();
-    } else {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('token');
+      console.log('AuthContext - Initializing with token:', token ? 'Yes' : 'No'); // Debug log
+      
+      if (token) {
+        try {
+          // Try to verify token and get user data
+          console.log('AuthContext - Verifying token...'); // Debug log
+          const userData = await authAPI.verifyToken();
+          console.log('AuthContext - Token verified, user data:', userData); // Debug log
+          setUser(userData);
+        } catch (error) {
+          // If token verification fails, remove invalid token
+          console.error('AuthContext - Token verification failed:', error);
+          localStorage.removeItem('token');
+          setUser(null);
+          
+          // Don't show error toast on initial load, only if it's a network error
+          if (error.status === 'NETWORK_ERROR') {
+            toast.error('Backend server is not running. Please start the backend server.');
+          }
+        }
+      } else {
+        console.log('AuthContext - No token found'); // Debug log
+      }
       setLoading(false);
-    }
-  }, []);
+    };
 
-  const verifyToken = async () => {
-    try {
-      const userData = await authAPI.verifyToken();
-      setUser(userData);
-    } catch (error) {
-      localStorage.removeItem('token');
-      console.error('Token verification failed:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    initializeAuth();
+  }, []);
 
   const login = async (credentials) => {
     try {
+      console.log('AuthContext - Attempting login...'); // Debug log
       const response = await authAPI.login(credentials);
-      const { token, user: userData } = response;
+      console.log('AuthContext - Login response:', response); // Debug log
+      
+      const { token, user: userData } = response.data || response;
+      
+      if (!token || !userData) {
+        throw new Error('Invalid login response format');
+      }
       
       localStorage.setItem('token', token);
       setUser(userData);
       
+      console.log('AuthContext - Login successful, user set:', userData); // Debug log
       toast.success('Login successful!');
       return response;
     } catch (error) {
-      const message = error.response?.data?.message || 'Login failed';
+      console.error('AuthContext - Login error:', error); // Debug log
+      const message = error.response?.data?.message || error.message || 'Login failed';
       toast.error(message);
       throw error;
     }
@@ -58,7 +77,7 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     try {
       const response = await authAPI.register(userData);
-      const { token, user: newUser } = response;
+      const { token, user: newUser } = response.data || response;
       
       localStorage.setItem('token', token);
       setUser(newUser);
@@ -74,20 +93,22 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      console.log('AuthContext - Logging out...'); // Debug log
       await authAPI.logout();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('AuthContext - Logout error:', error);
     } finally {
       localStorage.removeItem('token');
       setUser(null);
       toast.success('Logged out successfully');
+      console.log('AuthContext - Logout complete'); // Debug log
     }
   };
 
   const updateProfile = async (profileData) => {
     try {
       const updatedUser = await authAPI.updateProfile(profileData);
-      setUser(updatedUser);
+      setUser(updatedUser.data || updatedUser);
       toast.success('Profile updated successfully!');
       return updatedUser;
     } catch (error) {
@@ -106,6 +127,8 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated: !!user
   };
+
+  console.log('AuthContext - Current state:', { user: !!user, loading, isAuthenticated: !!user }); // Debug log
 
   return (
     <AuthContext.Provider value={value}>

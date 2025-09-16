@@ -19,6 +19,7 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    console.log('API Request:', config.method?.toUpperCase(), config.url); // Debug log
     return config;
   },
   (error) => Promise.reject(error)
@@ -26,12 +27,39 @@ apiClient.interceptors.request.use(
 
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  (response) => {
+    console.log('API Response:', response.status, response.data); // Debug log
+    
+    // For successful responses, return the appropriate data
+    if (response.data?.success !== false) {
+      // If the response has a data property, return it, otherwise return the whole response data
+      return response.data?.data ? response.data.data : response.data;
+    } else {
+      // If success is explicitly false, treat as error
+      return Promise.reject(new Error(response.data.message || 'Request failed'));
     }
+  },
+  (error) => {
+    console.error('API Error:', error.response?.status, error.response?.data || error.message); // Debug log
+    
+    // Handle network errors gracefully
+    if (!error.response) {
+      console.error('Network error - backend may not be running');
+      return Promise.reject({
+        message: 'Unable to connect to server. Please check if the backend is running.',
+        status: 'NETWORK_ERROR'
+      });
+    }
+
+    if (error.response?.status === 401) {
+      // Only redirect if we're not already on the login page
+      if (!window.location.pathname.includes('/login')) {
+        console.log('401 error - removing token and redirecting to login');
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+    }
+    
     return Promise.reject(error);
   }
 );

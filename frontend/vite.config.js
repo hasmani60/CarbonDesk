@@ -5,6 +5,20 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    host: 'localhost'
+    host: 'localhost',
+    open: true, // Automatically open browser
+    // Enable client-side routing fallback
+    historyApiFallback: true,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
+  // Handle client-side routing for production builds
+  base: './',
+  resolve: {
+    alias: {
+      '@': '/src'
+    }
   }
 })

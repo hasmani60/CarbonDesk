@@ -1,4 +1,4 @@
-// frontend/src/utils/localStorage.js
+// Updated localStorage.js with improved data handling and proper return values
 const EMISSIONS_KEY = 'carbon_accounting_emissions';
 
 // Get all emissions from localStorage
@@ -83,20 +83,26 @@ export const getEmissionsStats = () => {
 
   emissions.forEach(emission => {
     const scopeKey = `scope${emission.scope}`;
-    const calculatedEmissions = emission.calculatedEmissions || 0;
+    const calculatedEmissions = emission.calculatedEmissions || emission.totalEmissions || (emission.amount * (emission.factor || 1));
     
     // Update totals
     stats[scopeKey].total += calculatedEmissions;
     stats[scopeKey].count += 1;
     
+    // Create activity key - prioritize category + activityType, fallback to category + type
+    const activityKey = emission.category && emission.activityType 
+      ? `${emission.category} - ${emission.activityType}`
+      : emission.category && emission.type
+      ? `${emission.category} - ${emission.type}`
+      : emission.category || 'Unknown Activity';
+    
     // Update activity breakdown
-    const activityKey = `${emission.category} - ${emission.type}`;
     if (!stats[scopeKey].activities[activityKey]) {
       stats[scopeKey].activities[activityKey] = {
         total: 0,
         count: 0,
-        category: emission.category,
-        type: emission.type
+        category: emission.category || 'Unknown',
+        type: emission.activityType || emission.type || 'Unknown'
       };
     }
     stats[scopeKey].activities[activityKey].total += calculatedEmissions;
@@ -122,6 +128,54 @@ export const getTopEmissionsByScope = (scope, limit = 3) => {
   return activities;
 };
 
+// Get emissions by date range
+export const getEmissionsByDateRange = (startDate, endDate) => {
+  const emissions = getEmissions();
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  return emissions.filter(emission => {
+    const emissionDate = new Date(emission.startDate || emission.createdAt);
+    return emissionDate >= start && emissionDate <= end;
+  });
+};
+
+// Get monthly emissions summary
+export const getMonthlyEmissions = (year) => {
+  const emissions = getEmissions();
+  const monthlyData = {};
+  
+  emissions.forEach(emission => {
+    const date = new Date(emission.startDate || emission.createdAt);
+    if (date.getFullYear() === year) {
+      const monthKey = date.getMonth(); // 0-11
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: date.toLocaleDateString('en-US', { month: 'short' }),
+          scope1: 0,
+          scope2: 0,
+          scope3: 0,
+          total: 0
+        };
+      }
+      
+      const scopeKey = `scope${emission.scope}`;
+      const emissionValue = emission.calculatedEmissions || (emission.amount * (emission.factor || 1));
+      
+      monthlyData[monthKey][scopeKey] += emissionValue;
+      monthlyData[monthKey].total += emissionValue;
+    }
+  });
+  
+  return Object.values(monthlyData);
+};
+
+// Get total emissions across all scopes
+export const getTotalEmissions = () => {
+  const stats = getEmissionsStats();
+  return stats.scope1.total + stats.scope2.total + stats.scope3.total;
+};
+
 // Clear all emissions (for testing/reset)
 export const clearAllEmissions = () => {
   try {
@@ -131,4 +185,26 @@ export const clearAllEmissions = () => {
     console.error('Error clearing emissions from localStorage:', error);
     throw error;
   }
+};
+
+// Get emissions count by status
+export const getEmissionsByStatus = (status) => {
+  const emissions = getEmissions();
+  return emissions.filter(e => e.status === status);
+};
+
+// Search emissions by query
+export const searchEmissions = (query) => {
+  if (!query || query.trim() === '') return getEmissions();
+  
+  const emissions = getEmissions();
+  const searchTerm = query.toLowerCase();
+  
+  return emissions.filter(emission => 
+    (emission.category && emission.category.toLowerCase().includes(searchTerm)) ||
+    (emission.activityType && emission.activityType.toLowerCase().includes(searchTerm)) ||
+    (emission.source && emission.source.toLowerCase().includes(searchTerm)) ||
+    (emission.location && emission.location.toLowerCase().includes(searchTerm)) ||
+    (emission.description && emission.description.toLowerCase().includes(searchTerm))
+  );
 };

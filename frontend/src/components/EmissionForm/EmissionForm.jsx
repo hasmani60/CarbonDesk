@@ -1,10 +1,16 @@
-// components/EmissionForm/EmissionForm.jsx
+// Updated EmissionForm.jsx with notification creation
 import { useState } from 'react';
 import { X, Calendar, Upload } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { emissionsAPI } from '../../services/api';
+import { saveEmission } from '../../utils/localStorage';
+import { getEmissionFactor, calculateEmissions } from '../../data/emissionFactors';
 import toast from 'react-hot-toast';
 
 const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
+  const { user } = useAuth();
+  const { addEmissionNotification } = useNotifications();
   const [formData, setFormData] = useState({
     activityType: category?.selectedSubcategory || '',
     source: '',
@@ -23,18 +29,49 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
     e.preventDefault();
     try {
       setLoading(true);
+      
+      // Get emission factor for calculation
+      const factorData = getEmissionFactor(scope, category.name, formData.source);
+      const calculatedEmissions = calculateEmissions(parseFloat(formData.amount), scope, category.name, formData.source);
+      
       const emissionData = {
         ...formData,
         scope: parseInt(scope),
         category: category.name,
         subcategory: category.selectedSubcategory,
+        activityType: formData.activityType || category.selectedSubcategory,
+        amount: parseFloat(formData.amount),
+        factor: factorData.factor,
+        calculatedEmissions: calculatedEmissions,
         accountingPeriod: {
           start: new Date(formData.startDate),
           end: new Date(formData.endDate)
-        }
+        },
+        status: 'submitted',
+        user: user?.id,
+        userName: user?.name || 'Unknown User'
       };
       
-      await onSubmit(emissionData);
+      // Save to localStorage (in a real app, this would also save to database)
+      const savedEmission = saveEmission(emissionData);
+      
+      // Create notification
+      if (user && savedEmission) {
+        addEmissionNotification(user, {
+          ...savedEmission,
+          category: category.name,
+          activityType: formData.activityType || category.selectedSubcategory
+        });
+      }
+      
+      // Call parent onSubmit if provided
+      if (onSubmit) {
+        await onSubmit(emissionData);
+      }
+      
+      toast.success('Emission data saved successfully!');
+      onClose();
+      
     } catch (error) {
       console.error('Emission submission error:', error);
       toast.error('Failed to save emission data');
@@ -47,6 +84,23 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  // Get suggested sources based on category
+  const getSuggestedSources = () => {
+    const suggestions = {
+      'Fuel Combustion': ['Diesel', 'Natural Gas', 'Gasoline', 'Coal', 'Fuel Oil'],
+      'Fuel from Generator': ['Diesel', 'HSD', 'Biofuel'],
+      'Mobile Combustion': ['Diesel', 'Petrol', 'Electric'],
+      'Purchased Electricity': ['Grid Electricity', 'Renewable Energy', 'Non-Renewable'],
+      'Business Travel': ['Air Travel', 'Rail', 'Taxi', 'Hotel'],
+      'Employee Commuting': ['Personal Vehicles', 'Public Transport', 'Carpool'],
+      'Waste Generated': ['Organic', 'Packaging', 'Plastic', 'Sludge']
+    };
+    
+    return suggestions[category?.name] || [];
+  };
+
+  const suggestedSources = getSuggestedSources();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -79,6 +133,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="e.g., Fuel Combustion, Electricity Purchase"
               />
             </div>
 
@@ -86,15 +141,31 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Source*
               </label>
-              <input
-                type="text"
-                name="source"
-                value={formData.source}
-                onChange={handleChange}
-                required
-                placeholder="e.g., Diesel, Electricity, etc."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+              {suggestedSources.length > 0 ? (
+                <select
+                  name="source"
+                  value={formData.source}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">Select source</option>
+                  {suggestedSources.map(source => (
+                    <option key={source} value={source}>{source}</option>
+                  ))}
+                  <option value="other">Other (specify in description)</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  name="source"
+                  value={formData.source}
+                  onChange={handleChange}
+                  required
+                  placeholder="e.g., Diesel, Electricity, etc."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              )}
             </div>
 
             <div>
@@ -110,6 +181,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 min="0"
                 step="0.01"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Enter quantity"
               />
             </div>
 
@@ -173,7 +245,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 name="location"
                 value={formData.location}
                 onChange={handleChange}
-                placeholder="e.g., Building A, Floor 2"
+                placeholder="e.g., Building A, Floor 2, Factory Site"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -187,11 +259,28 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 value={formData.description}
                 onChange={handleChange}
                 rows={3}
-                placeholder="Additional details about this emission..."
+                placeholder="Additional details about this emission source..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
+
+          {/* Emission Preview */}
+          {formData.amount && formData.source && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-emerald-800">
+                  Estimated Emissions:
+                </span>
+                <span className="text-lg font-bold text-emerald-900">
+                  {calculateEmissions(parseFloat(formData.amount), scope, category.name, formData.source).toFixed(2)} CO₂e
+                </span>
+              </div>
+              <p className="text-xs text-emerald-600 mt-1">
+                Based on standard emission factors. Final calculation may vary.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-4">
             <button
@@ -199,7 +288,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
               className="flex items-center space-x-2 text-gray-600 hover:text-gray-700"
             >
               <Upload className="w-4 h-4" />
-              <span>Upload Files</span>
+              <span>Upload Supporting Files</span>
             </button>
 
             <div className="flex space-x-3">
@@ -213,9 +302,10 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
               >
-                {loading ? 'Saving...' : 'Save Emission'}
+                {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                <span>{loading ? 'Saving...' : 'Save Emission'}</span>
               </button>
             </div>
           </div>

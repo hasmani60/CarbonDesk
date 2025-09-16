@@ -17,7 +17,12 @@ function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <Router>
+        <Router 
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}
+        >
           <div className="min-h-screen bg-gray-50">
             <Routes>
               {/* Public Routes */}
@@ -38,10 +43,31 @@ function App() {
                 <Route path="settings" element={<Settings />} />
               </Route>
               
-              {/* Catch all */}
+              {/* Catch all - redirect to dashboard if authenticated, login if not */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
-            <Toaster position="top-right" />
+            <Toaster 
+              position="top-right" 
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#363636',
+                  color: '#fff',
+                },
+                success: {
+                  duration: 3000,
+                  style: {
+                    background: '#10b981',
+                  },
+                },
+                error: {
+                  duration: 4000,
+                  style: {
+                    background: '#ef4444',
+                  },
+                },
+              }}
+            />
           </div>
         </Router>
       </NotificationProvider>

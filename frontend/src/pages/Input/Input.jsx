@@ -1,10 +1,13 @@
+// frontend/src/pages/Input/Input.jsx
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { emissionsAPI } from '../../services/api';
+import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
-import EmissionCategoryCard from '../../components/EmissionCategoryCard/EmissionCategoryCard';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
+import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
+import { saveEmission } from '../../utils/localStorage';
 import toast from 'react-hot-toast';
 
 const Input = () => {
@@ -18,83 +21,167 @@ const Input = () => {
   const [loading, setLoading] = useState(true);
 
   const scopes = [
-    { id: '1', label: 'Scope 1', description: 'Direct emissions from owned sources' },
+    { id: '1', label: 'Scope 1', description: 'Direct emissions from owned or controlled sources' },
     { id: '2', label: 'Scope 2', description: 'Indirect emissions from purchased energy' },
-    { id: '3', label: 'Scope 3', description: 'Indirect emissions from value chain' }
+    { id: '3', label: 'Scope 3', description: 'All other indirect emissions from value chain activities' }
   ];
 
-  // Sample emission categories based on screenshots
+  // Updated emission categories based on the PDF
   const emissionCategories = {
     '1': [
       {
-        name: 'Fuel Combustion',
-        description: 'Direct emissions from fuel combustion in stationary sources',
-        subcategories: ['Natural Gas', 'Diesel', 'Gasoline', 'Coal', 'Fuel Oil'],
+        name: 'Fuel from Generator',
+        description: 'Emissions from the combustion of diesel, HSD, or biofuels in company-operated generators',
+        subcategories: ['Diesel', 'HSD', 'Biofuel'],
+        icon: '⚡'
+      },
+      {
+        name: 'Wood Burnt for Boilers',
+        description: 'GHG emissions from burning biomass like firewood or coconut husk in industrial boilers',
+        subcategories: ['Firewood', 'Coconut Husk'],
         icon: '🔥'
       },
       {
-        name: 'Mobile Combustion',
-        description: 'Direct emissions from fuel combustion in mobile sources',
-        subcategories: ['Company Vehicles', 'Fleet Operations', 'Off-road Equipment'],
+        name: 'Fuel Used by Company vehicles',
+        description: 'Emissions from company-owned vehicles using petrol, diesel, or electricity',
+        subcategories: ['Diesel', 'Petrol', 'Electric'],
         icon: '🚗'
       },
       {
-        name: 'Process Emissions',
-        description: 'Direct emissions from industrial processes',
-        subcategories: ['Blast Furnace Operation', 'Chemical Processes', 'Manufacturing'],
-        icon: '🏭'
+        name: 'Refrigerant Purchased',
+        description: 'Potential GHG emissions from refrigerant gases like R22 or R134a',
+        subcategories: ['R22', 'R134a', 'R410A'],
+        icon: '❄️'
       },
       {
-        name: 'Fugitive Emissions',
-        description: 'Unintentional releases of greenhouse gases',
-        subcategories: ['Refrigerants', 'Natural Gas Leaks', 'Equipment Leaks'],
+        name: 'Water Used',
+        description: 'Energy-associated emissions from water extraction, treatment, and use',
+        subcategories: ['Borewell', 'Municipality', 'Tanker'],
+        icon: '💧'
+      },
+      {
+        name: 'Water Recycled',
+        description: 'Efforts to reduce water-related emissions by reusing treated or collected water',
+        subcategories: ['ETP', 'RO plant', 'Rainwater'],
+        icon: '♻️'
+      },
+      {
+        name: 'Waste Generation',
+        description: 'Waste from operations like processing units or canteens',
+        subcategories: ['Organic', 'Packaging', 'Plastic', 'Sludge'],
+        icon: '🗑️'
+      },
+      {
+        name: 'Fuel used in mess',
+        description: 'Emissions from cooking fuel used in the employee mess/canteen',
+        subcategories: ['LPG', 'Firewood', 'Kerosene'],
+        icon: '🍽️'
+      },
+      {
+        name: 'Steam Production',
+        description: 'Steam generation typically uses fuel combustion in boilers',
+        subcategories: ['Steam'],
         icon: '💨'
+      },
+      {
+        name: 'AC service data',
+        description: 'Emissions from recharging refrigerants in air conditioners',
+        subcategories: ['R134a', 'R410a'],
+        icon: '🌨️'
+      },
+      {
+        name: 'Purchase of paper',
+        description: 'GHG emissions embedded in the production and transportation of office paper products',
+        subcategories: ['A4', 'Kraft', 'Prints'],
+        icon: '📄'
+      },
+      {
+        name: 'Purchase of packing material (plastic)',
+        description: 'Emissions from procuring plastic packaging materials',
+        subcategories: ['HDPE', 'LDPE', 'Shrink wrap'],
+        icon: '📦'
+      },
+      {
+        name: 'LPG Cylinders Purchase',
+        description: 'Direct emissions from using LPG cylinders for cooking or maintenance work',
+        subcategories: ['LPG'],
+        icon: '🔥'
+      },
+      {
+        name: 'Fuel for Forklift',
+        description: 'Fuel used by forklifts in factory operations',
+        subcategories: ['Diesel', 'Battery'],
+        icon: '🏗️'
+      },
+      {
+        name: 'Oil used for lubrication',
+        description: 'Lubricants like engine or gear oil used during equipment operation',
+        subcategories: ['Hydraulic', 'Engine Oil', 'Gear oil'],
+        icon: '🛢️'
+      },
+      {
+        name: 'Gas purchased for Maintenance',
+        description: 'Industrial gases like nitrogen or acetylene used for maintenance',
+        subcategories: ['Nitrogen', 'Oxygen', 'Acetylene'],
+        icon: '⚙️'
+      },
+      {
+        name: 'Cotton Waste for boiler starters',
+        description: 'Cotton waste used for igniting boilers',
+        subcategories: ['Cotton Waste'],
+        icon: '🧸'
+      },
+      {
+        name: 'Transport: Factory to warehouse',
+        description: 'Emissions from in-house transportation of finished goods between company facilities',
+        subcategories: ['Company Vehicle'],
+        icon: '🚛'
       }
     ],
     '2': [
       {
-        name: 'Purchased Electricity',
-        description: 'Emissions from purchased electricity consumption',
-        subcategories: ['Grid Electricity', 'Renewable Energy', 'Peak Load'],
+        name: 'Electricity Purchased',
+        description: 'Indirect emissions from the consumption of grid electricity',
+        subcategories: ['Grid Electricity', 'Renewable Energy', 'Non-Renewable'],
         icon: '⚡'
-      },
-      {
-        name: 'Purchased Heat/Steam',
-        description: 'Emissions from purchased heating and cooling',
-        subcategories: ['District Heating', 'Steam', 'Hot Water'],
-        icon: '🔥'
       }
     ],
     '3': [
       {
-        name: 'Business Travel',
-        description: 'Emissions from employee business travel',
-        subcategories: ['Air Travel', 'Hotel Stays', 'Rental Cars', 'Public Transport'],
+        name: 'Transport: Harbor to plant',
+        description: 'Emissions from third-party transport of raw materials from ports to the factory',
+        subcategories: ['Truck', 'Rail'],
+        icon: '🚢'
+      },
+      {
+        name: 'Export of Material',
+        description: 'Logistics-related emissions from exporting products via ship, air, or road',
+        subcategories: ['Ship', 'Air', 'Truck'],
+        icon: '📤'
+      },
+      {
+        name: 'Domestic Sales Transport',
+        description: 'GHG emissions from transporting products to domestic buyers',
+        subcategories: ['Truck', 'Train'],
+        icon: '🚚'
+      },
+      {
+        name: 'Employee transport',
+        description: 'Emissions from commuting, based on vehicle type, distance, and employee attendance',
+        subcategories: ['Bus', 'Carpool', 'Van'],
+        icon: '🚌'
+      },
+      {
+        name: 'Business travel',
+        description: 'Travel-related emissions from flights, trains, or taxis used by employees for work purposes',
+        subcategories: ['Air', 'Rail', 'Taxi'],
         icon: '✈️'
       },
       {
-        name: 'Employee Commuting',
-        description: 'Emissions from employee commuting to work',
-        subcategories: ['Personal Vehicles', 'Public Transport', 'Remote Work'],
-        icon: '🚇'
-      },
-      {
-        name: 'Waste Generated',
-        description: 'Emissions from waste disposal and treatment',
-        subcategories: ['Solid Waste', 'Wastewater', 'Recycling'],
-        icon: '🗑️'
-      },
-      {
-        name: 'Purchased Goods',
-        description: 'Emissions from purchased goods and services',
-        subcategories: ['Raw Materials', 'Office Supplies', 'IT Equipment'],
-        icon: '📦'
-      },
-      {
-        name: 'Upstream Transportation',
-        description: 'Emissions from transportation and distribution',
-        subcategories: ['Freight', 'Logistics', 'Warehousing'],
-        icon: '🚛'
+        name: 'Transport of EPT sludge',
+        description: 'Emissions from moving effluent treatment plant sludge to external treatment centers',
+        subcategories: ['Truck'],
+        icon: '🏭'
       }
     ]
   };
@@ -127,23 +214,39 @@ const Input = () => {
     }));
   };
 
-  const handleCategorySelect = (category) => {
-    setSelectedCategory(category);
+  const handleCategorySelect = (category, selectedType) => {
+    setSelectedCategory({
+      ...category,
+      selectedType,
+      scope: activeScope
+    });
     setShowEmissionForm(true);
   };
 
   const handleEmissionSubmit = async (emissionData) => {
     try {
-      const payload = {
-        ...emissionData,
-        scope: activeScope,
-        category: selectedCategory.name
+      // Save to local storage instead of API
+      const emissionRecord = {
+        scope: parseInt(activeScope),
+        category: selectedCategory.name,
+        type: selectedCategory.selectedType,
+        amount: parseFloat(emissionData.amount),
+        unit: emissionData.unit,
+        startDate: emissionData.startDate,
+        endDate: emissionData.endDate,
+        location: emissionData.location,
+        description: emissionData.description,
+        factor: emissionData.emissionFactor,
+        calculatedEmissions: emissionData.calculatedEmissions
       };
       
-      await emissionsAPI.create(payload);
+      await saveEmission(emissionRecord);
       toast.success('Emission data saved successfully!');
       setShowEmissionForm(false);
       setSelectedCategory(null);
+      
+      // Trigger custom event for dashboard updates
+      window.dispatchEvent(new CustomEvent('emissionSaved', { detail: emissionRecord }));
     } catch (error) {
       toast.error('Failed to save emission data');
       console.error('Emission submission error:', error);
@@ -244,23 +347,27 @@ const Input = () => {
                   {expandedCategories[category.name] && (
                     <div className="border-t bg-gray-50 p-4">
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                        {category.subcategories.map((subcategory, subIndex) => (
-                          <button
-                            key={subIndex}
-                            onClick={() => handleCategorySelect({
-                              ...category,
-                              selectedSubcategory: subcategory
-                            })}
-                            className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group"
-                          >
-                            <div className="flex items-center justify-center mb-2">
-                              <Info className="w-4 h-4 text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                            <span className="text-sm font-medium text-emerald-800">
-                              {subcategory}
-                            </span>
-                          </button>
-                        ))}
+                        {category.subcategories.map((subcategory, subIndex) => {
+                          const factorData = emissionFactors[`scope${activeScope}`]?.[category.name]?.[subcategory];
+                          
+                          return (
+                            <button
+                              key={subIndex}
+                              onClick={() => handleCategorySelect(category, subcategory)}
+                              className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
+                            >
+                              <div className="flex items-center justify-center mb-2">
+                                <InfoTooltip 
+                                  content={factorData?.description || `${subcategory} emission source`}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                />
+                              </div>
+                              <span className="text-sm font-medium text-emerald-800">
+                                {subcategory}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
