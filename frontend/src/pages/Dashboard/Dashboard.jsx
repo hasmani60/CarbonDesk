@@ -1,10 +1,11 @@
-// Updated Dashboard.jsx with real emissions data and proper notifications
+// pages/Dashboard/Dashboard.jsx - Enhanced dashboard with multi-user support
 import { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { RefreshCw, Plus, BarChart3, Filter } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis } from 'recharts';
+import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { dashboardAPI } from '../../services/api';
+import { useActivity } from '../../context/ActivityContext';
+import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/api';
 import { getEmissions, getEmissionsStats } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
@@ -12,13 +13,16 @@ import NotificationCard from '../../components/NotificationCard/NotificationCard
 const Dashboard = () => {
   const { user } = useAuth();
   const { notifications } = useNotifications();
+  const { logPageView, logDashboardInteraction, getActivityStats } = useActivity();
   const [dashboardData, setDashboardData] = useState({
     scope1: { total: 0, percentage: 0, topCategories: [] },
     scope2: { total: 0, percentage: 0, topCategories: [] },
     scope3: { total: 0, percentage: 0, topCategories: [] },
     totalEmissions: 0
   });
+  const [adminData, setAdminData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userActivityStats, setUserActivityStats] = useState(null);
 
   // Colors for each scope's pie chart
   const COLORS = {
@@ -28,20 +32,39 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    logPageView('Dashboard');
     fetchDashboardData();
-  }, []);
+    loadUserActivityStats();
+  }, [logPageView]);
+
+  const loadUserActivityStats = () => {
+    try {
+      const stats = getActivityStats();
+      setUserActivityStats(stats);
+    } catch (error) {
+      console.error('Error loading activity stats:', error);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
       
-      // Get real emissions data from localStorage
+      // Load user's emission data
       const allEmissions = getEmissions();
       const stats = getEmissionsStats();
-      
-      // Process the data for dashboard display
       const processedData = processDashboardData(stats, allEmissions);
       setDashboardData(processedData);
+
+      // Load admin data if user is admin
+      if (isAdmin(user?.role)) {
+        try {
+          const adminDashboard = await adminAPI.getDashboard();
+          setAdminData(adminDashboard);
+        } catch (error) {
+          console.error('Error loading admin data:', error);
+        }
+      }
       
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -54,7 +77,6 @@ const Dashboard = () => {
     const totalEmissions = stats.scope1.total + stats.scope2.total + stats.scope3.total;
     
     const processScope = (scopeData, scopeTotal) => {
-      // Get top 3 categories for this scope
       const topCategories = Object.entries(scopeData.activities)
         .map(([name, data]) => ({
           name: name.length > 25 ? name.substring(0, 25) + '...' : name,
@@ -65,7 +87,6 @@ const Dashboard = () => {
         .sort((a, b) => b.value - a.value)
         .slice(0, 3);
 
-      // If there are fewer than 3 categories, fill with placeholder data
       while (topCategories.length < 3) {
         topCategories.push({
           name: 'No Data',
@@ -115,8 +136,23 @@ const Dashboard = () => {
   };
 
   const handleGenerateInsight = (scope) => {
-    // Navigate to analytics with specific scope filter
+    logDashboardInteraction('generate_insight', `Scope ${scope}`);
     window.location.href = `/analytics?scope=${scope}`;
+  };
+
+  const handleQuickAction = (action) => {
+    logDashboardInteraction('quick_action', action);
+    switch (action) {
+      case 'add_emission':
+        window.location.href = '/input';
+        break;
+      case 'view_monitor':
+        window.location.href = '/monitor';
+        break;
+      case 'admin_panel':
+        window.location.href = '/admin/monitor';
+        break;
+    }
   };
 
   if (loading) {
@@ -129,19 +165,32 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Header */}
+      {/* Welcome Header with Role-based Content */}
       <div className="bg-gradient-to-r from-green-100 to-emerald-50 rounded-lg p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Good Morning, {user?.name || 'Jhon Doe'} 👋
+            <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center space-x-2">
+              <span>Good Morning, {user?.name || 'User'} 👋</span>
+              {isAdmin(user?.role) && <Shield className="w-5 h-5 text-red-500" />}
             </h1>
-            <p className="text-gray-600">
-              Real-Time Carbon Emission Insights to Help You Make Smarter,
-              More Sustainable Choices.
+            <p className="text-gray-600 mb-2">
+              {getRoleDescription(user?.role)}
             </p>
+            {userActivityStats && (
+              <div className="flex items-center space-x-4 text-sm text-gray-600">
+                <span className="flex items-center space-x-1">
+                  <Activity className="w-4 h-4" />
+                  <span>{userActivityStats.today} activities today</span>
+                </span>
+                <span>{userActivityStats.thisWeek} this week</span>
+              </div>
+            )}
           </div>
-          <div className="hidden md:block">
+          <div className="hidden md:flex items-center space-x-4">
+            {/* Role Badge */}
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getRoleBadgeColor(user?.role)}`}>
+              {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
+            </div>
             <div className="w-32 h-32 bg-green-200 rounded-full flex items-center justify-center">
               <svg className="w-20 h-20 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -156,14 +205,70 @@ const Dashboard = () => {
         title="Dashboard"
         breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
         action={
-          <button 
-            onClick={fetchDashboardData}
-            className="p-2 text-gray-500 hover:text-gray-700 rounded-lg"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-3">
+            {canViewAllData(user?.role) && (
+              <button 
+                onClick={() => handleQuickAction('view_monitor')}
+                className="flex items-center space-x-2 px-3 py-2 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50"
+              >
+                <Monitor className="w-4 h-4" />
+                <span>Monitor</span>
+              </button>
+            )}
+            {isAdmin(user?.role) && (
+              <button 
+                onClick={() => handleQuickAction('admin_panel')}
+                className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                <Shield className="w-4 h-4" />
+                <span>Admin</span>
+              </button>
+            )}
+            <button 
+              onClick={fetchDashboardData}
+              className="p-2 text-gray-500 hover:text-gray-700 rounded-lg"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          </div>
         }
       />
+
+      {/* Admin Summary (Admin Only) */}
+      {isAdmin(user?.role) && adminData && (
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+              <Shield className="w-5 h-5 text-red-500" />
+              <span>System Overview</span>
+            </h2>
+            <button 
+              onClick={() => handleQuickAction('admin_panel')}
+              className="text-red-600 hover:text-red-700 text-sm font-medium"
+            >
+              View Details →
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-blue-600">{adminData.userStats?.total || 0}</p>
+              <p className="text-sm text-gray-600">Total Users</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-green-600">{adminData.activityStats?.today || 0}</p>
+              <p className="text-sm text-gray-600">Activities Today</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-yellow-600">{adminData.emissionStats?.pending || 0}</p>
+              <p className="text-sm text-gray-600">Pending Reviews</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-purple-600">{adminData.topUsers?.length || 0}</p>
+              <p className="text-sm text-gray-600">Active Contributors</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Emission Scope Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -179,18 +284,22 @@ const Dashboard = () => {
                   Scope {scopeNumber}
                 </h3>
                 <div className="flex space-x-2">
-                  <button 
-                    onClick={() => window.location.href = `/input?scope=${scopeNumber}`}
-                    className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
-                  >
-                    Add
-                  </button>
-                  <button 
-                    onClick={() => window.location.href = '/monitor'}
-                    className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
-                  >
-                    Monitor
-                  </button>
+                  {(user?.role === 'admin' || user?.role === 'analyst' || user?.role === 'contributor') && (
+                    <button 
+                      onClick={() => handleQuickAction('add_emission')}
+                      className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
+                    >
+                      Add
+                    </button>
+                  )}
+                  {canViewAllData(user?.role) && (
+                    <button 
+                      onClick={() => handleQuickAction('view_monitor')}
+                      className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
+                    >
+                      Monitor
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -247,9 +356,7 @@ const Dashboard = () => {
 
               {/* Description */}
               <p className="text-sm text-gray-600 mb-4 text-center">
-                {scopeNumber === 1 && "Direct emissions from owned or controlled sources like fuel combustion and company vehicles."}
-                {scopeNumber === 2 && "Indirect emissions from purchased electricity, steam, heating, and cooling."}
-                {scopeNumber === 3 && "All other indirect emissions from business travel, employee commuting, and supply chain."}
+                {getScopeDescription(scopeNumber)}
               </p>
 
               {/* Generate Insight Button */}
@@ -270,7 +377,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Emissions</p>
+              <p className="text-sm font-medium text-gray-600">Your Total Emissions</p>
               <p className="text-2xl font-bold text-gray-900">
                 {formatNumber(dashboardData.totalEmissions)} CO₂e
               </p>
@@ -284,7 +391,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Scope 1</p>
+              <p className="text-sm font-medium text-gray-600">Your Scope 1</p>
               <p className="text-2xl font-bold text-gray-900">
                 {formatNumber(dashboardData.scope1.total)} CO₂e
               </p>
@@ -298,7 +405,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Scope 2</p>
+              <p className="text-sm font-medium text-gray-600">Your Scope 2</p>
               <p className="text-2xl font-bold text-gray-900">
                 {formatNumber(dashboardData.scope2.total)} CO₂e
               </p>
@@ -312,7 +419,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Scope 3</p>
+              <p className="text-sm font-medium text-gray-600">Your Scope 3</p>
               <p className="text-2xl font-bold text-gray-900">
                 {formatNumber(dashboardData.scope3.total)} CO₂e
               </p>
@@ -333,7 +440,10 @@ const Dashboard = () => {
               {notifications?.length || 0}
             </span>
           </div>
-          <button className="flex items-center space-x-2 text-gray-500 hover:text-gray-700">
+          <button 
+            onClick={() => logDashboardInteraction('filter', 'notifications')}
+            className="flex items-center space-x-2 text-gray-500 hover:text-gray-700"
+          >
             <Filter className="w-4 h-4" />
             <span>Filter</span>
           </button>
@@ -356,6 +466,36 @@ const Dashboard = () => {
       </div>
     </div>
   );
+};
+
+// Helper functions
+const getRoleDescription = (role) => {
+  const descriptions = {
+    admin: "Full system access with user management and monitoring capabilities.",
+    analyst: "Advanced data analysis and reporting access across all user data.",
+    contributor: "Create and manage your own emission records and view analytics.",
+    viewer: "View emission data and analytics in read-only mode."
+  };
+  return descriptions[role] || "Welcome to the Carbon Accounting platform.";
+};
+
+const getRoleBadgeColor = (role) => {
+  const colors = {
+    admin: 'bg-red-100 text-red-800',
+    analyst: 'bg-blue-100 text-blue-800',
+    contributor: 'bg-green-100 text-green-800',
+    viewer: 'bg-gray-100 text-gray-800'
+  };
+  return colors[role] || 'bg-gray-100 text-gray-800';
+};
+
+const getScopeDescription = (scopeNumber) => {
+  const descriptions = {
+    1: "Direct emissions from owned or controlled sources like fuel combustion and company vehicles.",
+    2: "Indirect emissions from purchased electricity, steam, heating, and cooling.",
+    3: "All other indirect emissions from business travel, employee commuting, and supply chain."
+  };
+  return descriptions[scopeNumber];
 };
 
 export default Dashboard;
