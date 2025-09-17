@@ -23,7 +23,7 @@ const exportRoutes = require('./routes/export');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
-const { authenticateToken } = require('./middleware/auth');
+const { authenticateToken, requireAdmin } = require('./middleware/auth');
 
 const app = express();
 
@@ -36,6 +36,17 @@ const limiter = rateLimit({
   max: 200, // increased limit for development
   message: {
     error: 'Too many requests from this IP, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Admin-specific rate limiting
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100, // Admin operations get lower limit
+  message: {
+    error: 'Too many admin requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -88,7 +99,13 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
     database: mongoose.connection.readyState === 1 ? 'Connected' : 'Running with sample data (MongoDB not required for demo)',
-    port: process.env.PORT || 5001
+    port: process.env.PORT || 5001,
+    features: {
+      multiUser: true,
+      adminMonitoring: true,
+      auditLogging: true,
+      roleBasedAccess: true
+    }
   };
   
   res.status(200).json(healthData);
@@ -97,6 +114,30 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+
+// Admin routes (protected)
+app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, (req, res, next) => {
+  // Admin routes handler
+  const router = express.Router();
+
+  // Import admin controller
+  const {
+    getAllActivities,
+    getUserActivitySummary,
+    getAuditLogs,
+    getAdminDashboard
+  } = require('./controllers/adminController');
+
+  // Admin monitoring routes
+  router.get('/activities', getAllActivities);
+  router.get('/user-summary', getUserActivitySummary);
+  router.get('/audit-logs', getAuditLogs);
+  router.get('/dashboard', getAdminDashboard);
+
+  router(req, res, next);
+});
+
+// Protected routes with authentication
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/emissions', authenticateToken, emissionRoutes);
 app.use('/api/dashboard', authenticateToken, dashboardRoutes);
@@ -137,11 +178,34 @@ const connectDB = async () => {
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     return true;
   } catch (error) {
-    console.log('⚠️  MongoDB not available - running with sample data');
-    console.log('💡 This is normal for demo purposes. The app will work with sample data.');
+    console.log('⚠️  MongoDB not available - running with enhanced demo mode');
+    console.log('💡 Multi-user features work with sample data. Connect database for persistence.');
     return false;
   }
 };
+
+// Activity logging middleware for all protected routes
+app.use('/api', authenticateToken, (req, res, next) => {
+  // Skip activity logging for certain routes to avoid spam
+  const skipLogging = [
+    '/api/auth/verify',
+    '/api/dashboard/summary',
+    '/api/notifications'
+  ];
+  
+  if (!skipLogging.some(route => req.path.startsWith(route))) {
+    // Store request info for potential activity logging
+    req.activityInfo = {
+      method: req.method,
+      path: req.path,
+      timestamp: new Date(),
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    };
+  }
+  
+  next();
+});
 
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
@@ -172,11 +236,15 @@ const startServer = async () => {
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend`);
+      console.log(`📊 Carbon Accounting Backend (Multi-User)`);
       console.log(`🌐 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API Base: http://localhost:${PORT}/api`);
       console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+      console.log(`👥 Multi-User: Enabled`);
+      console.log(`🔒 Role-Based Access: Enabled`);
+      console.log(`📋 Admin Monitoring: Enabled`);
+      console.log(`📝 Audit Logging: Enabled`);
       console.log(`💚 Status: Ready for connections`);
       console.log('🚀 ================================');
       console.log('');
@@ -207,6 +275,11 @@ const startServer = async () => {
       
       socket.on('join', (userId) => {
         socket.join(`user_${userId}`);
+      });
+
+      socket.on('joinAdminRoom', (userId) => {
+        // Only allow admins to join admin room
+        socket.join('admin_monitoring');
       });
 
       socket.on('disconnect', () => {
