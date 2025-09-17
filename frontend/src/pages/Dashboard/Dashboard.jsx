@@ -1,4 +1,4 @@
-// pages/Dashboard/Dashboard.jsx - Enhanced dashboard with multi-user support
+// pages/Dashboard/Dashboard.jsx - Fixed version with Monitor import resolved
 import { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis } from 'recharts';
 import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye } from 'lucide-react';
@@ -56,13 +56,14 @@ const Dashboard = () => {
       const processedData = processDashboardData(stats, allEmissions);
       setDashboardData(processedData);
 
-      // Load admin data if user is admin
+      // Load admin data if user is admin (with error handling)
       if (isAdmin(user?.role)) {
         try {
           const adminDashboard = await adminAPI.getDashboard();
           setAdminData(adminDashboard);
         } catch (error) {
-          console.error('Error loading admin data:', error);
+          console.warn('Admin dashboard data unavailable:', error.message);
+          // Don't throw error, just log warning
         }
       }
       
@@ -152,6 +153,8 @@ const Dashboard = () => {
       case 'admin_panel':
         window.location.href = '/admin/monitor';
         break;
+      default:
+        console.log('Unknown quick action:', action);
     }
   };
 
@@ -211,7 +214,7 @@ const Dashboard = () => {
                 onClick={() => handleQuickAction('view_monitor')}
                 className="flex items-center space-x-2 px-3 py-2 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50"
               >
-                <Monitor className="w-4 h-4" />
+                <Eye className="w-4 h-4" />
                 <span>Monitor</span>
               </button>
             )}
