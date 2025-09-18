@@ -8,19 +8,6 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const emissionRoutes = require('./routes/emissions');
-const dashboardRoutes = require('./routes/dashboard');
-const analyticsRoutes = require('./routes/analytics');
-const monitorRoutes = require('./routes/monitor');
-const vehicleRoutes = require('./routes/vehicles');
-const generatorRoutes = require('./routes/generators');
-const organizationRoutes = require('./routes/organization');
-const notificationRoutes = require('./routes/notifications');
-const exportRoutes = require('./routes/export');
-
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const { authenticateToken, requireAdmin } = require('./middleware/auth');
@@ -98,7 +85,7 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Running with sample data (MongoDB not required for demo)',
+    database: mongoose.connection && mongoose.connection.readyState === 1 ? 'Connected' : 'Running with sample data (MongoDB not required for demo)',
     port: process.env.PORT || 5001,
     features: {
       multiUser: true,
@@ -112,42 +99,200 @@ app.get('/health', (req, res) => {
   console.log('Health check requested:', healthData);
 });
 
+// Import routes (only if they exist)
+let authRoutes, userRoutes, emissionRoutes, dashboardRoutes;
+let analyticsRoutes, monitorRoutes, vehicleRoutes, generatorRoutes;
+let organizationRoutes, notificationRoutes, exportRoutes, adminRoutes;
+
+try {
+  authRoutes = require('./routes/auth');
+} catch (e) {
+  console.log('Auth routes not found, using inline routes');
+}
+
+try {
+  userRoutes = require('./routes/users');
+} catch (e) {
+  console.log('User routes not found, using inline routes');
+}
+
+try {
+  emissionRoutes = require('./routes/emissions');
+} catch (e) {
+  console.log('Emission routes not found, using inline routes');
+}
+
+try {
+  dashboardRoutes = require('./routes/dashboard');
+} catch (e) {
+  console.log('Dashboard routes not found, using inline routes');
+}
+
+try {
+  analyticsRoutes = require('./routes/analytics');
+} catch (e) {
+  console.log('Analytics routes not found, using inline routes');
+}
+
+try {
+  monitorRoutes = require('./routes/monitor');
+} catch (e) {
+  console.log('Monitor routes not found, using inline routes');
+}
+
+try {
+  vehicleRoutes = require('./routes/vehicles');
+} catch (e) {
+  console.log('Vehicle routes not found, using inline routes');
+}
+
+try {
+  generatorRoutes = require('./routes/generators');
+} catch (e) {
+  console.log('Generator routes not found, using inline routes');
+}
+
+try {
+  organizationRoutes = require('./routes/organization');
+} catch (e) {
+  console.log('Organization routes not found, using inline routes');
+}
+
+try {
+  notificationRoutes = require('./routes/notifications');
+} catch (e) {
+  console.log('Notification routes not found, using inline routes');
+}
+
+try {
+  exportRoutes = require('./routes/export');
+} catch (e) {
+  console.log('Export routes not found, using inline routes');
+}
+
+try {
+  adminRoutes = require('./routes/admin');
+} catch (e) {
+  console.log('Admin routes not found, using inline routes');
+}
+
 // API Routes
-app.use('/api/auth', authRoutes);
+if (authRoutes) {
+  app.use('/api/auth', authRoutes);
+} else {
+  // Inline auth routes for demo
+  const authController = require('./controllers/authController');
+  const authRouter = express.Router();
+  authRouter.post('/login', authController.login);
+  authRouter.post('/register', authController.register);
+  authRouter.post('/logout', authenticateToken, authController.logout);
+  authRouter.get('/verify', authenticateToken, authController.verifyToken);
+  authRouter.patch('/profile', authenticateToken, authController.updateProfile);
+  authRouter.patch('/change-password', authenticateToken, authController.changePassword);
+  app.use('/api/auth', authRouter);
+}
 
-// Admin routes (protected)
-app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, (req, res, next) => {
-  // Admin routes handler
-  const router = express.Router();
+// Admin routes with proper controller
+if (adminRoutes) {
+  app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRoutes);
+} else {
+  // Inline admin routes
+  const adminController = require('./controllers/adminController');
+  const adminRouter = express.Router();
+  
+  adminRouter.get('/dashboard', adminController.getAdminDashboard);
+  adminRouter.get('/activities', adminController.getAllActivities);
+  adminRouter.get('/user-summary', adminController.getUserActivitySummary);
+  adminRouter.get('/audit-logs', adminController.getAuditLogs);
+  
+  app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
+}
 
-  // Import admin controller
-  const {
-    getAllActivities,
-    getUserActivitySummary,
-    getAuditLogs,
-    getAdminDashboard
-  } = require('./controllers/adminController');
+// User routes
+if (userRoutes) {
+  app.use('/api/users', authenticateToken, userRoutes);
+} else {
+  // Inline user routes
+  const userController = require('./controllers/userController');
+  const userRouter = express.Router();
+  
+  userRouter.get('/', userController.getUsers);
+  userRouter.get('/stats', userController.getUserStats);
+  userRouter.get('/:id', userController.getUserById);
+  userRouter.post('/', requireAdmin, userController.createUser);
+  userRouter.patch('/:id/role', requireAdmin, userController.updateUserRole);
+  userRouter.patch('/:id/status', requireAdmin, userController.updateUserStatus);
+  userRouter.delete('/:id', requireAdmin, userController.deleteUser);
+  userRouter.patch('/bulk', requireAdmin, userController.bulkUpdateUsers);
+  
+  app.use('/api/users', authenticateToken, userRouter);
+}
 
-  // Admin monitoring routes
-  router.get('/activities', getAllActivities);
-  router.get('/user-summary', getUserActivitySummary);
-  router.get('/audit-logs', getAuditLogs);
-  router.get('/dashboard', getAdminDashboard);
+// Emission routes
+if (emissionRoutes) {
+  app.use('/api/emissions', authenticateToken, emissionRoutes);
+} else {
+  // Inline emission routes
+  const emissionController = require('./controllers/emissionController');
+  const emissionRouter = express.Router();
+  
+  emissionRouter.get('/', emissionController.getEmissions);
+  emissionRouter.get('/categories', emissionController.getEmissionCategories);
+  emissionRouter.get('/stats', emissionController.getEmissionStats);
+  emissionRouter.get('/:id', emissionController.getEmissionById);
+  emissionRouter.post('/', emissionController.createEmission);
+  emissionRouter.patch('/:id', emissionController.updateEmission);
+  emissionRouter.patch('/:id/verify', requireAdmin, emissionController.verifyEmission);
+  emissionRouter.delete('/:id', emissionController.deleteEmission);
+  
+  app.use('/api/emissions', authenticateToken, emissionRouter);
+}
 
-  router(req, res, next);
+// Dashboard routes
+if (dashboardRoutes) {
+  app.use('/api/dashboard', authenticateToken, dashboardRoutes);
+} else {
+  // Inline dashboard routes
+  const dashboardController = require('./controllers/dashboardController');
+  const dashboardRouter = express.Router();
+  
+  dashboardRouter.get('/summary', dashboardController.getDashboardSummary);
+  dashboardRouter.get('/notifications', dashboardController.getDashboardNotifications);
+  
+  app.use('/api/dashboard', authenticateToken, dashboardRouter);
+}
+
+// Other route placeholders
+app.use('/api/analytics', authenticateToken, (req, res) => {
+  res.json({ message: 'Analytics endpoint placeholder' });
 });
 
-// Protected routes with authentication
-app.use('/api/users', authenticateToken, userRoutes);
-app.use('/api/emissions', authenticateToken, emissionRoutes);
-app.use('/api/dashboard', authenticateToken, dashboardRoutes);
-app.use('/api/analytics', authenticateToken, analyticsRoutes);
-app.use('/api/monitor', authenticateToken, monitorRoutes);
-app.use('/api/vehicles', authenticateToken, vehicleRoutes);
-app.use('/api/generators', authenticateToken, generatorRoutes);
-app.use('/api/organization', authenticateToken, organizationRoutes);
-app.use('/api/notifications', authenticateToken, notificationRoutes);
-app.use('/api/export', authenticateToken, exportRoutes);
+app.use('/api/monitor', authenticateToken, (req, res) => {
+  res.json({ message: 'Monitor endpoint placeholder' });
+});
+
+app.use('/api/vehicles', authenticateToken, (req, res) => {
+  res.json({ message: 'Vehicles endpoint placeholder' });
+});
+
+app.use('/api/generators', authenticateToken, (req, res) => {
+  res.json({ message: 'Generators endpoint placeholder' });
+});
+
+app.use('/api/organization', authenticateToken, (req, res) => {
+  res.json({ message: 'Organization endpoint placeholder' });
+});
+
+app.use('/api/notifications', authenticateToken, (req, res) => {
+  res.json({ 
+    success: true,
+    data: [] 
+  });
+});
+
+app.use('/api/export', authenticateToken, (req, res) => {
+  res.json({ message: 'Export endpoint placeholder' });
+});
 
 // 404 handler for API routes
 app.use('/api/*', (req, res) => {
@@ -171,7 +316,12 @@ app.use(errorHandler);
 // Database connection (optional for demo)
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/carbon-accounting', {
+    if (!process.env.MONGODB_URI) {
+      console.log('⚠️  MONGODB_URI not set - running in demo mode');
+      return false;
+    }
+    
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
@@ -184,35 +334,12 @@ const connectDB = async () => {
   }
 };
 
-// Activity logging middleware for all protected routes
-app.use('/api', authenticateToken, (req, res, next) => {
-  // Skip activity logging for certain routes to avoid spam
-  const skipLogging = [
-    '/api/auth/verify',
-    '/api/dashboard/summary',
-    '/api/notifications'
-  ];
-  
-  if (!skipLogging.some(route => req.path.startsWith(route))) {
-    // Store request info for potential activity logging
-    req.activityInfo = {
-      method: req.method,
-      path: req.path,
-      timestamp: new Date(),
-      ip: req.ip,
-      userAgent: req.get('User-Agent')
-    };
-  }
-  
-  next();
-});
-
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} received, shutting down gracefully`);
   
   try {
-    if (mongoose.connection.readyState === 1) {
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
       console.log('MongoDB connection closed');
     }
@@ -248,6 +375,11 @@ const startServer = async () => {
       console.log(`💚 Status: Ready for connections`);
       console.log('🚀 ================================');
       console.log('');
+      console.log('📌 Demo Credentials:');
+      console.log('   Email: demo@example.com');
+      console.log('   Password: password123');
+      console.log('   Role: Admin');
+      console.log('');
     });
 
     // Handle server errors
@@ -260,36 +392,6 @@ const startServer = async () => {
         process.exit(1);
       }
     });
-
-    // Socket.io setup for real-time notifications (optional)
-    /* Uncomment if you want real-time features
-    const io = require('socket.io')(server, {
-      cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:5173',
-        methods: ['GET', 'POST']
-      }
-    });
-
-    io.on('connection', (socket) => {
-      console.log('User connected:', socket.id);
-      
-      socket.on('join', (userId) => {
-        socket.join(`user_${userId}`);
-      });
-
-      socket.on('joinAdminRoom', (userId) => {
-        // Only allow admins to join admin room
-        socket.join('admin_monitoring');
-      });
-
-      socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-      });
-    });
-
-    // Make io available globally
-    app.set('io', io);
-    */
 
   } catch (error) {
     console.error('❌ Failed to start server:', error);

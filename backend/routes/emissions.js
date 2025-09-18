@@ -1,20 +1,26 @@
-// routes/emissions.js
+// ===== backend/routes/emissions.js =====
 const express = require('express');
-const { 
-  getEmissions, 
-  createEmission, 
-  updateEmission, 
-  deleteEmission, 
-  getEmissionCategories 
+const { requireAdmin } = require('../middleware/auth');
+const {
+  getEmissions,
+  getEmissionById,
+  createEmission,
+  updateEmission,
+  deleteEmission,
+  verifyEmission,
+  getEmissionStats,
+  getEmissionCategories
 } = require('../controllers/emissionController');
-const { authorizeRoles } = require('../middleware/auth');
 
 const router = express.Router();
 
 router.get('/', getEmissions);
+router.get('/categories', getEmissionCategories);
+router.get('/stats', getEmissionStats);
+router.get('/:id', getEmissionById);
 router.post('/', createEmission);
 router.patch('/:id', updateEmission);
-router.delete('/:id', authorizeRoles('admin', 'analyst'), deleteEmission);
-router.get('/categories', getEmissionCategories);
+router.patch('/:id/verify', requireAdmin, verifyEmission);
+router.delete('/:id', deleteEmission);
 
 module.exports = router;

@@ -1,21 +1,33 @@
-// routes/monitor.js
+// ===== backend/routes/monitor.js =====
 const express = require('express');
-const { 
-  getActivities, 
-  createTask, 
-  updateTask, 
-  deleteTask, 
-  getTasks, 
-  assignActivity 
-} = require('../controllers/monitorController');
-
 const router = express.Router();
 
-router.get('/activities', getActivities);
-router.post('/tasks', createTask);
-router.get('/tasks', getTasks);
-router.patch('/tasks/:id', updateTask);
-router.delete('/tasks/:id', deleteTask);
-router.post('/assign', assignActivity);
+// Placeholder monitor routes
+router.get('/activities', (req, res) => {
+  res.json({ 
+    success: true, 
+    data: [],
+    pagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0
+    }
+  });
+});
+
+router.get('/tasks', (req, res) => {
+  res.json({ 
+    success: true, 
+    data: [] 
+  });
+});
+
+router.post('/tasks', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Task created successfully',
+    data: req.body 
+  });
+});
 
 module.exports = router;

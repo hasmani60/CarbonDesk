@@ -1,6 +1,6 @@
-// pages/Dashboard/Dashboard.jsx - Fixed version with Monitor import resolved
-import { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis } from 'recharts';
+// pages/Dashboard/Dashboard.jsx - Fixed version without undefined references
+import React from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -14,15 +14,15 @@ const Dashboard = () => {
   const { user } = useAuth();
   const { notifications } = useNotifications();
   const { logPageView, logDashboardInteraction, getActivityStats } = useActivity();
-  const [dashboardData, setDashboardData] = useState({
+  const [dashboardData, setDashboardData] = React.useState({
     scope1: { total: 0, percentage: 0, topCategories: [] },
     scope2: { total: 0, percentage: 0, topCategories: [] },
     scope3: { total: 0, percentage: 0, topCategories: [] },
     totalEmissions: 0
   });
-  const [adminData, setAdminData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [userActivityStats, setUserActivityStats] = useState(null);
+  const [adminData, setAdminData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [userActivityStats, setUserActivityStats] = React.useState(null);
 
   // Colors for each scope's pie chart
   const COLORS = {
@@ -31,11 +31,11 @@ const Dashboard = () => {
     scope3: ['#7c2d12', '#dc2626', '#ef4444']  // Different shades of red
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     logPageView('Dashboard');
     fetchDashboardData();
     loadUserActivityStats();
-  }, [logPageView]);
+  }, []);
 
   const loadUserActivityStats = () => {
     try {
@@ -158,6 +158,36 @@ const Dashboard = () => {
     }
   };
 
+  // Helper functions moved inside component
+  const getRoleDescription = (role) => {
+    const descriptions = {
+      admin: "Full system access with user management and monitoring capabilities.",
+      analyst: "Advanced data analysis and reporting access across all user data.",
+      contributor: "Create and manage your own emission records and view analytics.",
+      viewer: "View emission data and analytics in read-only mode."
+    };
+    return descriptions[role] || "Welcome to the Carbon Accounting platform.";
+  };
+
+  const getRoleBadgeColor = (role) => {
+    const colors = {
+      admin: 'bg-red-100 text-red-800',
+      analyst: 'bg-blue-100 text-blue-800',
+      contributor: 'bg-green-100 text-green-800',
+      viewer: 'bg-gray-100 text-gray-800'
+    };
+    return colors[role] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getScopeDescription = (scopeNumber) => {
+    const descriptions = {
+      1: "Direct emissions from owned or controlled sources like fuel combustion and company vehicles.",
+      2: "Indirect emissions from purchased electricity, steam, heating, and cooling.",
+      3: "All other indirect emissions from business travel, employee commuting, and supply chain."
+    };
+    return descriptions[scopeNumber];
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -215,7 +245,7 @@ const Dashboard = () => {
                 className="flex items-center space-x-2 px-3 py-2 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50"
               >
                 <Eye className="w-4 h-4" />
-                <span>Monitor</span>
+                <span>View Monitor</span>
               </button>
             )}
             {isAdmin(user?.role) && (
@@ -300,7 +330,7 @@ const Dashboard = () => {
                       onClick={() => handleQuickAction('view_monitor')}
                       className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
                     >
-                      Monitor
+                      View
                     </button>
                   )}
                 </div>
@@ -469,36 +499,6 @@ const Dashboard = () => {
       </div>
     </div>
   );
-};
-
-// Helper functions
-const getRoleDescription = (role) => {
-  const descriptions = {
-    admin: "Full system access with user management and monitoring capabilities.",
-    analyst: "Advanced data analysis and reporting access across all user data.",
-    contributor: "Create and manage your own emission records and view analytics.",
-    viewer: "View emission data and analytics in read-only mode."
-  };
-  return descriptions[role] || "Welcome to the Carbon Accounting platform.";
-};
-
-const getRoleBadgeColor = (role) => {
-  const colors = {
-    admin: 'bg-red-100 text-red-800',
-    analyst: 'bg-blue-100 text-blue-800',
-    contributor: 'bg-green-100 text-green-800',
-    viewer: 'bg-gray-100 text-gray-800'
-  };
-  return colors[role] || 'bg-gray-100 text-gray-800';
-};
-
-const getScopeDescription = (scopeNumber) => {
-  const descriptions = {
-    1: "Direct emissions from owned or controlled sources like fuel combustion and company vehicles.",
-    2: "Indirect emissions from purchased electricity, steam, heating, and cooling.",
-    3: "All other indirect emissions from business travel, employee commuting, and supply chain."
-  };
-  return descriptions[scopeNumber];
 };
 
 export default Dashboard;

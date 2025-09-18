@@ -1,12 +1,27 @@
-// routes/users.js
+// ===== backend/routes/users.js =====
 const express = require('express');
-const { getUsers, updateUserRole, updateUserStatus } = require('../controllers/userController');
-const { authorizeRoles } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
+const {
+  getUsers,
+  getUserById,
+  createUser,
+  updateUserRole,
+  updateUserStatus,
+  deleteUser,
+  getUserStats,
+  bulkUpdateUsers
+} = require('../controllers/userController');
 
 const router = express.Router();
 
-router.get('/', authorizeRoles('admin', 'analyst'), getUsers);
-router.patch('/:id/role', authorizeRoles('admin'), updateUserRole);
-router.patch('/:id/status', authorizeRoles('admin'), updateUserStatus);
+// All routes are already protected by authenticateToken in server.js
+router.get('/', getUsers);
+router.get('/stats', getUserStats);
+router.get('/:id', getUserById);
+router.post('/', requireAdmin, createUser);
+router.patch('/:id/role', requireAdmin, updateUserRole);
+router.patch('/:id/status', requireAdmin, updateUserStatus);
+router.delete('/:id', requireAdmin, deleteUser);
+router.patch('/bulk', requireAdmin, bulkUpdateUsers);
 
 module.exports = router;

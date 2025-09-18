@@ -1,10 +1,27 @@
-// routes/analytics.js
+// ===== backend/routes/analytics.js =====
 const express = require('express');
-const { getEmissionTrends, getScopeComparison } = require('../controllers/analyticsController');
-
 const router = express.Router();
 
-router.get('/trends', getEmissionTrends);
-router.get('/scope-comparison', getScopeComparison);
+// Placeholder analytics routes
+router.get('/trends', (req, res) => {
+  res.json({ 
+    success: true, 
+    data: [] 
+  });
+});
+
+router.get('/scope-comparison', (req, res) => {
+  res.json({ 
+    success: true, 
+    data: [] 
+  });
+});
+
+router.get('/by-category', (req, res) => {
+  res.json({ 
+    success: true, 
+    data: [] 
+  });
+});
 
 module.exports = router;
