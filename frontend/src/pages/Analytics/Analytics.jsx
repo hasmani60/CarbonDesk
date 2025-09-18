@@ -1,4 +1,4 @@
-// Updated Analytics.jsx with real emissions data
+// Updated Analytics.jsx with automatic refresh and real-time data updates
 import { useState, useEffect } from 'react';
 import { 
   LineChart, 
@@ -24,14 +24,18 @@ import {
   Filter,
   Download,
   Eye,
-  Lock
+  Lock,
+  RefreshCw,
+  Database
 } from 'lucide-react';
+import { useActivity } from '../../context/ActivityContext';
 import { analyticsAPI } from '../../services/api';
 import { getEmissions, getEmissionsStats } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
 
 const Analytics = () => {
+  const { logPageView, logActivity } = useActivity();
   const [analyticsData, setAnalyticsData] = useState({
     trends: [],
     scopeComparison: [],
@@ -45,19 +49,53 @@ const Analytics = () => {
       scope1: 0,
       scope2: 0,
       scope3: 0
+    },
+    entryCounts: {
+      scope1: 0,
+      scope2: 0,
+      scope3: 0,
+      total: 0
     }
   });
   const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
   const [filters, setFilters] = useState({
     dateRange: '12months',
     scope: 'all'
   });
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const scopeColors = {
     scope1: ['#065f46', '#047857', '#059669'],
     scope2: ['#1e40af', '#1d4ed8', '#2563eb'], 
     scope3: ['#7c2d12', '#dc2626', '#ef4444']
   };
+
+  useEffect(() => {
+    logPageView('Analytics');
+    loadAnalyticsData();
+    
+    // Listen for real-time updates when emissions are added
+    const handleEmissionAdded = () => {
+      if (autoRefresh) {
+        setTimeout(loadAnalyticsData, 500); // Small delay to ensure localStorage is updated
+        toast.success('Analytics updated with new data!');
+      }
+    };
+    
+    window.addEventListener('emission-added', handleEmissionAdded);
+    
+    // Set up periodic refresh every 2 minutes if auto-refresh is enabled
+    let refreshInterval;
+    if (autoRefresh) {
+      refreshInterval = setInterval(loadAnalyticsData, 2 * 60 * 1000);
+    }
+    
+    return () => {
+      window.removeEventListener('emission-added', handleEmissionAdded);
+      if (refreshInterval) clearInterval(refreshInterval);
+    };
+  }, [autoRefresh]);
 
   useEffect(() => {
     loadAnalyticsData();
@@ -74,6 +112,10 @@ const Analytics = () => {
       // Process emissions for analytics
       const processedData = processEmissionsForAnalytics(allEmissions, stats);
       setAnalyticsData(processedData);
+      setLastUpdate(new Date());
+      
+      // Log analytics access
+      logActivity('viewed_analytics', 'analytics', null, `Viewed analytics with ${allEmissions.length} total emissions`);
       
     } catch (error) {
       console.error('Error loading analytics data:', error);
@@ -84,8 +126,11 @@ const Analytics = () => {
   };
 
   const processEmissionsForAnalytics = (emissions, stats) => {
+    // Apply date range filter
+    const filteredEmissions = applyDateRangeFilter(emissions);
+    
     // Create trends data by month
-    const monthlyTrends = createMonthlyTrends(emissions);
+    const monthlyTrends = createMonthlyTrends(filteredEmissions);
     
     // Create scope distributions (top 3 categories per scope)
     const scopeDistributions = createScopeDistributions(stats);
@@ -97,16 +142,57 @@ const Analytics = () => {
       scope3: stats.scope3.total
     };
     
+    // Calculate entry counts per scope
+    const entryCounts = {
+      scope1: emissions.filter(e => e.scope === 1).length,
+      scope2: emissions.filter(e => e.scope === 2).length,
+      scope3: emissions.filter(e => e.scope === 3).length,
+      total: emissions.length
+    };
+    
     // Create scope comparison data
-    const scopeComparison = createScopeComparison(emissions);
+    const scopeComparison = createScopeComparison(filteredEmissions);
 
     return {
       trends: monthlyTrends,
       scopeComparison: scopeComparison,
       monthlyData: monthlyTrends,
       scopeDistributions,
-      totalEmissions
+      totalEmissions,
+      entryCounts
     };
+  };
+
+  const applyDateRangeFilter = (emissions) => {
+    if (filters.dateRange === 'all') return emissions;
+    
+    const now = new Date();
+    let startDate;
+    
+    switch (filters.dateRange) {
+      case '7days':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30days':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '3months':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '6months':
+        startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+        break;
+      case '12months':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        return emissions;
+    }
+    
+    return emissions.filter(emission => {
+      const emissionDate = new Date(emission.startDate || emission.createdAt);
+      return emissionDate >= startDate;
+    });
   };
 
   const createMonthlyTrends = (emissions) => {
@@ -114,8 +200,8 @@ const Analytics = () => {
     
     emissions.forEach(emission => {
       const date = new Date(emission.startDate || emission.createdAt);
-      const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
-      const monthName = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
       
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = {
@@ -123,20 +209,25 @@ const Analytics = () => {
           scope1: 0,
           scope2: 0,
           scope3: 0,
-          total: 0
+          total: 0,
+          count1: 0,
+          count2: 0,
+          count3: 0
         };
       }
       
       const scopeKey = `scope${emission.scope}`;
+      const countKey = `count${emission.scope}`;
       const emissionValue = emission.calculatedEmissions || (emission.amount * (emission.factor || 1));
       
       monthlyData[monthKey][scopeKey] += emissionValue;
+      monthlyData[monthKey][countKey] += 1;
       monthlyData[monthKey].total += emissionValue;
     });
     
-    return Object.values(monthlyData).sort((a, b) => 
-      new Date(a.month) - new Date(b.month)
-    );
+    return Object.values(monthlyData)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-12); // Last 12 months
   };
 
   const createScopeDistributions = (stats) => {
@@ -146,7 +237,7 @@ const Analytics = () => {
       const activities = stats[scopeKey].activities;
       const total = stats[scopeKey].total;
       
-      // Get top 3 activities for this scope
+      // Get top 5 activities for this scope (increased from 3)
       const sortedActivities = Object.entries(activities)
         .map(([name, data]) => ({
           name: name.length > 30 ? name.substring(0, 30) + '...' : name,
@@ -156,7 +247,7 @@ const Analytics = () => {
           count: data.count
         }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 3);
+        .slice(0, 5);
       
       distributions[scopeKey] = sortedActivities;
     });
@@ -172,12 +263,23 @@ const Analytics = () => {
       const monthName = date.toLocaleDateString('en-US', { month: 'short' });
       
       if (!monthlyComparison[monthName]) {
-        monthlyComparison[monthName] = { month: monthName, scope1: 0, scope2: 0, scope3: 0 };
+        monthlyComparison[monthName] = { 
+          month: monthName, 
+          scope1: 0, 
+          scope2: 0, 
+          scope3: 0,
+          entries1: 0,
+          entries2: 0,
+          entries3: 0
+        };
       }
       
       const scopeKey = `scope${emission.scope}`;
+      const entriesKey = `entries${emission.scope}`;
       const emissionValue = emission.calculatedEmissions || (emission.amount * (emission.factor || 1));
+      
       monthlyComparison[monthName][scopeKey] += emissionValue;
+      monthlyComparison[monthName][entriesKey] += 1;
     });
     
     return Object.values(monthlyComparison);
@@ -185,6 +287,41 @@ const Analytics = () => {
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleExportData = () => {
+    try {
+      const exportData = {
+        summary: {
+          totalEmissions: analyticsData.totalEmissions.scope1 + analyticsData.totalEmissions.scope2 + analyticsData.totalEmissions.scope3,
+          totalEntries: analyticsData.entryCounts.total,
+          generatedAt: new Date().toISOString(),
+          filters: filters
+        },
+        emissionsByScope: analyticsData.totalEmissions,
+        entriesByScope: analyticsData.entryCounts,
+        monthlyTrends: analyticsData.trends,
+        scopeDistributions: analyticsData.scopeDistributions
+      };
+      
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      
+      const url = window.URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `carbon_analytics_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Analytics data exported successfully!');
+      logActivity('exported_analytics', 'analytics', null, 'Exported analytics data as JSON');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export data');
+    }
   };
 
   const formatNumber = (value) => {
@@ -200,7 +337,7 @@ const Analytics = () => {
           <p className="font-semibold text-gray-900">{label}</p>
           {payload.map((entry, index) => (
             <p key={index} style={{ color: entry.color }}>
-              {entry.name}: {formatNumber(entry.value)} CO₂e ({entry.payload.percentage?.toFixed(1)}%)
+              {entry.name}: {formatNumber(entry.value)} CO₂e
             </p>
           ))}
         </div>
@@ -222,7 +359,7 @@ const Analytics = () => {
             Percentage: {data.payload.percentage.toFixed(1)}%
           </p>
           <p className="text-gray-600 text-sm">
-            Records: {data.payload.count}
+            Entries: {data.payload.count}
           </p>
         </div>
       );
@@ -234,6 +371,7 @@ const Analytics = () => {
     const scopeNumber = scopeKey.slice(-1);
     const data = analyticsData.scopeDistributions[scopeKey];
     const total = analyticsData.totalEmissions[scopeKey];
+    const entryCount = analyticsData.entryCounts[scopeKey];
     const colors = scopeColors[scopeKey];
 
     if (!data || data.length === 0) {
@@ -241,7 +379,11 @@ const Analytics = () => {
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
           <div className="h-64 flex items-center justify-center text-gray-500">
-            No data available for {title}
+            <div className="text-center">
+              <Database className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <p>No data available for {title}</p>
+              <p className="text-sm">Add some emissions to see analytics</p>
+            </div>
           </div>
         </div>
       );
@@ -251,8 +393,11 @@ const Analytics = () => {
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-          <div className="flex items-center space-x-2">
-            <Eye className="w-4 h-4 text-gray-400" />
+          <div className="text-right">
+            <div className="text-sm text-gray-600">{entryCount} entries</div>
+            <div className="flex items-center space-x-2">
+              <Eye className="w-4 h-4 text-gray-400" />
+            </div>
           </div>
         </div>
         <div className="h-64 relative">
@@ -281,6 +426,7 @@ const Analytics = () => {
                 {formatNumber(total)}
               </div>
               <div className="text-sm text-gray-600">CO₂e Total</div>
+              <div className="text-xs text-gray-500">{entryCount} entries</div>
             </div>
           </div>
         </div>
@@ -300,7 +446,7 @@ const Analytics = () => {
               </div>
               <div className="flex items-center space-x-2 text-gray-600">
                 <span>{entry.percentage.toFixed(1)}%</span>
-                <span className="text-xs">({formatNumber(entry.value)})</span>
+                <span className="text-xs">({entry.count} entries)</span>
               </div>
             </div>
           ))}
@@ -312,7 +458,10 @@ const Analytics = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-lg text-gray-600">Loading analytics...</div>
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin text-emerald-600 mx-auto mb-4" />
+          <div className="text-lg text-gray-600">Loading analytics...</div>
+        </div>
       </div>
     );
   }
@@ -328,15 +477,28 @@ const Analytics = () => {
         ]}
         action={
           <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+              <span className="text-sm text-gray-600">
+                {autoRefresh ? 'Auto-refresh: ON' : 'Auto-refresh: OFF'}
+              </span>
+            </div>
+            <button 
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`flex items-center space-x-2 px-3 py-1 rounded-lg text-sm ${
+                autoRefresh 
+                  ? 'text-emerald-600 border border-emerald-200 bg-emerald-50' 
+                  : 'text-gray-600 border border-gray-300'
+              }`}
+            >
+              <span>Auto-refresh</span>
+            </button>
             <button 
               onClick={loadAnalyticsData}
               className="flex items-center space-x-2 text-emerald-600 border border-emerald-200 px-3 py-1 rounded-lg hover:bg-emerald-50"
             >
-              <span className="text-sm">Refresh Data</span>
-            </button>
-            <button className="flex items-center space-x-2 text-gray-600 border border-gray-300 px-3 py-1 rounded-lg hover:bg-gray-50">
-              <Calendar className="w-4 h-4" />
-              <span className="text-sm">Filter Date</span>
+              <RefreshCw className="w-4 h-4" />
+              <span className="text-sm">Refresh</span>
             </button>
           </div>
         }
@@ -356,6 +518,7 @@ const Analytics = () => {
               <option value="3months">Last 3 Months</option>
               <option value="6months">Last 6 Months</option>
               <option value="12months">Last 12 Months</option>
+              <option value="all">All Time</option>
             </select>
 
             <select
@@ -368,12 +531,88 @@ const Analytics = () => {
               <option value="2">Scope 2</option>
               <option value="3">Scope 3</option>
             </select>
+
+            <div className="text-sm text-gray-600">
+              Last updated: {lastUpdate.toLocaleTimeString()}
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <button className="p-2 text-gray-500 hover:text-gray-700 rounded-lg">
-              <Download className="w-5 h-5" />
-            </button>
+          <button 
+            onClick={handleExportData}
+            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Data</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Key Metrics Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Entries</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {analyticsData.entryCounts.total}
+              </p>
+              <p className="text-xs text-gray-500">Emission records</p>
+            </div>
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <Database className="w-6 h-6 text-gray-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Emissions</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {formatNumber(
+                  analyticsData.totalEmissions.scope1 + 
+                  analyticsData.totalEmissions.scope2 + 
+                  analyticsData.totalEmissions.scope3
+                )} CO₂e
+              </p>
+            </div>
+            <div className="p-2 bg-green-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scope 1</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {formatNumber(analyticsData.totalEmissions.scope1)} CO₂e
+              </p>
+              <p className="text-xs text-gray-500">{analyticsData.entryCounts.scope1} entries</p>
+            </div>
+            <div className="p-2 bg-emerald-100 rounded-lg">
+              <div className="w-6 h-6 bg-emerald-600 rounded flex items-center justify-center">
+                <span className="text-white text-sm font-bold">1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scope 2 & 3</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {formatNumber(analyticsData.totalEmissions.scope2 + analyticsData.totalEmissions.scope3)} CO₂e
+              </p>
+              <p className="text-xs text-gray-500">
+                {analyticsData.entryCounts.scope2 + analyticsData.entryCounts.scope3} entries
+              </p>
+            </div>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-blue-600" />
+            </div>
           </div>
         </div>
       </div>
@@ -450,69 +689,6 @@ const Analytics = () => {
                 <Bar dataKey="scope3" fill="#7c2d12" name="Scope 3" />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Key Metrics Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Emissions</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(
-                  analyticsData.totalEmissions.scope1 + 
-                  analyticsData.totalEmissions.scope2 + 
-                  analyticsData.totalEmissions.scope3
-                )} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-green-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Scope 1 Emissions</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(analyticsData.totalEmissions.scope1)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-emerald-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-emerald-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Scope 2 Emissions</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(analyticsData.totalEmissions.scope2)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <TrendingDown className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Scope 3 Emissions</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(analyticsData.totalEmissions.scope3)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-red-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-red-600" />
-            </div>
           </div>
         </div>
       </div>

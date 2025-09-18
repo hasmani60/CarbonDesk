@@ -1,16 +1,18 @@
-// Updated EmissionForm.jsx with notification creation
-import { useState } from 'react';
+// Updated EmissionForm.jsx with dynamic activity types and real-time monitor updates
+import { useState, useEffect } from 'react';
 import { X, Calendar, Upload } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useActivity } from '../../context/ActivityContext';
 import { emissionsAPI } from '../../services/api';
 import { saveEmission } from '../../utils/localStorage';
-import { getEmissionFactor, calculateEmissions } from '../../data/emissionFactors';
+import { emissionFactors, getEmissionFactor, calculateEmissions } from '../../data/emissionFactors';
 import toast from 'react-hot-toast';
 
 const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
   const { user } = useAuth();
   const { addEmissionNotification } = useNotifications();
+  const { logEmissionAction, logActivity } = useActivity();
   const [formData, setFormData] = useState({
     activityType: category?.selectedSubcategory || '',
     source: '',
@@ -21,48 +23,127 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
     location: '',
     description: ''
   });
+  const [availableActivityTypes, setAvailableActivityTypes] = useState([]);
+  const [availableSources, setAvailableSources] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const units = ['kg', 'tons', 'litres', 'kWh', 'km', 'hours'];
 
+  // Load activity types based on scope when component mounts
+  useEffect(() => {
+    loadActivityTypes();
+  }, [scope]);
+
+  // Load sources when activity type changes
+  useEffect(() => {
+    if (formData.activityType) {
+      loadSourcesForActivity();
+    }
+  }, [formData.activityType, scope]);
+
+  const loadActivityTypes = () => {
+    try {
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      
+      if (scopeData) {
+        const activityTypes = Object.keys(scopeData);
+        setAvailableActivityTypes(activityTypes);
+        
+        // Set default activity type if category is provided
+        if (category?.selectedSubcategory && activityTypes.includes(category.selectedSubcategory)) {
+          setFormData(prev => ({ ...prev, activityType: category.selectedSubcategory }));
+        } else if (activityTypes.length > 0) {
+          setFormData(prev => ({ ...prev, activityType: activityTypes[0] }));
+        }
+      }
+    } catch (error) {
+      console.error('Error loading activity types:', error);
+    }
+  };
+
+  const loadSourcesForActivity = () => {
+    try {
+      const scopeKey = `scope${scope}`;
+      const activityData = emissionFactors[scopeKey]?.[formData.activityType];
+      
+      if (activityData) {
+        const sources = Object.keys(activityData);
+        setAvailableSources(sources);
+        
+        // Set first source as default if available
+        if (sources.length > 0) {
+          setFormData(prev => ({ 
+            ...prev, 
+            source: sources[0],
+            unit: activityData[sources[0]].unit || 'kg'
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error loading sources:', error);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!formData.activityType || !formData.source || !formData.amount || !formData.startDate || !formData.endDate) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
     try {
       setLoading(true);
       
       // Get emission factor for calculation
-      const factorData = getEmissionFactor(scope, category.name, formData.source);
-      const calculatedEmissions = calculateEmissions(parseFloat(formData.amount), scope, category.name, formData.source);
+      const factorData = getEmissionFactor(scope, formData.activityType, formData.source);
+      const calculatedEmissions = calculateEmissions(parseFloat(formData.amount), scope, formData.activityType, formData.source);
       
       const emissionData = {
         ...formData,
         scope: parseInt(scope),
-        category: category.name,
-        subcategory: category.selectedSubcategory,
-        activityType: formData.activityType || category.selectedSubcategory,
+        category: formData.activityType, // Use activityType as category
+        subcategory: formData.source,
         amount: parseFloat(formData.amount),
         factor: factorData.factor,
         calculatedEmissions: calculatedEmissions,
+        totalEmissions: calculatedEmissions, // Add totalEmissions field for consistency
         accountingPeriod: {
           start: new Date(formData.startDate),
           end: new Date(formData.endDate)
         },
-        status: 'submitted',
+        status: 'active', // Changed from 'submitted' to 'active'
         user: user?.id,
         userName: user?.name || 'Unknown User'
       };
       
-      // Save to localStorage (in a real app, this would also save to database)
+      // Save to localStorage
       const savedEmission = saveEmission(emissionData);
+      
+      // Log activity for admin panel
+      await logEmissionAction('created', savedEmission.id, `Created emission record: ${formData.activityType} - ${formData.amount} ${formData.unit}`);
+      
+      // Log detailed activity for monitor page
+      await logActivity('emission_added', 'emission', savedEmission.id, `Added emission: ${formData.activityType} (${formData.source}) - ${calculatedEmissions.toFixed(2)} CO₂e`);
       
       // Create notification
       if (user && savedEmission) {
         addEmissionNotification(user, {
           ...savedEmission,
-          category: category.name,
-          activityType: formData.activityType || category.selectedSubcategory
+          category: formData.activityType,
+          activityType: formData.activityType
         });
       }
+      
+      // Trigger monitor page update by dispatching custom event
+      window.dispatchEvent(new CustomEvent('emission-added', { 
+        detail: { 
+          emission: savedEmission,
+          user: user,
+          timestamp: new Date().toISOString()
+        }
+      }));
       
       // Call parent onSubmit if provided
       if (onSubmit) {
@@ -83,24 +164,26 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Get suggested sources based on category
-  const getSuggestedSources = () => {
-    const suggestions = {
-      'Fuel Combustion': ['Diesel', 'Natural Gas', 'Gasoline', 'Coal', 'Fuel Oil'],
-      'Fuel from Generator': ['Diesel', 'HSD', 'Biofuel'],
-      'Mobile Combustion': ['Diesel', 'Petrol', 'Electric'],
-      'Purchased Electricity': ['Grid Electricity', 'Renewable Energy', 'Non-Renewable'],
-      'Business Travel': ['Air Travel', 'Rail', 'Taxi', 'Hotel'],
-      'Employee Commuting': ['Personal Vehicles', 'Public Transport', 'Carpool'],
-      'Waste Generated': ['Organic', 'Packaging', 'Plastic', 'Sludge']
-    };
     
-    return suggestions[category?.name] || [];
+    // Update unit when source changes
+    if (name === 'source') {
+      const scopeKey = `scope${scope}`;
+      const sourceData = emissionFactors[scopeKey]?.[formData.activityType]?.[value];
+      if (sourceData) {
+        setFormData(prev => ({ ...prev, unit: sourceData.unit }));
+      }
+    }
   };
 
-  const suggestedSources = getSuggestedSources();
+  const handleActivityTypeChange = (e) => {
+    const newActivityType = e.target.value;
+    setFormData(prev => ({ 
+      ...prev, 
+      activityType: newActivityType,
+      source: '', // Reset source when activity type changes
+      unit: 'kg' // Reset unit
+    }));
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -109,7 +192,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Add Emission Data</h2>
             <p className="text-sm text-gray-600">
-              {category.name} - {category.selectedSubcategory} (Scope {scope})
+              Scope {scope} - {formData.activityType || 'Select Activity Type'}
             </p>
           </div>
           <button
@@ -122,49 +205,47 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Activity Type Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Activity Type*
               </label>
-              <input
-                type="text"
+              <select
                 name="activityType"
                 value={formData.activityType}
-                onChange={handleChange}
+                onChange={handleActivityTypeChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                placeholder="e.g., Fuel Combustion, Electricity Purchase"
-              />
+              >
+                <option value="">Select Activity Type</option>
+                {availableActivityTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
             </div>
 
+            {/* Source Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Source*
               </label>
-              {suggestedSources.length > 0 ? (
-                <select
-                  name="source"
-                  value={formData.source}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="">Select source</option>
-                  {suggestedSources.map(source => (
-                    <option key={source} value={source}>{source}</option>
-                  ))}
-                  <option value="other">Other (specify in description)</option>
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  name="source"
-                  value={formData.source}
-                  onChange={handleChange}
-                  required
-                  placeholder="e.g., Diesel, Electricity, etc."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              <select
+                name="source"
+                value={formData.source}
+                onChange={handleChange}
+                required
+                disabled={!formData.activityType}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100"
+              >
+                <option value="">Select Source</option>
+                {availableSources.map(source => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </select>
+              {formData.activityType && formData.source && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {emissionFactors[`scope${scope}`]?.[formData.activityType]?.[formData.source]?.description}
+                </p>
               )}
             </div>
 
@@ -196,10 +277,11 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                {units.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
+                <option value={formData.unit}>{formData.unit}</option>
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Unit is automatically set based on source selection
+              </p>
             </div>
 
             <div>
@@ -266,19 +348,20 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
           </div>
 
           {/* Emission Preview */}
-          {formData.amount && formData.source && (
+          {formData.amount && formData.source && formData.activityType && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-emerald-800">
                   Estimated Emissions:
                 </span>
                 <span className="text-lg font-bold text-emerald-900">
-                  {calculateEmissions(parseFloat(formData.amount), scope, category.name, formData.source).toFixed(2)} CO₂e
+                  {calculateEmissions(parseFloat(formData.amount), scope, formData.activityType, formData.source).toFixed(2)} CO₂e
                 </span>
               </div>
-              <p className="text-xs text-emerald-600 mt-1">
-                Based on standard emission factors. Final calculation may vary.
-              </p>
+              <div className="text-xs text-emerald-600 mt-1">
+                <p>Emission Factor: {getEmissionFactor(scope, formData.activityType, formData.source).factor}</p>
+                <p>Based on: {getEmissionFactor(scope, formData.activityType, formData.source).description}</p>
+              </div>
             </div>
           )}
 

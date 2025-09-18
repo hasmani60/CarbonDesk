@@ -1,12 +1,12 @@
-// pages/Dashboard/Dashboard.jsx - Fixed version without undefined references
+// Updated Dashboard.jsx with fixed entry counts and real-time updates
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye } from 'lucide-react';
+import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye, Database } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
 import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/api';
-import { getEmissions, getEmissionsStats } from '../../utils/localStorage';
+import { getEmissions, getEmissionsStats, getTotalEmissions } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
 
@@ -15,14 +15,16 @@ const Dashboard = () => {
   const { notifications } = useNotifications();
   const { logPageView, logDashboardInteraction, getActivityStats } = useActivity();
   const [dashboardData, setDashboardData] = React.useState({
-    scope1: { total: 0, percentage: 0, topCategories: [] },
-    scope2: { total: 0, percentage: 0, topCategories: [] },
-    scope3: { total: 0, percentage: 0, topCategories: [] },
-    totalEmissions: 0
+    scope1: { total: 0, percentage: 0, topCategories: [], count: 0 },
+    scope2: { total: 0, percentage: 0, topCategories: [], count: 0 },
+    scope3: { total: 0, percentage: 0, topCategories: [], count: 0 },
+    totalEmissions: 0,
+    totalEntries: 0
   });
   const [adminData, setAdminData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [userActivityStats, setUserActivityStats] = React.useState(null);
+  const [lastUpdate, setLastUpdate] = React.useState(new Date());
 
   // Colors for each scope's pie chart
   const COLORS = {
@@ -35,6 +37,21 @@ const Dashboard = () => {
     logPageView('Dashboard');
     fetchDashboardData();
     loadUserActivityStats();
+    
+    // Listen for real-time updates when emissions are added
+    const handleEmissionAdded = () => {
+      setTimeout(fetchDashboardData, 500); // Small delay to ensure localStorage is updated
+    };
+    
+    window.addEventListener('emission-added', handleEmissionAdded);
+    
+    // Set up periodic refresh every 5 minutes
+    const refreshInterval = setInterval(fetchDashboardData, 5 * 60 * 1000);
+    
+    return () => {
+      window.removeEventListener('emission-added', handleEmissionAdded);
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   const loadUserActivityStats = () => {
@@ -55,6 +72,7 @@ const Dashboard = () => {
       const stats = getEmissionsStats();
       const processedData = processDashboardData(stats, allEmissions);
       setDashboardData(processedData);
+      setLastUpdate(new Date());
 
       // Load admin data if user is admin (with error handling)
       if (isAdmin(user?.role)) {
@@ -63,7 +81,9 @@ const Dashboard = () => {
           setAdminData(adminDashboard);
         } catch (error) {
           console.warn('Admin dashboard data unavailable:', error.message);
-          // Don't throw error, just log warning
+          // Create fallback admin data from emissions
+          const fallbackAdminData = createFallbackAdminData(allEmissions, stats);
+          setAdminData(fallbackAdminData);
         }
       }
       
@@ -74,41 +94,112 @@ const Dashboard = () => {
     }
   };
 
+  const createFallbackAdminData = (emissions, stats) => {
+    // Create admin data from available emission data
+    const uniqueUsers = new Set(emissions.map(e => e.user)).size;
+    const recentEmissions = emissions.filter(e => {
+      const emissionDate = new Date(e.createdAt);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return emissionDate >= yesterday;
+    });
+
+    return {
+      userStats: {
+        total: Math.max(uniqueUsers, 1),
+        active: Math.max(uniqueUsers, 1),
+        inactive: 0,
+        newToday: recentEmissions.length,
+        newThisWeek: emissions.filter(e => {
+          const emissionDate = new Date(e.createdAt);
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return emissionDate >= weekAgo;
+        }).length
+      },
+      activityStats: {
+        total: emissions.length,
+        today: recentEmissions.length,
+        thisWeek: emissions.filter(e => {
+          const emissionDate = new Date(e.createdAt);
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return emissionDate >= weekAgo;
+        }).length,
+        thisMonth: emissions.length
+      },
+      emissionStats: {
+        total: emissions.length,
+        pending: emissions.filter(e => e.status === 'pending').length,
+        verified: emissions.filter(e => e.status === 'verified' || e.status === 'active').length,
+        rejected: emissions.filter(e => e.status === 'rejected').length,
+        thisWeek: emissions.filter(e => {
+          const emissionDate = new Date(e.createdAt);
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return emissionDate >= weekAgo;
+        }).length
+      },
+      topUsers: [
+        {
+          user: {
+            id: user?.id || 'current_user',
+            name: user?.name || 'Current User',
+            email: user?.email || 'user@example.com',
+            role: user?.role || 'contributor'
+          },
+          activityCount: emissions.length
+        }
+      ],
+      criticalActivities: [],
+      securityAlerts: []
+    };
+  };
+
   const processDashboardData = (stats, emissions) => {
     const totalEmissions = stats.scope1.total + stats.scope2.total + stats.scope3.total;
+    const totalEntries = emissions.length;
     
-    const processScope = (scopeData, scopeTotal) => {
+    const processScope = (scopeData, scopeTotal, scopeNumber) => {
+      // Count entries for this scope
+      const scopeEntries = emissions.filter(e => e.scope === scopeNumber).length;
+      
       const topCategories = Object.entries(scopeData.activities)
         .map(([name, data]) => ({
           name: name.length > 25 ? name.substring(0, 25) + '...' : name,
           fullName: name,
           value: data.total,
-          percentage: scopeTotal > 0 ? (data.total / scopeTotal) * 100 : 0
+          percentage: scopeTotal > 0 ? (data.total / scopeTotal) * 100 : 0,
+          count: data.count
         }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 3);
 
+      // Fill empty slots to ensure we always have 3 categories for display
       while (topCategories.length < 3) {
         topCategories.push({
           name: 'No Data',
           fullName: 'No Data Available',
           value: 0,
-          percentage: 0
+          percentage: 0,
+          count: 0
         });
       }
 
       return {
         total: scopeTotal,
         percentage: totalEmissions > 0 ? (scopeTotal / totalEmissions) * 100 : 0,
-        topCategories
+        topCategories,
+        count: scopeEntries // Add entry count for each scope
       };
     };
 
     return {
-      scope1: processScope(stats.scope1, stats.scope1.total),
-      scope2: processScope(stats.scope2, stats.scope2.total),
-      scope3: processScope(stats.scope3, stats.scope3.total),
-      totalEmissions
+      scope1: processScope(stats.scope1, stats.scope1.total, 1),
+      scope2: processScope(stats.scope2, stats.scope2.total, 2),
+      scope3: processScope(stats.scope3, stats.scope3.total, 3),
+      totalEmissions,
+      totalEntries
     };
   };
 
@@ -129,6 +220,9 @@ const Dashboard = () => {
           </p>
           <p style={{ color: data.color }}>
             Percentage: {data.payload.percentage.toFixed(1)}%
+          </p>
+          <p className="text-gray-600 text-sm">
+            Entries: {data.payload.count}
           </p>
         </div>
       );
@@ -209,15 +303,24 @@ const Dashboard = () => {
             <p className="text-gray-600 mb-2">
               {getRoleDescription(user?.role)}
             </p>
-            {userActivityStats && (
-              <div className="flex items-center space-x-4 text-sm text-gray-600">
-                <span className="flex items-center space-x-1">
-                  <Activity className="w-4 h-4" />
-                  <span>{userActivityStats.today} activities today</span>
-                </span>
-                <span>{userActivityStats.thisWeek} this week</span>
-              </div>
-            )}
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <span className="flex items-center space-x-1">
+                <Database className="w-4 h-4" />
+                <span>{dashboardData.totalEntries} total entries</span>
+              </span>
+              {userActivityStats && (
+                <>
+                  <span className="flex items-center space-x-1">
+                    <Activity className="w-4 h-4" />
+                    <span>{userActivityStats.today} activities today</span>
+                  </span>
+                  <span>{userActivityStats.thisWeek} this week</span>
+                </>
+              )}
+              <span className="text-xs">
+                Last updated: {lastUpdate.toLocaleTimeString()}
+              </span>
+            </div>
           </div>
           <div className="hidden md:flex items-center space-x-4">
             {/* Role Badge */}
@@ -245,7 +348,7 @@ const Dashboard = () => {
                 className="flex items-center space-x-2 px-3 py-2 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50"
               >
                 <Eye className="w-4 h-4" />
-                <span>View Monitor</span>
+                <span>Monitor</span>
               </button>
             )}
             {isAdmin(user?.role) && (
@@ -296,12 +399,81 @@ const Dashboard = () => {
               <p className="text-sm text-gray-600">Pending Reviews</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-purple-600">{adminData.topUsers?.length || 0}</p>
-              <p className="text-sm text-gray-600">Active Contributors</p>
+              <p className="text-2xl font-bold text-purple-600">{adminData.emissionStats?.total || 0}</p>
+              <p className="text-sm text-gray-600">Total Entries</p>
             </div>
           </div>
         </div>
       )}
+
+      {/* Key Metrics Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Entries</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {dashboardData.totalEntries}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Emission records</p>
+            </div>
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <Database className="w-6 h-6 text-gray-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scope 1 Entries</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {dashboardData.scope1.count}
+              </p>
+              <p className="text-xs text-emerald-600 mt-1">{formatNumber(dashboardData.scope1.total)} CO₂e</p>
+            </div>
+            <div className="p-2 bg-emerald-100 rounded-lg">
+              <div className="w-6 h-6 bg-emerald-600 rounded flex items-center justify-center">
+                <span className="text-white text-sm font-bold">1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scope 2 Entries</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {dashboardData.scope2.count}
+              </p>
+              <p className="text-xs text-blue-600 mt-1">{formatNumber(dashboardData.scope2.total)} CO₂e</p>
+            </div>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
+                <span className="text-white text-sm font-bold">2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scope 3 Entries</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {dashboardData.scope3.count}
+              </p>
+              <p className="text-xs text-red-600 mt-1">{formatNumber(dashboardData.scope3.total)} CO₂e</p>
+            </div>
+            <div className="p-2 bg-red-100 rounded-lg">
+              <div className="w-6 h-6 bg-red-600 rounded flex items-center justify-center">
+                <span className="text-white text-sm font-bold">3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Emission Scope Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -316,23 +488,26 @@ const Dashboard = () => {
                 <h3 className="text-lg font-semibold text-gray-900">
                   Scope {scopeNumber}
                 </h3>
-                <div className="flex space-x-2">
-                  {(user?.role === 'admin' || user?.role === 'analyst' || user?.role === 'contributor') && (
-                    <button 
-                      onClick={() => handleQuickAction('add_emission')}
-                      className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
-                    >
-                      Add
-                    </button>
-                  )}
-                  {canViewAllData(user?.role) && (
-                    <button 
-                      onClick={() => handleQuickAction('view_monitor')}
-                      className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
-                    >
-                      View
-                    </button>
-                  )}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">{scopeData.count} entries</span>
+                  <div className="flex space-x-2">
+                    {(user?.role === 'admin' || user?.role === 'analyst' || user?.role === 'contributor') && (
+                      <button 
+                        onClick={() => handleQuickAction('add_emission')}
+                        className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
+                      >
+                        Add
+                      </button>
+                    )}
+                    {canViewAllData(user?.role) && (
+                      <button 
+                        onClick={() => handleQuickAction('view_monitor')}
+                        className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
+                      >
+                        View
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -380,9 +555,14 @@ const Dashboard = () => {
                         {category.name}
                       </span>
                     </div>
-                    <span className="text-gray-600">
-                      {category.percentage.toFixed(1)}%
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-600">
+                        {category.percentage.toFixed(1)}%
+                      </span>
+                      <span className="text-gray-500">
+                        ({category.count})
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -403,65 +583,6 @@ const Dashboard = () => {
             </div>
           );
         })}
-      </div>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Your Total Emissions</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(dashboardData.totalEmissions)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <BarChart3 className="w-6 h-6 text-gray-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Your Scope 1</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(dashboardData.scope1.total)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-emerald-100 rounded-lg">
-              <div className="w-6 h-6 bg-emerald-600 rounded"></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Your Scope 2</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(dashboardData.scope2.total)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <div className="w-6 h-6 bg-blue-600 rounded"></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Your Scope 3</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatNumber(dashboardData.scope3.total)} CO₂e
-              </p>
-            </div>
-            <div className="p-2 bg-red-100 rounded-lg">
-              <div className="w-6 h-6 bg-red-600 rounded"></div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Notifications Section */}
