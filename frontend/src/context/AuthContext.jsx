@@ -1,8 +1,9 @@
+// context/AuthContext.jsx - Fixed with better API response handling
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
-const AuthContext = createContext();
+const AuthContext = createContext({});
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -14,102 +15,142 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState({});
 
+  // Initialize authentication state
   useEffect(() => {
-    const initializeAuth = async () => {
-      const token = localStorage.getItem('token');
-      console.log('AuthContext - Initializing with token:', token ? 'Yes' : 'No'); // Debug log
-      
-      if (token) {
-        try {
-          // Try to verify token and get user data
-          console.log('AuthContext - Verifying token...'); // Debug log
-          const userData = await authAPI.verifyToken();
-          console.log('AuthContext - Token verified, user data:', userData); // Debug log
-          setUser(userData);
-        } catch (error) {
-          // If token verification fails, remove invalid token
-          console.error('AuthContext - Token verification failed:', error);
-          localStorage.removeItem('token');
-          setUser(null);
-          
-          // Don't show error toast on initial load, only if it's a network error
-          if (error.status === 'NETWORK_ERROR') {
-            toast.error('Backend server is not running. Please start the backend server.');
-          }
-        }
-      } else {
-        console.log('AuthContext - No token found'); // Debug log
-      }
-      setLoading(false);
-    };
-
     initializeAuth();
   }, []);
 
-  const login = async (credentials) => {
+  const initializeAuth = async () => {
     try {
-      console.log('AuthContext - Attempting login...'); // Debug log
-      const response = await authAPI.login(credentials);
-      console.log('AuthContext - Login response:', response); // Debug log
-      
-      const { token, user: userData } = response.data || response;
-      
-      if (!token || !userData) {
-        throw new Error('Invalid login response format');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setLoading(false);
+        return;
       }
+
+      console.log('Initializing auth with token:', token ? 'present' : 'missing');
+
+      // Verify token with backend
+      const response = await authAPI.verifyToken();
+      console.log('Token verification response:', response);
       
-      localStorage.setItem('token', token);
-      setUser(userData);
-      
-      console.log('AuthContext - Login successful, user set:', userData); // Debug log
-      toast.success('Login successful!');
-      return response;
+      if (response && (response.success !== false)) {
+        const userData = response.data || response;
+        setUser(userData);
+        setPermissions(userData.permissions || {});
+        setIsAuthenticated(true);
+        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role);
+      } else {
+        // Invalid token
+        console.log('Token verification failed');
+        localStorage.removeItem('token');
+        setUser(null);
+        setIsAuthenticated(false);
+        setPermissions({});
+      }
     } catch (error) {
-      console.error('AuthContext - Login error:', error); // Debug log
-      const message = error.response?.data?.message || error.message || 'Login failed';
-      toast.error(message);
-      throw error;
+      console.error('Auth initialization failed:', error);
+      localStorage.removeItem('token');
+      setUser(null);
+      setIsAuthenticated(false);
+      setPermissions({});
+    } finally {
+      setLoading(false);
     }
   };
 
-  const register = async (userData) => {
+  const login = async (credentials) => {
     try {
-      const response = await authAPI.register(userData);
-      const { token, user: newUser } = response.data || response;
+      setLoading(true);
+      console.log('Login attempt with credentials:', { email: credentials.email });
       
+      const response = await authAPI.login(credentials);
+      console.log('Raw login response:', response);
+      
+      // Handle different response formats
+      let loginData;
+      if (response && response.data) {
+        // Standard format: { success: true, data: { token, user } }
+        loginData = response.data;
+      } else if (response && response.token && response.user) {
+        // Direct format: { token, user }
+        loginData = response;
+      } else if (response) {
+        // Response is the data itself
+        loginData = response;
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+      console.log('Processed login data:', loginData);
+
+      if (!loginData.token || !loginData.user) {
+        throw new Error('Missing token or user data in response');
+      }
+
+      const { token, user: userData } = loginData;
+      
+      // Store token
       localStorage.setItem('token', token);
-      setUser(newUser);
       
-      toast.success('Registration successful!');
-      return response;
+      // Set user state
+      setUser(userData);
+      setPermissions(userData.permissions || {});
+      setIsAuthenticated(true);
+      
+      console.log('Login successful for:', userData.email, 'Role:', userData.role);
+      toast.success(`Welcome back, ${userData.name}!`);
+      
+      return { success: true, user: userData };
     } catch (error) {
-      const message = error.response?.data?.message || 'Registration failed';
+      console.error('Login error in AuthContext:', error);
+      
+      // Extract error message
+      let message = 'Login failed';
+      
+      if (error.response?.data?.message) {
+        message = error.response.data.message;
+      } else if (error.message && error.message !== 'Login failed') {
+        message = error.message;
+      } else if (error.status === 'NETWORK_ERROR') {
+        message = 'Unable to connect to server. Please check if the backend is running.';
+      }
+      
+      console.error('Final error message:', message);
       toast.error(message);
-      throw error;
+      throw new Error(message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      console.log('AuthContext - Logging out...'); // Debug log
+      // Call logout endpoint
       await authAPI.logout();
     } catch (error) {
-      console.error('AuthContext - Logout error:', error);
+      console.error('Logout API call failed:', error);
+      // Continue with logout even if API call fails
     } finally {
+      // Clear local state
       localStorage.removeItem('token');
       setUser(null);
+      setIsAuthenticated(false);
+      setPermissions({});
       toast.success('Logged out successfully');
-      console.log('AuthContext - Logout complete'); // Debug log
     }
   };
 
   const updateProfile = async (profileData) => {
     try {
-      const updatedUser = await authAPI.updateProfile(profileData);
-      setUser(updatedUser.data || updatedUser);
-      toast.success('Profile updated successfully!');
+      const response = await authAPI.updateProfile(profileData);
+      const updatedUser = response.data || response;
+      setUser(updatedUser);
+      toast.success('Profile updated successfully');
       return updatedUser;
     } catch (error) {
       const message = error.response?.data?.message || 'Profile update failed';
@@ -118,17 +159,136 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const value = {
-    user,
-    login,
-    register,
-    logout,
-    updateProfile,
-    loading,
-    isAuthenticated: !!user
+  const changePassword = async (passwordData) => {
+    try {
+      await authAPI.changePassword(passwordData);
+      toast.success('Password changed successfully');
+    } catch (error) {
+      const message = error.response?.data?.message || 'Password change failed';
+      toast.error(message);
+      throw error;
+    }
   };
 
-  console.log('AuthContext - Current state:', { user: !!user, loading, isAuthenticated: !!user }); // Debug log
+  // Permission checking functions
+  const hasPermission = (permission) => {
+    if (!isAuthenticated || !permissions) return false;
+    return permissions[permission] === true;
+  };
+
+  const hasRole = (roles) => {
+    if (!isAuthenticated || !user?.role) return false;
+    const roleArray = Array.isArray(roles) ? roles : [roles];
+    return roleArray.includes(user.role);
+  };
+
+  const canAccess = (resource, action = 'read') => {
+    if (!isAuthenticated) return false;
+    
+    // Admin has access to everything
+    if (user?.role === 'admin') return true;
+    
+    const permissionKey = `${resource}_${action}`;
+    return hasPermission(permissionKey);
+  };
+
+  // Role-based access control helpers
+  const isAdmin = () => hasRole('admin');
+  const isAnalyst = () => hasRole(['admin', 'analyst']);
+  const isContributor = () => hasRole(['admin', 'analyst', 'contributor']);
+  const isViewer = () => hasRole(['admin', 'analyst', 'contributor', 'viewer']);
+
+  // Specific permission helpers
+  const canManageUsers = () => isAdmin();
+  const canCreateUsers = () => isAdmin();
+  const canViewAllUsers = () => hasRole(['admin', 'analyst']);
+  const canCreateEmissions = () => hasRole(['admin', 'analyst', 'contributor']);
+  const canViewAllEmissions = () => hasRole(['admin', 'analyst']);
+  const canVerifyEmissions = () => hasRole(['admin', 'analyst']);
+  const canDeleteEmissions = () => hasRole(['admin', 'analyst']);
+  const canViewAnalytics = () => isViewer(); // All roles can view analytics
+  const canExportData = () => hasRole(['admin', 'analyst']);
+  const canManageSystem = () => isAdmin();
+  const canViewUserActivities = () => isAdmin();
+
+  // Get role display information
+  const getRoleInfo = () => {
+    if (!user?.role) return null;
+    
+    const roleMap = {
+      admin: {
+        label: 'Administrator',
+        description: 'Full system access and user management',
+        color: 'text-red-600',
+        bgColor: 'bg-red-100',
+        permissions: ['All system functions', 'User management', 'System settings']
+      },
+      analyst: {
+        label: 'Analyst',
+        description: 'Data analysis and reporting capabilities',
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-100',
+        permissions: ['Data analysis', 'Emissions verification', 'Report generation']
+      },
+      contributor: {
+        label: 'Contributor',
+        description: 'Data entry and own data management',
+        color: 'text-green-600',
+        bgColor: 'bg-green-100',
+        permissions: ['Data entry', 'View own data', 'Basic analytics']
+      },
+      viewer: {
+        label: 'Viewer',
+        description: 'Read-only access to data',
+        color: 'text-gray-600',
+        bgColor: 'bg-gray-100',
+        permissions: ['View data', 'Basic analytics', 'Read-only access']
+      }
+    };
+
+    return roleMap[user.role] || roleMap.viewer;
+  };
+
+  const value = {
+    // State
+    user,
+    isAuthenticated,
+    loading,
+    permissions,
+    
+    // Actions
+    login,
+    logout,
+    updateProfile,
+    changePassword,
+    
+    // Permission checks
+    hasPermission,
+    hasRole,
+    canAccess,
+    
+    // Role helpers
+    isAdmin,
+    isAnalyst,
+    isContributor,
+    isViewer,
+    
+    // Specific permissions
+    canManageUsers,
+    canCreateUsers,
+    canViewAllUsers,
+    canCreateEmissions,
+    canViewAllEmissions,
+    canVerifyEmissions,
+    canDeleteEmissions,
+    canViewAnalytics,
+    canExportData,
+    canManageSystem,
+    canViewUserActivities,
+    
+    // Role info
+    getRoleInfo
+  };
 
   return (
     <AuthContext.Provider value={value}>

@@ -1,10 +1,10 @@
-// ===== backend/routes/admin.js =====
+// routes/admin.js - Updated without audit logs functionality
 const express = require('express');
 const {
   getAllActivities,
   getUserActivitySummary,
-  getAuditLogs,
   getAdminDashboard
+  // Removed getAuditLogs import
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -13,6 +13,8 @@ const router = express.Router();
 router.get('/dashboard', getAdminDashboard);
 router.get('/activities', getAllActivities);
 router.get('/user-summary', getUserActivitySummary);
-router.get('/audit-logs', getAuditLogs);
+
+// Removed audit-logs route completely
+// router.get('/audit-logs', getAuditLogs); // REMOVED
 
 module.exports = router;

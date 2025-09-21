@@ -1,11 +1,10 @@
-// components/Sidebar/Sidebar.jsx - Enhanced sidebar with role-based menu items
+// components/Sidebar/Sidebar.jsx - Updated without Permissions section
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
   BarChart3, 
   FileText, 
   Monitor, 
-  Users, 
   Settings, 
   LogOut,
   ChevronDown,
@@ -14,16 +13,16 @@ import {
   Activity,
   Eye,
   UserCog,
-  Crown
+  Crown,
+  Users
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useState } from 'react';
-import { canManageUsers, canViewAllData, isAdmin } from '../../services/api';
 
 const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin, isAnalyst, isContributor } = useAuth();
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [isAdminExpanded, setIsAdminExpanded] = useState(false);
 
@@ -47,7 +46,7 @@ const Sidebar = () => {
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'analyst', 'contributor', 'viewer'] }
   ];
 
-  // Admin-only navigation items
+  // Admin-only navigation items - UPDATED: Removed permissions
   const adminNavItems = [
     {
       path: '/admin',
@@ -56,12 +55,12 @@ const Sidebar = () => {
       hasSubmenu: true,
       roles: ['admin'],
       submenu: [
-        { path: '/admin/monitor', label: 'User Monitor', icon: Eye },
-        { path: '/admin/users', label: 'User Management', icon: UserCog },
-        { path: '/admin/system', label: 'System Overview', icon: Activity }
+        { path: '/admin/monitor', label: 'User Activities', icon: Activity },
+        { path: '/admin/users', label: 'User Management', icon: UserCog }
+        // REMOVED: { path: '/admin/system', label: 'System Overview', icon: Activity }
       ]
-    },
-    { path: '/permissions', icon: Users, label: 'Permissions', roles: ['admin', 'analyst'] }
+    }
+    // REMOVED: Permissions section completely
   ];
 
   // Filter navigation items based on user role
@@ -118,7 +117,7 @@ const Sidebar = () => {
       <div className="p-4 border-b">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">L</span>
+            <span className="text-white font-bold text-lg">C</span>
           </div>
           <div className="flex items-center space-x-2">
             <span className="text-lg font-semibold text-gray-900">Carbon Track</span>
@@ -205,9 +204,6 @@ const Sidebar = () => {
                 >
                   <item.icon className="w-5 h-5" />
                   <span>{item.label}</span>
-                  {item.label === 'Permissions' && isAdmin(user?.role) && (
-                    <Crown className="w-3 h-3 text-yellow-500" />
-                  )}
                 </Link>
               )}
             </li>
@@ -215,7 +211,7 @@ const Sidebar = () => {
         </ul>
 
         {/* Admin Quick Actions */}
-        {isAdmin(user?.role) && (
+        {isAdmin() && (
           <div className="mt-8 px-3">
             <div className="border-t pt-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -226,15 +222,15 @@ const Sidebar = () => {
                   to="/admin/monitor"
                   className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
                 >
-                  <Eye className="w-4 h-4" />
-                  <span>Monitor Users</span>
+                  <Activity className="w-4 h-4" />
+                  <span>User Activities</span>
                 </Link>
                 <Link
                   to="/admin/users"
                   className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
                 >
                   <UserCog className="w-4 h-4" />
-                  <span>Manage Users</span>
+                  <span>Add User</span>
                 </Link>
               </div>
             </div>

@@ -1,4 +1,4 @@
-// services/api.js - Enhanced API service with admin and multi-user support
+// services/api.js - Updated API service without audit logs
 import axios from 'axios';
 
 // Base API configuration
@@ -20,7 +20,7 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('API Request:', config.method?.toUpperCase(), config.url); // Debug log
+    console.log('API Request:', config.method?.toUpperCase(), config.url);
     return config;
   },
   (error) => Promise.reject(error)
@@ -29,19 +29,17 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('API Response:', response.status, response.data); // Debug log
+    console.log('API Response:', response.status, response.data);
     
     // For successful responses, return the appropriate data
     if (response.data?.success !== false) {
-      // If the response has a data property, return it, otherwise return the whole response data
       return response.data?.data ? response.data.data : response.data;
     } else {
-      // If success is explicitly false, treat as error
       return Promise.reject(new Error(response.data.message || 'Request failed'));
     }
   },
   (error) => {
-    console.error('API Error:', error.response?.status, error.response?.data || error.message); // Debug log
+    console.error('API Error:', error.response?.status, error.response?.data || error.message);
     
     // Handle network errors gracefully
     if (!error.response) {
@@ -83,28 +81,27 @@ export const authAPI = {
   changePassword: (passwordData) => apiClient.patch('/auth/change-password', passwordData)
 };
 
-// Admin API (Admin only endpoints)
+// Admin API (Admin only endpoints) - UPDATED: Removed audit logs
 export const adminAPI = {
   // Dashboard & Overview
   getDashboard: () => apiClient.get('/admin/dashboard'),
   getSystemStats: () => apiClient.get('/admin/system-stats'),
   
-  // User Activity Monitoring
+  // User Activity Monitoring (NO MORE AUDIT LOGS)
   getAllActivities: (params) => apiClient.get('/admin/activities', { params }),
   getUserSummary: (params) => apiClient.get('/admin/user-summary', { params }),
-  getAuditLogs: (params) => apiClient.get('/admin/audit-logs', { params }),
-  getLoginHistory: (params) => apiClient.get('/admin/login-history', { params }),
-  getSecurityAlerts: () => apiClient.get('/admin/security-alerts'),
+  
+  // REMOVED: getAuditLogs function completely
   
   // Export Functions
-  exportLogs: (format, filters) => apiClient.get('/admin/export-logs', { 
+  exportActivities: (format, filters) => apiClient.get('/admin/export-activities', { 
     params: { format, ...filters },
     responseType: 'blob'
   }),
   
   // User Management (through users API with admin privileges)
   getAllUsers: (params) => apiClient.get('/users', { params }),
-  createUser: (userData) => apiClient.post('/users', userData),
+  createUser: (userData) => apiClient.post('/users', userData), // MAIN ADD USER FUNCTIONALITY
   updateUserRole: (userId, role) => apiClient.patch(`/users/${userId}/role`, { role }),
   updateUserStatus: (userId, status) => apiClient.patch(`/users/${userId}/status`, { status }),
   deleteUser: (userId) => apiClient.delete(`/users/${userId}`),
@@ -176,7 +173,7 @@ export const monitorAPI = {
 export const usersAPI = {
   getAll: (params) => apiClient.get('/users', { params }),
   getById: (id) => apiClient.get(`/users/${id}`),
-  create: (userData) => apiClient.post('/users', userData),
+  create: (userData) => apiClient.post('/users', userData), // ADD USER FUNCTIONALITY
   update: (id, userData) => apiClient.patch(`/users/${id}`, userData),
   delete: (id) => apiClient.delete(`/users/${id}`),
   updateRole: (id, role) => apiClient.patch(`/users/${id}/role`, { role }),
@@ -261,18 +258,30 @@ export const activityAPI = {
   getRecentActivities: (params) => apiClient.get('/activity/recent', { params })
 };
 
-// Utility functions for role checking
+// ENHANCED RBAC Utility functions
 export const hasRole = (userRole, requiredRoles) => {
   if (!userRole || !requiredRoles) return false;
   const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
   return roles.includes(userRole);
 };
 
+// Role checking functions
 export const isAdmin = (userRole) => hasRole(userRole, 'admin');
-export const canManageUsers = (userRole) => hasRole(userRole, ['admin', 'analyst']);
+export const isAnalyst = (userRole) => hasRole(userRole, ['admin', 'analyst']);
+export const isContributor = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor']);
+export const isViewer = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor', 'viewer']);
+
+// Specific permission functions
+export const canManageUsers = (userRole) => isAdmin(userRole);
+export const canCreateUsers = (userRole) => isAdmin(userRole);
+export const canViewAllUsers = (userRole) => hasRole(userRole, ['admin', 'analyst']);
 export const canViewAllData = (userRole) => hasRole(userRole, ['admin', 'analyst']);
 export const canCreateEmissions = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor']);
+export const canVerifyEmissions = (userRole) => hasRole(userRole, ['admin', 'analyst']);
+export const canDeleteEmissions = (userRole) => hasRole(userRole, ['admin', 'analyst']);
 export const canViewData = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor', 'viewer']);
+export const canExportData = (userRole) => hasRole(userRole, ['admin', 'analyst']);
+export const canManageSystem = (userRole) => isAdmin(userRole);
 
 // File upload utility
 export const uploadFile = async (file, uploadPath = '/upload') => {
@@ -291,13 +300,6 @@ export const bulkOperation = async (endpoint, operations) => {
   return apiClient.post(`/bulk/${endpoint}`, { operations });
 };
 
-// Real-time updates utility (if WebSocket is implemented)
-export const subscribeToUpdates = (userId, callback) => {
-  // This would connect to WebSocket for real-time updates
-  // Implementation depends on whether you add Socket.io
-  console.log('WebSocket subscription for user:', userId);
-};
-
 export default {
   authAPI,
   adminAPI,
@@ -314,8 +316,17 @@ export default {
   activityAPI,
   hasRole,
   isAdmin,
+  isAnalyst,
+  isContributor,
+  isViewer,
   canManageUsers,
+  canCreateUsers,
+  canViewAllUsers,
   canViewAllData,
   canCreateEmissions,
-  canViewData
+  canVerifyEmissions,
+  canDeleteEmissions,
+  canViewData,
+  canExportData,
+  canManageSystem
 };

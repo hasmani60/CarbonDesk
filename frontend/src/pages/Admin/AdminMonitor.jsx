@@ -1,18 +1,15 @@
-// Enhanced AdminMonitor.jsx with real user activity tracking and improved data handling
+// pages/Admin/AdminMonitor.jsx - Updated without Audit Logs tab
 import { useState, useEffect } from 'react';
 import { 
   Users, 
   Activity, 
   Eye, 
-  Shield, 
-  AlertTriangle, 
   Search, 
   Filter,
   Download,
   RefreshCw,
   Calendar,
   Clock,
-  Globe,
   Database,
   TrendingUp,
   User
@@ -25,7 +22,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
 
 const AdminMonitor = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { logActivity, getActivityStats, getRecentActivities } = useActivity();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
@@ -33,14 +30,12 @@ const AdminMonitor = () => {
   const [adminData, setAdminData] = useState({
     dashboard: null,
     activities: [],
-    auditLogs: [],
     userSummary: null
   });
   const [filters, setFilters] = useState({
     timeframe: '7days',
     userId: 'all',
-    action: 'all',
-    severity: 'all'
+    action: 'all'
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [pagination, setPagination] = useState({
@@ -50,15 +45,15 @@ const AdminMonitor = () => {
     itemsPerPage: 20
   });
 
+  // UPDATED: Removed audit tab
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Eye, description: 'System overview and key metrics' },
     { id: 'activities', label: 'User Activities', icon: Activity, description: 'All user actions and activities' },
-    { id: 'audit', label: 'Audit Logs', icon: Shield, description: 'Security and compliance logs' },
     { id: 'users', label: 'User Summary', icon: Users, description: 'User activity summary and statistics' }
   ];
 
   useEffect(() => {
-    if (user?.role !== 'admin') {
+    if (!isAdmin()) {
       toast.error('Admin access required');
       return;
     }
@@ -67,7 +62,7 @@ const AdminMonitor = () => {
     
     // Listen for real-time updates
     const handleEmissionAdded = () => {
-      setTimeout(loadData, 500); // Reload admin data when new emissions are added
+      setTimeout(loadData, 500);
     };
     
     window.addEventListener('emission-added', handleEmissionAdded);
@@ -82,13 +77,13 @@ const AdminMonitor = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (isAdmin()) {
       loadData();
     }
   }, [activeTab, filters, pagination.currentPage, searchQuery]);
 
   const loadData = async () => {
-    if (user?.role !== 'admin') return;
+    if (!isAdmin()) return;
 
     try {
       setLoading(true);
@@ -99,9 +94,6 @@ const AdminMonitor = () => {
           break;
         case 'activities':
           await loadActivities();
-          break;
-        case 'audit':
-          await loadAuditLogs();
           break;
         case 'users':
           await loadUserSummary();
@@ -119,7 +111,6 @@ const AdminMonitor = () => {
 
   const loadDashboard = async () => {
     try {
-      // Try to get admin data from API first
       let dashboardData;
       try {
         dashboardData = await adminAPI.getDashboard();
@@ -140,7 +131,6 @@ const AdminMonitor = () => {
     const userActivityStats = getActivityStats();
     const recentActivities = getRecentActivities(50);
     
-    // Generate unique users from emissions and activities
     const uniqueUsers = new Set();
     emissions.forEach(e => {
       if (e.user) uniqueUsers.add(e.user);
@@ -155,15 +145,12 @@ const AdminMonitor = () => {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
-    // Calculate activity statistics
     const todayActivities = recentActivities.filter(a => new Date(a.timestamp || a.createdAt) >= today);
     const weekActivities = recentActivities.filter(a => new Date(a.timestamp || a.createdAt) >= lastWeek);
     
-    // Calculate emission statistics
     const todayEmissions = emissions.filter(e => new Date(e.createdAt) >= today);
     const weekEmissions = emissions.filter(e => new Date(e.createdAt) >= lastWeek);
     
-    // Generate top users based on activity
     const userActivityCounts = {};
     [...recentActivities, ...emissions].forEach(item => {
       const userId = item.user?.id || item.user || item.userName || 'unknown';
@@ -187,9 +174,8 @@ const AdminMonitor = () => {
       .sort((a, b) => b.activityCount - a.activityCount)
       .slice(0, 5);
     
-    // Generate critical activities (high-impact emissions or admin actions)
     const criticalActivities = emissions
-      .filter(e => e.calculatedEmissions > 1000 || e.scope === 1) // High emissions or Scope 1
+      .filter(e => e.calculatedEmissions > 1000 || e.scope === 1)
       .slice(0, 10)
       .map(e => ({
         _id: e.id,
@@ -239,7 +225,7 @@ const AdminMonitor = () => {
 
   const loadActivities = async () => {
     try {
-      // Get user activities from localStorage
+      // Get user activities from localStorage and API
       const localActivities = getRecentActivities(200);
       const emissions = getEmissions();
       
@@ -368,23 +354,6 @@ const AdminMonitor = () => {
       
       return true;
     });
-  };
-
-  const loadAuditLogs = async () => {
-    // For audit logs, use the same data as activities but focus on security-relevant events
-    await loadActivities();
-    
-    // Filter activities to show only audit-relevant items
-    const auditLogs = adminData.activities.map(activity => ({
-      ...activity,
-      severity: classifyLogSeverity(activity.action),
-      metadata: {
-        browser: extractBrowser(activity.userAgent),
-        os: extractOS(activity.userAgent)
-      }
-    }));
-    
-    setAdminData(prev => ({ ...prev, auditLogs }));
   };
 
   const loadUserSummary = async () => {
@@ -578,9 +547,10 @@ const AdminMonitor = () => {
       'page_view': 'Page View',
       'form_submission': 'Form Submission',
       'data_export': 'Data Export',
-      'admin_viewed_all_users': 'Admin: Viewed All Users',
-      'admin_user_role_changed': 'Admin: Changed User Role',
-      'admin_user_status_changed': 'Admin: Changed User Status',
+      'admin_created_user': 'Admin: Created User',
+      'admin_updated_user_role': 'Admin: Changed User Role',
+      'admin_updated_user_status': 'Admin: Changed User Status',
+      'admin_deleted_user': 'Admin: Deleted User',
       'password_change': 'Password Changed',
       'profile_update': 'Profile Updated'
     };
@@ -595,45 +565,6 @@ const AdminMonitor = () => {
     if (action.includes('admin')) return 'bg-purple-100 text-purple-800';
     if (action.includes('view') || action.includes('page')) return 'bg-gray-100 text-gray-800';
     return 'bg-yellow-100 text-yellow-800';
-  };
-
-  const getSeverityBadgeColor = (severity) => {
-    switch (severity) {
-      case 'high': return 'bg-red-100 text-red-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const classifyLogSeverity = (action) => {
-    const highSeverity = ['deleted_emission', 'admin_user_role_changed', 'admin_user_status_changed'];
-    const mediumSeverity = ['created_emission', 'updated_emission', 'verified_emission', 'password_change'];
-    const lowSeverity = ['login', 'logout', 'profile_update', 'viewed_', 'page_view'];
-    
-    if (highSeverity.some(h => action.includes(h))) return 'high';
-    if (mediumSeverity.some(m => action.includes(m))) return 'medium';
-    if (lowSeverity.some(l => action.includes(l))) return 'low';
-    return 'medium';
-  };
-
-  const extractBrowser = (userAgent) => {
-    if (!userAgent) return 'Unknown';
-    if (userAgent.includes('Chrome')) return 'Chrome';
-    if (userAgent.includes('Firefox')) return 'Firefox';
-    if (userAgent.includes('Safari')) return 'Safari';
-    if (userAgent.includes('Edge')) return 'Edge';
-    return 'Other';
-  };
-
-  const extractOS = (userAgent) => {
-    if (!userAgent) return 'Unknown';
-    if (userAgent.includes('Windows')) return 'Windows';
-    if (userAgent.includes('Mac')) return 'MacOS';
-    if (userAgent.includes('Linux')) return 'Linux';
-    if (userAgent.includes('Android')) return 'Android';
-    if (userAgent.includes('iOS')) return 'iOS';
-    return 'Other';
   };
 
   const renderDashboard = () => {
@@ -686,13 +617,13 @@ const AdminMonitor = () => {
 
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <TrendingUp className="w-6 h-6 text-purple-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Critical Activities</p>
                 <p className="text-2xl font-bold text-gray-900">{criticalActivities.length}</p>
-                <p className="text-sm text-red-600">High-impact events</p>
+                <p className="text-sm text-purple-600">High-impact events</p>
               </div>
             </div>
           </div>
@@ -739,14 +670,14 @@ const AdminMonitor = () => {
                 {criticalActivities.slice(0, 5).map((activity, index) => (
                   <div key={index} className="flex items-start space-x-3">
                     <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                      <Activity className="w-4 h-4 text-red-600" />
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{activity.actionDisplay}</p>
                       <p className="text-xs text-gray-500">{activity.user?.name} • {formatTimestamp(activity.createdAt)}</p>
                       <p className="text-xs text-gray-600 mt-1">{activity.details}</p>
                     </div>
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getSeverityBadgeColor(activity.severity)}`}>
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
                       {activity.severity}
                     </span>
                   </div>
@@ -777,9 +708,9 @@ const AdminMonitor = () => {
               <p className="text-sm text-blue-700">Healthy & Backed Up</p>
             </div>
             <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <Shield className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-              <p className="font-semibold text-purple-900">Security Status</p>
-              <p className="text-sm text-purple-700">Protected & Monitored</p>
+              <Activity className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+              <p className="font-semibold text-purple-900">User Activities</p>
+              <p className="text-sm text-purple-700">Monitored & Logged</p>
             </div>
           </div>
         </div>
@@ -1078,7 +1009,7 @@ const AdminMonitor = () => {
     );
   };
 
-  if (user?.role !== 'admin') {
+  if (!isAdmin()) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -1095,8 +1026,8 @@ const AdminMonitor = () => {
       <PageHeader 
         title="Admin Monitor"
         breadcrumb={[
-          { label: 'App', href: '/' },
-          { label: 'Admin Monitor' }
+          { label: 'Admin', href: '/admin' },
+          { label: 'Monitor' }
         ]}
         action={
           <div className="flex items-center space-x-2">
@@ -1111,7 +1042,7 @@ const AdminMonitor = () => {
         }
       />
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation - UPDATED: Removed audit tab */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="border-b">
           <nav className="flex space-x-8 px-6">
@@ -1141,7 +1072,6 @@ const AdminMonitor = () => {
             <>
               {activeTab === 'dashboard' && renderDashboard()}
               {activeTab === 'activities' && renderActivities()}
-              {activeTab === 'audit' && renderActivities()} {/* Audit logs use same structure as activities */}
               {activeTab === 'users' && renderUserSummary()}
             </>
           )}

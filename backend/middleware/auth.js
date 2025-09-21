@@ -1,6 +1,5 @@
-// middleware/auth.js - Enhanced authentication with role-based access control
+// middleware/auth.js - Fixed authentication middleware
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
 
 // Demo users for fallback when database is not available
 const demoUsers = {
@@ -11,12 +10,36 @@ const demoUsers = {
     role: 'admin',
     status: 'active'
   },
-  'demo_user_id': {
-    _id: 'demo_user_id',
-    name: 'Demo User',
-    email: 'user@example.com',
+  'demo_analyst_id': {
+    _id: 'demo_analyst_id',
+    name: 'Demo Analyst',
+    email: 'analyst@example.com',
+    role: 'analyst',
+    status: 'active'
+  },
+  'demo_contributor_id': {
+    _id: 'demo_contributor_id',
+    name: 'Demo Contributor',
+    email: 'contributor@example.com',
     role: 'contributor',
     status: 'active'
+  },
+  'demo_viewer_id': {
+    _id: 'demo_viewer_id',
+    name: 'Demo Viewer',
+    email: 'viewer@example.com',
+    role: 'viewer',
+    status: 'active'
+  }
+};
+
+// Helper function to check if MongoDB is connected
+const isMongoConnected = () => {
+  try {
+    const mongoose = require('mongoose');
+    return mongoose.connection && mongoose.connection.readyState === 1;
+  } catch (error) {
+    return false;
   }
 };
 
@@ -25,7 +48,7 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    console.log('Auth middleware - Token received:', token ? 'Yes' : 'No'); // Debug log
+    console.log('Auth middleware - Token received:', token ? 'Yes' : 'No');
 
     if (!token) {
       return res.status(401).json({
@@ -36,7 +59,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Verify the JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    console.log('Auth middleware - Token decoded:', decoded); // Debug log
+    console.log('Auth middleware - Token decoded:', decoded);
 
     if (!decoded || !decoded.id) {
       return res.status(401).json({
@@ -48,8 +71,11 @@ const authenticateToken = async (req, res, next) => {
     // Try to get user from database first
     let user;
     try {
-      user = await User.findById(decoded.id);
-      console.log('Auth middleware - Database user found:', !!user); // Debug log
+      if (isMongoConnected()) {
+        const { User } = require('../models');
+        user = await User.findById(decoded.id);
+        console.log('Auth middleware - Database user found:', !!user);
+      }
     } catch (dbError) {
       console.log('Auth middleware - Database not available, using demo users');
     }
@@ -69,25 +95,30 @@ const authenticateToken = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        status: user.status
+        status: user.status,
+        permissions: user.permissions || {}
       };
       
-      console.log('Auth middleware - Database user set:', req.user); // Debug log
+      console.log('Auth middleware - Database user set:', req.user);
       return next();
     }
 
     // Fallback to demo users if database not available
     const demoUser = demoUsers[decoded.id];
     if (demoUser) {
+      const { getRolePermissions } = require('../models');
+      const permissions = getRolePermissions ? getRolePermissions(demoUser.role) : {};
+      
       req.user = {
         id: demoUser._id,
         name: demoUser.name,
         email: demoUser.email,
         role: demoUser.role,
-        status: demoUser.status
+        status: demoUser.status,
+        permissions: permissions
       };
       
-      console.log('Auth middleware - Demo user set:', req.user); // Debug log
+      console.log('Auth middleware - Demo user set:', req.user);
       return next();
     }
 
@@ -98,7 +129,7 @@ const authenticateToken = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.error('Auth middleware error:', error.message); // Debug log
+    console.error('Auth middleware error:', error.message);
     
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
@@ -159,6 +190,7 @@ const requireAdmin = (req, res, next) => {
     });
   }
 
+  console.log('Auth middleware - Admin access granted for:', req.user.email);
   next();
 };
 

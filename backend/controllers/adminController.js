@@ -1,4 +1,4 @@
-// controllers/adminController.js - Admin monitoring and user management with MongoDB fallback
+// controllers/adminController.js - Updated without Audit Logs functionality
 const mongoose = require('mongoose');
 
 // Helper function to check if MongoDB is connected
@@ -25,7 +25,11 @@ const logAdminActivity = async (adminId, action, resourceType, resourceId, detai
       resourceId,
       details,
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        browser: extractBrowser(req.get('User-Agent')),
+        os: extractOS(req.get('User-Agent'))
+      }
     });
   } catch (error) {
     console.error('Failed to log admin activity:', error);
@@ -78,6 +82,25 @@ const getAllActivities = async (req, res) => {
           userAgent: 'Mozilla/5.0',
           createdAt: new Date(Date.now() - 3600000),
           timestamp: new Date(Date.now() - 3600000).toISOString()
+        },
+        {
+          _id: 'demo3',
+          user: {
+            id: 'demo_admin',
+            name: 'Demo Admin',
+            email: 'demo@example.com',
+            role: 'admin',
+            avatar: 'DA'
+          },
+          action: 'admin_created_user',
+          actionDisplay: 'Admin: Created User',
+          resourceType: 'user',
+          resourceId: 'new_user_id',
+          details: 'Created new user: John Smith with role: contributor',
+          ipAddress: '127.0.0.1',
+          userAgent: 'Mozilla/5.0',
+          createdAt: new Date(Date.now() - 7200000),
+          timestamp: new Date(Date.now() - 7200000).toISOString()
         }
       ];
 
@@ -87,13 +110,13 @@ const getAllActivities = async (req, res) => {
         pagination: {
           currentPage: 1,
           totalPages: 1,
-          totalItems: 2,
+          totalItems: 3,
           itemsPerPage: 20
         }
       });
     }
 
-    // Original MongoDB logic
+    // Original MongoDB logic for user activities
     const { Activity, User } = require('../models');
     const {
       page = 1,
@@ -164,13 +187,14 @@ const getAllActivities = async (req, res) => {
       ipAddress: activity.ipAddress,
       userAgent: activity.userAgent,
       createdAt: activity.createdAt,
-      timestamp: activity.createdAt.toISOString()
+      timestamp: activity.createdAt.toISOString(),
+      metadata: activity.metadata
     }));
 
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
-      'viewed_all_activities',
+      'viewed_user_activities',
       'activity',
       null,
       `Viewed ${activities.length} user activities`,
@@ -219,14 +243,26 @@ const getUserActivitySummary = async (req, res) => {
               totalActivities: 15,
               lastActivity: new Date(),
               uniqueActions: 5
+            },
+            {
+              userId: 'demo_contributor',
+              user: {
+                id: 'demo_contributor',
+                name: 'Demo Contributor',
+                email: 'contributor@example.com',
+                role: 'contributor'
+              },
+              totalActivities: 8,
+              lastActivity: new Date(Date.now() - 3600000),
+              uniqueActions: 3
             }
           ],
           emissionStats: [],
           systemStats: {
-            totalUsers: 2,
+            totalUsers: 4,
             totalEmissions: 10,
-            totalActivities: 25,
-            recentActivities: 5
+            totalActivities: 23,
+            recentActivities: 8
           },
           timeframe: req.query.timeframe || '7days'
         }
@@ -350,151 +386,6 @@ const getUserActivitySummary = async (req, res) => {
   }
 };
 
-// @desc    Get audit logs (Admin only)
-// @route   GET /api/admin/audit-logs
-// @access  Private (Admin)
-const getAuditLogs = async (req, res) => {
-  try {
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      // Return demo audit logs
-      const demoLogs = [
-        {
-          _id: 'log1',
-          timestamp: new Date(),
-          user: {
-            id: 'demo_admin',
-            name: 'Demo Admin',
-            email: 'demo@example.com',
-            role: 'admin'
-          },
-          action: 'admin_viewed_audit_logs',
-          actionDisplay: 'Admin: Viewed Audit Logs',
-          severity: 'low',
-          resourceType: 'activity',
-          resourceId: null,
-          details: 'Viewed audit log entries',
-          ipAddress: '127.0.0.1',
-          userAgent: 'Mozilla/5.0',
-          metadata: {
-            browser: 'Chrome',
-            os: 'Windows'
-          }
-        }
-      ];
-
-      return res.json({
-        success: true,
-        data: demoLogs,
-        pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          totalItems: 1,
-          itemsPerPage: 50
-        }
-      });
-    }
-
-    // Original MongoDB logic
-    const { Activity } = require('../models');
-    const {
-      page = 1,
-      limit = 50,
-      userId,
-      action,
-      severity = 'all',
-      startDate,
-      endDate
-    } = req.query;
-
-    let query = {};
-
-    // Filter by user
-    if (userId && userId !== 'all') {
-      query.user = userId;
-    }
-
-    // Filter by action type
-    if (action && action !== 'all') {
-      if (action === 'security') {
-        query.action = { $in: ['login', 'logout', 'password_change', 'failed_login'] };
-      } else if (action === 'emissions') {
-        query.action = { $in: ['created_emission', 'updated_emission', 'deleted_emission', 'verified_emission'] };
-      } else if (action === 'admin') {
-        query.action = { $regex: '^admin_' };
-      } else {
-        query.action = new RegExp(action, 'i');
-      }
-    }
-
-    // Filter by date range
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
-    }
-
-    const logs = await Activity.find(query)
-      .populate('user', 'name email role')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await Activity.countDocuments(query);
-
-    // Transform logs with severity classification
-    const transformedLogs = logs.map(log => ({
-      _id: log._id,
-      timestamp: log.createdAt,
-      user: {
-        id: log.user?._id,
-        name: log.user?.name || 'System',
-        email: log.user?.email,
-        role: log.user?.role
-      },
-      action: log.action,
-      actionDisplay: formatActionDisplay(log.action),
-      severity: classifyLogSeverity(log.action),
-      resourceType: log.resourceType,
-      resourceId: log.resourceId,
-      details: log.details,
-      ipAddress: log.ipAddress,
-      userAgent: log.userAgent,
-      metadata: {
-        browser: extractBrowser(log.userAgent),
-        os: extractOS(log.userAgent)
-      }
-    }));
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_audit_logs',
-      'activity',
-      null,
-      `Viewed ${logs.length} audit log entries`,
-      req
-    );
-
-    res.json({
-      success: true,
-      data: transformedLogs,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
-        itemsPerPage: parseInt(limit)
-      }
-    });
-  } catch (error) {
-    console.error('Get audit logs error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
 // @desc    Get system dashboard data (Admin only)
 // @route   GET /api/admin/dashboard
 // @access  Private (Admin)
@@ -505,9 +396,9 @@ const getAdminDashboard = async (req, res) => {
       // Return demo dashboard data
       const demoDashboard = {
         userStats: {
-          total: 5,
+          total: 4,
           active: 4,
-          inactive: 1,
+          inactive: 0,
           newToday: 0,
           newThisWeek: 1
         },
@@ -544,7 +435,24 @@ const getAdminDashboard = async (req, res) => {
             activityCount: 18
           }
         ],
-        criticalActivities: [],
+        criticalActivities: [
+          {
+            _id: 'critical1',
+            user: {
+              name: 'Demo User',
+              email: 'user@example.com',
+              role: 'contributor'
+            },
+            action: 'created_emission',
+            actionDisplay: 'Created High Emission',
+            resourceType: 'emission',
+            resourceId: 'emission1',
+            details: 'Created high-impact emission record: 1500 CO₂e',
+            createdAt: new Date(),
+            severity: 'high',
+            ipAddress: '127.0.0.1'
+          }
+        ],
         securityAlerts: [],
         lastUpdated: new Date()
       };
@@ -616,10 +524,10 @@ const getAdminDashboard = async (req, res) => {
       }
     ]);
 
-    // Recent critical activities
+    // Recent critical activities (high-impact actions)
     const criticalActivities = await Activity.find({
       action: { 
-        $in: ['deleted_emission', 'admin_user_role_changed', 'admin_user_status_changed', 'failed_login'] 
+        $in: ['deleted_emission', 'admin_created_user', 'admin_updated_user_role', 'admin_deleted_user'] 
       },
       createdAt: { $gte: last24Hours }
     })
@@ -627,7 +535,7 @@ const getAdminDashboard = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
-    // Security alerts
+    // Security alerts (failed logins, suspicious activities)
     const securityAlerts = await Activity.aggregate([
       {
         $match: {
@@ -669,7 +577,7 @@ const getAdminDashboard = async (req, res) => {
         topUsers,
         criticalActivities: criticalActivities.map(activity => ({
           ...activity.toObject(),
-          severity: classifyLogSeverity(activity.action)
+          severity: classifyActivitySeverity(activity.action)
         })),
         securityAlerts,
         lastUpdated: now
@@ -693,19 +601,25 @@ const formatActionDisplay = (action) => {
     'updated_emission': 'Updated Emission',
     'deleted_emission': 'Deleted Emission',
     'verified_emission': 'Verified Emission',
-    'admin_viewed_all_users': 'Admin: Viewed All Users',
-    'admin_user_role_changed': 'Admin: Changed User Role',
-    'admin_user_status_changed': 'Admin: Changed User Status',
+    'admin_created_user': 'Admin: Created User',
+    'admin_updated_user_role': 'Admin: Changed User Role',
+    'admin_updated_user_status': 'Admin: Changed User Status',
+    'admin_deleted_user': 'Admin: Deleted User',
+    'admin_viewed_user_activities': 'Admin: Viewed User Activities',
     'password_change': 'Password Changed',
-    'profile_update': 'Profile Updated'
+    'profile_update': 'Profile Updated',
+    'user_registered': 'User Registered',
+    'viewed_dashboard': 'Viewed Dashboard',
+    'viewed_analytics': 'Viewed Analytics',
+    'viewed_monitor': 'Viewed Monitor'
   };
   
   return actionMap[action] || action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
-const classifyLogSeverity = (action) => {
-  const highSeverity = ['deleted_emission', 'admin_user_role_changed', 'admin_user_status_changed'];
-  const mediumSeverity = ['created_emission', 'updated_emission', 'verified_emission', 'password_change'];
+const classifyActivitySeverity = (action) => {
+  const highSeverity = ['deleted_emission', 'admin_deleted_user', 'admin_updated_user_role'];
+  const mediumSeverity = ['created_emission', 'updated_emission', 'admin_created_user', 'password_change'];
   const lowSeverity = ['login', 'logout', 'profile_update', 'viewed_'];
   
   if (highSeverity.some(h => action.includes(h))) return 'high';
@@ -736,6 +650,6 @@ const extractOS = (userAgent) => {
 module.exports = {
   getAllActivities,
   getUserActivitySummary,
-  getAuditLogs,
   getAdminDashboard
+  // Note: Removed getAuditLogs function completely
 };

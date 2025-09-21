@@ -1,4 +1,4 @@
-// App.jsx - Updated with multi-user support and activity logging
+// App.jsx - Updated without Permissions section
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
@@ -17,11 +17,13 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import Input from './pages/Input/Input';
 import Monitor from './pages/Monitor/Monitor';
 import Analytics from './pages/Analytics/Analytics';
-import Permissions from './pages/Permissions/Permissions';
 import Settings from './pages/Settings/Settings';
 
 // Admin pages
 import AdminMonitor from './pages/Admin/AdminMonitor';
+import UserManagement from './pages/Admin/UserManagement';
+
+// REMOVED: import Permissions from './pages/Permissions/Permissions';
 
 import './index.css';
 
@@ -53,17 +55,17 @@ function App() {
                   <Route path="input" element={<Input />} />
                   <Route path="monitor" element={<Monitor />} />
                   <Route path="analytics" element={<Analytics />} />
-                  <Route path="permissions" element={<Permissions />} />
                   <Route path="settings" element={<Settings />} />
                   
-                  {/* Admin Routes */}
+                  {/* Admin Routes - UPDATED: Removed permissions route */}
                   <Route path="admin/*" element={
                     <AdminRoute>
                       <Routes>
                         <Route index element={<Navigate to="/admin/monitor" replace />} />
                         <Route path="monitor" element={<AdminMonitor />} />
-                        <Route path="users" element={<Permissions />} />
+                        <Route path="users" element={<UserManagement />} />
                         <Route path="system" element={<AdminMonitor />} />
+                        {/* REMOVED: <Route path="permissions" element={<Permissions />} /> */}
                       </Routes>
                     </AdminRoute>
                   } />

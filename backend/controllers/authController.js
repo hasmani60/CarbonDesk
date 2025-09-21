@@ -1,18 +1,24 @@
-// controllers/authController.js - Updated for multi-user support
+// controllers/authController.js - Enhanced with proper RBAC and security
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { User, Activity } = require('../models');
 
-// Generate JWT Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'your-secret-key', {
-    expiresIn: '30d'
-  });
+// Generate JWT Token with role information
+const generateToken = (user) => {
+  return jwt.sign(
+    { 
+      id: user._id,
+      role: user.role,
+      permissions: user.permissions
+    }, 
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: '30d' }
+  );
 };
 
-// @desc    Register user
+// @desc    Register user (Admin only for creating users)
 // @route   POST /api/auth/register
-// @access  Public
+// @access  Private (Admin only)
 const register = async (req, res) => {
   try {
     const { name, email, password, role = 'contributor' } = req.body;
@@ -25,21 +31,21 @@ const register = async (req, res) => {
       });
     }
 
+    // Validate role
+    const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role specified. Must be one of: admin, analyst, contributor, viewer'
+      });
+    }
+
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
-      });
-    }
-
-    // Validate role
-    const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role specified'
       });
     }
 
@@ -53,7 +59,7 @@ const register = async (req, res) => {
     });
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     // Log registration activity
     await Activity.create({
@@ -63,7 +69,11 @@ const register = async (req, res) => {
       resourceId: user._id,
       details: `User ${user.name} registered with role: ${user.role}`,
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      metadata: {
+        browser: extractBrowser(req.get('User-Agent')),
+        os: extractOS(req.get('User-Agent'))
+      }
     });
 
     console.log('User registered successfully:', user.email);
@@ -78,6 +88,7 @@ const register = async (req, res) => {
           email: user.email,
           role: user.role,
           status: user.status,
+          permissions: user.permissions,
           lastLogin: new Date()
         }
       }
@@ -98,7 +109,7 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log('Login attempt:', { email, password }); // Debug log
+    console.log('Login attempt:', { email }); // Don't log password
 
     // Validate email and password
     if (!email || !password) {
@@ -118,15 +129,43 @@ const login = async (req, res) => {
 
     // If database user found, authenticate against database
     if (user) {
+      // Check if account is locked
+      if (user.isLocked) {
+        return res.status(423).json({
+          success: false,
+          message: 'Account temporarily locked due to too many failed login attempts'
+        });
+      }
+
+      // Check if account is active
+      if (user.status !== 'active') {
+        return res.status(403).json({
+          success: false,
+          message: 'Account is not active. Please contact administrator.'
+        });
+      }
+
       const isPasswordCorrect = await user.comparePassword(password);
       if (!isPasswordCorrect) {
+        // Increment login attempts
+        user.loginAttempts = (user.loginAttempts || 0) + 1;
+        
+        // Lock account after 5 failed attempts
+        if (user.loginAttempts >= 5) {
+          user.lockUntil = Date.now() + 30 * 60 * 1000; // Lock for 30 minutes
+        }
+        
+        await user.save();
+        
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password'
         });
       }
 
-      // Update last login
+      // Reset login attempts on successful login
+      user.loginAttempts = 0;
+      user.lockUntil = undefined;
       user.lastLogin = new Date();
       await user.save();
 
@@ -138,10 +177,14 @@ const login = async (req, res) => {
         resourceId: user._id,
         details: `User logged in successfully`,
         ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
+        userAgent: req.get('User-Agent'),
+        metadata: {
+          browser: extractBrowser(req.get('User-Agent')),
+          os: extractOS(req.get('User-Agent'))
+        }
       });
 
-      const token = generateToken(user._id);
+      const token = generateToken(user);
 
       console.log('Database login successful for:', email);
 
@@ -155,6 +198,7 @@ const login = async (req, res) => {
             email: user.email,
             role: user.role,
             status: user.status,
+            permissions: user.permissions,
             lastLogin: user.lastLogin
           }
         }
@@ -162,17 +206,51 @@ const login = async (req, res) => {
     }
 
     // Fallback to demo user if database not available
-    const demoUser = {
-      _id: 'demo_admin_id',
-      name: 'Demo Admin',
-      email: 'demo@example.com',
-      password: 'password123',
-      role: 'admin',
-      status: 'active'
+    const demoUsers = {
+      'demo@example.com': {
+        _id: 'demo_admin_id',
+        name: 'Demo Admin',
+        email: 'demo@example.com',
+        password: 'password123',
+        role: 'admin',
+        status: 'active'
+      },
+      'analyst@example.com': {
+        _id: 'demo_analyst_id',
+        name: 'Demo Analyst',
+        email: 'analyst@example.com',
+        password: 'password123',
+        role: 'analyst',
+        status: 'active'
+      },
+      'contributor@example.com': {
+        _id: 'demo_contributor_id',
+        name: 'Demo Contributor',
+        email: 'contributor@example.com',
+        password: 'password123',
+        role: 'contributor',
+        status: 'active'
+      },
+      'viewer@example.com': {
+        _id: 'demo_viewer_id',
+        name: 'Demo Viewer',
+        email: 'viewer@example.com',
+        password: 'password123',
+        role: 'viewer',
+        status: 'active'
+      }
     };
 
-    if (email.toLowerCase() === demoUser.email.toLowerCase() && password === demoUser.password) {
-      const token = generateToken(demoUser._id);
+    const demoUser = demoUsers[email.toLowerCase()];
+    if (demoUser && password === demoUser.password) {
+      const { getRolePermissions } = require('../models');
+      const permissions = getRolePermissions(demoUser.role);
+      
+      const token = generateToken({
+        _id: demoUser._id,
+        role: demoUser.role,
+        permissions
+      });
 
       console.log('Demo login successful for:', email);
 
@@ -186,6 +264,7 @@ const login = async (req, res) => {
             email: demoUser.email,
             role: demoUser.role,
             status: demoUser.status,
+            permissions: permissions,
             lastLogin: new Date()
           }
         }
@@ -221,6 +300,14 @@ const verifyToken = async (req, res) => {
     }
 
     if (user) {
+      // Check if password was changed after token was issued
+      if (user.changedPasswordAfter(req.user.iat)) {
+        return res.status(401).json({
+          success: false,
+          message: 'User recently changed password. Please log in again.'
+        });
+      }
+
       return res.json({
         success: true,
         data: {
@@ -229,21 +316,52 @@ const verifyToken = async (req, res) => {
           email: user.email,
           role: user.role,
           status: user.status,
+          permissions: user.permissions,
           lastLogin: user.lastLogin
         }
       });
     }
 
-    // Fallback for demo user
-    if (req.user.id === 'demo_admin_id') {
+    // Fallback for demo users
+    const demoUsers = {
+      'demo_admin_id': {
+        id: 'demo_admin_id',
+        name: 'Demo Admin',
+        email: 'demo@example.com',
+        role: 'admin',
+        status: 'active'
+      },
+      'demo_analyst_id': {
+        id: 'demo_analyst_id',
+        name: 'Demo Analyst',
+        email: 'analyst@example.com',
+        role: 'analyst',
+        status: 'active'
+      },
+      'demo_contributor_id': {
+        id: 'demo_contributor_id',
+        name: 'Demo Contributor',
+        email: 'contributor@example.com',
+        role: 'contributor',
+        status: 'active'
+      },
+      'demo_viewer_id': {
+        id: 'demo_viewer_id',
+        name: 'Demo Viewer',
+        email: 'viewer@example.com',
+        role: 'viewer',
+        status: 'active'
+      }
+    };
+
+    const demoUser = demoUsers[req.user.id];
+    if (demoUser) {
+      const { getRolePermissions } = require('../models');
       return res.json({
         success: true,
         data: {
-          id: 'demo_admin_id',
-          name: 'Demo Admin',
-          email: 'demo@example.com',
-          role: 'admin',
-          status: 'active',
+          ...demoUser,
+          permissions: getRolePermissions(demoUser.role),
           lastLogin: new Date()
         }
       });
@@ -275,7 +393,11 @@ const logout = async (req, res) => {
         resourceId: req.user.id,
         details: `User logged out`,
         ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
+        userAgent: req.get('User-Agent'),
+        metadata: {
+          browser: extractBrowser(req.get('User-Agent')),
+          os: extractOS(req.get('User-Agent'))
+        }
       });
     } catch (activityError) {
       console.log('Could not log activity:', activityError.message);
@@ -320,7 +442,11 @@ const updateProfile = async (req, res) => {
           resourceId: req.user.id,
           details: `User updated profile information`,
           ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
+          userAgent: req.get('User-Agent'),
+          metadata: {
+            browser: extractBrowser(req.get('User-Agent')),
+            os: extractOS(req.get('User-Agent'))
+          }
         });
 
         return res.json({
@@ -333,7 +459,8 @@ const updateProfile = async (req, res) => {
             status: user.status,
             phone: user.phone,
             company: user.company,
-            bio: user.bio
+            bio: user.bio,
+            permissions: user.permissions
           }
         });
       }
@@ -368,6 +495,13 @@ const changePassword = async (req, res) => {
       });
     }
 
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long'
+      });
+    }
+
     // Try to change password in database
     let user;
     try {
@@ -392,7 +526,11 @@ const changePassword = async (req, res) => {
           resourceId: req.user.id,
           details: `User changed password`,
           ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
+          userAgent: req.get('User-Agent'),
+          metadata: {
+            browser: extractBrowser(req.get('User-Agent')),
+            os: extractOS(req.get('User-Agent'))
+          }
         });
 
         return res.json({
@@ -414,6 +552,26 @@ const changePassword = async (req, res) => {
       message: error.message
     });
   }
+};
+
+// Utility functions
+const extractBrowser = (userAgent) => {
+  if (!userAgent) return 'Unknown';
+  if (userAgent.includes('Chrome')) return 'Chrome';
+  if (userAgent.includes('Firefox')) return 'Firefox';
+  if (userAgent.includes('Safari')) return 'Safari';
+  if (userAgent.includes('Edge')) return 'Edge';
+  return 'Other';
+};
+
+const extractOS = (userAgent) => {
+  if (!userAgent) return 'Unknown';
+  if (userAgent.includes('Windows')) return 'Windows';
+  if (userAgent.includes('Mac')) return 'MacOS';
+  if (userAgent.includes('Linux')) return 'Linux';
+  if (userAgent.includes('Android')) return 'Android';
+  if (userAgent.includes('iOS')) return 'iOS';
+  return 'Other';
 };
 
 module.exports = {
