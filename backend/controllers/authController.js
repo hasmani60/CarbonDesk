@@ -1,15 +1,15 @@
-// controllers/authController.js - Enhanced with proper RBAC and security
+// controllers/authController.js - Updated to use Local Database
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { User, Activity } = require('../models');
+const localDB = require('../database/localDB');
 
-// Generate JWT Token with role information
+// Generate JWT Token with role information and restrictions
 const generateToken = (user) => {
   return jwt.sign(
     { 
-      id: user._id,
+      id: user.id,
       role: user.role,
-      permissions: user.permissions
+      restrictions: user.restrictions
     }, 
     process.env.JWT_SECRET || 'your-secret-key',
     { expiresIn: '30d' }
@@ -21,7 +21,7 @@ const generateToken = (user) => {
 // @access  Private (Admin only)
 const register = async (req, res) => {
   try {
-    const { name, email, password, role = 'contributor' } = req.body;
+    const { name, email, password, role = 'contributor', restrictions = null } = req.body;
 
     // Validate input
     if (!name || !email || !password) {
@@ -41,7 +41,7 @@ const register = async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await localDB.findUserByEmail(email.toLowerCase());
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -50,30 +50,29 @@ const register = async (req, res) => {
     }
 
     // Create user
-    const user = await User.create({
+    const userData = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
       role,
-      status: 'active'
-    });
+      status: 'active',
+      restrictions: restrictions
+    };
+
+    const user = await localDB.createUser(userData);
 
     // Generate token
     const token = generateToken(user);
 
     // Log registration activity
-    await Activity.create({
-      user: user._id,
+    await localDB.logActivity({
+      userId: user.id,
       action: 'user_registered',
       resourceType: 'user',
-      resourceId: user._id,
+      resourceId: user.id,
       details: `User ${user.name} registered with role: ${user.role}`,
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent'))
-      }
+      userAgent: req.get('User-Agent')
     });
 
     console.log('User registered successfully:', user.email);
@@ -83,12 +82,12 @@ const register = async (req, res) => {
       data: {
         token,
         user: {
-          id: user._id,
+          id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
           status: user.status,
-          permissions: user.permissions,
+          restrictions: user.restrictions,
           lastLogin: new Date()
         }
       }
@@ -109,7 +108,7 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log('Login attempt:', { email }); // Don't log password
+    console.log('Login attempt:', { email });
 
     // Validate email and password
     if (!email || !password) {
@@ -119,162 +118,65 @@ const login = async (req, res) => {
       });
     }
 
-    // Try to find user in database first
-    let user;
-    try {
-      user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-    } catch (dbError) {
-      console.log('Database not available, checking demo credentials');
-    }
-
-    // If database user found, authenticate against database
-    if (user) {
-      // Check if account is locked
-      if (user.isLocked) {
-        return res.status(423).json({
-          success: false,
-          message: 'Account temporarily locked due to too many failed login attempts'
-        });
-      }
-
-      // Check if account is active
-      if (user.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is not active. Please contact administrator.'
-        });
-      }
-
-      const isPasswordCorrect = await user.comparePassword(password);
-      if (!isPasswordCorrect) {
-        // Increment login attempts
-        user.loginAttempts = (user.loginAttempts || 0) + 1;
-        
-        // Lock account after 5 failed attempts
-        if (user.loginAttempts >= 5) {
-          user.lockUntil = Date.now() + 30 * 60 * 1000; // Lock for 30 minutes
-        }
-        
-        await user.save();
-        
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      // Reset login attempts on successful login
-      user.loginAttempts = 0;
-      user.lockUntil = undefined;
-      user.lastLogin = new Date();
-      await user.save();
-
-      // Log login activity
-      await Activity.create({
-        user: user._id,
-        action: 'login',
-        resourceType: 'user',
-        resourceId: user._id,
-        details: `User logged in successfully`,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-        metadata: {
-          browser: extractBrowser(req.get('User-Agent')),
-          os: extractOS(req.get('User-Agent'))
-        }
-      });
-
-      const token = generateToken(user);
-
-      console.log('Database login successful for:', email);
-
-      return res.json({
-        success: true,
-        data: {
-          token,
-          user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-            permissions: user.permissions,
-            lastLogin: user.lastLogin
-          }
-        }
+    // Find user in local database
+    const user = await localDB.findUserByEmail(email.toLowerCase());
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
       });
     }
 
-    // Fallback to demo user if database not available
-    const demoUsers = {
-      'demo@example.com': {
-        _id: 'demo_admin_id',
-        name: 'Demo Admin',
-        email: 'demo@example.com',
-        password: 'password123',
-        role: 'admin',
-        status: 'active'
-      },
-      'analyst@example.com': {
-        _id: 'demo_analyst_id',
-        name: 'Demo Analyst',
-        email: 'analyst@example.com',
-        password: 'password123',
-        role: 'analyst',
-        status: 'active'
-      },
-      'contributor@example.com': {
-        _id: 'demo_contributor_id',
-        name: 'Demo Contributor',
-        email: 'contributor@example.com',
-        password: 'password123',
-        role: 'contributor',
-        status: 'active'
-      },
-      'viewer@example.com': {
-        _id: 'demo_viewer_id',
-        name: 'Demo Viewer',
-        email: 'viewer@example.com',
-        password: 'password123',
-        role: 'viewer',
-        status: 'active'
-      }
-    };
-
-    const demoUser = demoUsers[email.toLowerCase()];
-    if (demoUser && password === demoUser.password) {
-      const { getRolePermissions } = require('../models');
-      const permissions = getRolePermissions(demoUser.role);
-      
-      const token = generateToken({
-        _id: demoUser._id,
-        role: demoUser.role,
-        permissions
-      });
-
-      console.log('Demo login successful for:', email);
-
-      return res.json({
-        success: true,
-        data: {
-          token,
-          user: {
-            id: demoUser._id,
-            name: demoUser.name,
-            email: demoUser.email,
-            role: demoUser.role,
-            status: demoUser.status,
-            permissions: permissions,
-            lastLogin: new Date()
-          }
-        }
+    // Check if account is active
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is not active. Please contact administrator.'
       });
     }
 
-    // Invalid credentials
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid email or password'
+    // Verify password
+    const isPasswordCorrect = await localDB.verifyPassword(password, user.password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Update last login
+    await localDB.updateLastLogin(user.id);
+
+    // Log login activity
+    await localDB.logActivity({
+      userId: user.id,
+      action: 'login',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: 'User logged in successfully',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    const token = generateToken(user);
+
+    console.log('Login successful for:', email);
+
+    return res.json({
+      success: true,
+      data: {
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          restrictions: user.restrictions,
+          lastLogin: new Date()
+        }
+      }
     });
 
   } catch (error) {
@@ -291,87 +193,30 @@ const login = async (req, res) => {
 // @access  Private
 const verifyToken = async (req, res) => {
   try {
-    // Try to get user from database
-    let user;
-    try {
-      user = await User.findById(req.user.id);
-    } catch (dbError) {
-      console.log('Database not available for token verification');
-    }
+    // Get user from local database
+    const user = await localDB.findUserById(req.user.id);
 
-    if (user) {
-      // Check if password was changed after token was issued
-      if (user.changedPasswordAfter(req.user.iat)) {
-        return res.status(401).json({
-          success: false,
-          message: 'User recently changed password. Please log in again.'
-        });
-      }
-
-      return res.json({
-        success: true,
-        data: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          permissions: user.permissions,
-          lastLogin: user.lastLogin
-        }
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
-    // Fallback for demo users
-    const demoUsers = {
-      'demo_admin_id': {
-        id: 'demo_admin_id',
-        name: 'Demo Admin',
-        email: 'demo@example.com',
-        role: 'admin',
-        status: 'active'
-      },
-      'demo_analyst_id': {
-        id: 'demo_analyst_id',
-        name: 'Demo Analyst',
-        email: 'analyst@example.com',
-        role: 'analyst',
-        status: 'active'
-      },
-      'demo_contributor_id': {
-        id: 'demo_contributor_id',
-        name: 'Demo Contributor',
-        email: 'contributor@example.com',
-        role: 'contributor',
-        status: 'active'
-      },
-      'demo_viewer_id': {
-        id: 'demo_viewer_id',
-        name: 'Demo Viewer',
-        email: 'viewer@example.com',
-        role: 'viewer',
-        status: 'active'
+    return res.json({
+      success: true,
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        restrictions: user.restrictions,
+        lastLogin: user.last_login
       }
-    };
-
-    const demoUser = demoUsers[req.user.id];
-    if (demoUser) {
-      const { getRolePermissions } = require('../models');
-      return res.json({
-        success: true,
-        data: {
-          ...demoUser,
-          permissions: getRolePermissions(demoUser.role),
-          lastLogin: new Date()
-        }
-      });
-    }
-
-    return res.status(404).json({
-      success: false,
-      message: 'User not found'
     });
   } catch (error) {
+    console.error('Token verification error:', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -385,29 +230,22 @@ const verifyToken = async (req, res) => {
 const logout = async (req, res) => {
   try {
     // Log logout activity
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'logout',
-        resourceType: 'user',
-        resourceId: req.user.id,
-        details: `User logged out`,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-        metadata: {
-          browser: extractBrowser(req.get('User-Agent')),
-          os: extractOS(req.get('User-Agent'))
-        }
-      });
-    } catch (activityError) {
-      console.log('Could not log activity:', activityError.message);
-    }
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'logout',
+      resourceType: 'user',
+      resourceId: req.user.id,
+      details: 'User logged out',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
 
     res.json({
       success: true,
       message: 'Logged out successfully'
     });
   } catch (error) {
+    console.error('Logout error:', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -422,58 +260,40 @@ const updateProfile = async (req, res) => {
   try {
     const { name, email, phone, company, bio } = req.body;
 
-    // Try to update in database
-    let user;
-    try {
-      user = await User.findById(req.user.id);
-      if (user) {
-        user.name = name || user.name;
-        user.email = email || user.email;
-        user.phone = phone || user.phone;
-        user.company = company || user.company;
-        user.bio = bio || user.bio;
-        await user.save();
+    const updates = {};
+    if (name) updates.name = name;
+    if (email) updates.email = email;
+    // Note: phone, company, bio would need additional columns in database
+    
+    await localDB.updateUser(req.user.id, updates);
+    
+    // Get updated user
+    const updatedUser = await localDB.findUserById(req.user.id);
 
-        // Log profile update activity
-        await Activity.create({
-          user: req.user.id,
-          action: 'profile_update',
-          resourceType: 'user',
-          resourceId: req.user.id,
-          details: `User updated profile information`,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          metadata: {
-            browser: extractBrowser(req.get('User-Agent')),
-            os: extractOS(req.get('User-Agent'))
-          }
-        });
+    // Log profile update activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'profile_update',
+      resourceType: 'user',
+      resourceId: req.user.id,
+      details: 'User updated profile information',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
 
-        return res.json({
-          success: true,
-          data: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-            phone: user.phone,
-            company: user.company,
-            bio: user.bio,
-            permissions: user.permissions
-          }
-        });
+    return res.json({
+      success: true,
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        status: updatedUser.status,
+        restrictions: updatedUser.restrictions
       }
-    } catch (dbError) {
-      console.log('Database not available for profile update');
-    }
-
-    // Demo mode fallback
-    res.status(400).json({
-      success: false,
-      message: 'Profile updates require database connection'
     });
   } catch (error) {
+    console.error('Profile update error:', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -502,76 +322,43 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Try to change password in database
-    let user;
-    try {
-      user = await User.findById(req.user.id).select('+password');
-      if (user) {
-        const isCurrentPasswordCorrect = await user.comparePassword(currentPassword);
-        if (!isCurrentPasswordCorrect) {
-          return res.status(400).json({
-            success: false,
-            message: 'Current password is incorrect'
-          });
-        }
-
-        user.password = newPassword;
-        await user.save();
-
-        // Log password change activity
-        await Activity.create({
-          user: req.user.id,
-          action: 'password_change',
-          resourceType: 'user',
-          resourceId: req.user.id,
-          details: `User changed password`,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          metadata: {
-            browser: extractBrowser(req.get('User-Agent')),
-            os: extractOS(req.get('User-Agent'))
-          }
-        });
-
-        return res.json({
-          success: true,
-          message: 'Password changed successfully'
-        });
-      }
-    } catch (dbError) {
-      console.log('Database not available for password change');
+    // Get user and verify current password
+    const user = await localDB.findUserById(req.user.id);
+    const isCurrentPasswordCorrect = await localDB.verifyPassword(currentPassword, user.password);
+    
+    if (!isCurrentPasswordCorrect) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
     }
 
-    res.status(400).json({
-      success: false,
-      message: 'Password changes require database connection'
+    // Hash new password and update
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await localDB.updateUser(req.user.id, { password: hashedPassword });
+
+    // Log password change activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'password_change',
+      resourceType: 'user',
+      resourceId: req.user.id,
+      details: 'User changed password',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password changed successfully'
     });
   } catch (error) {
+    console.error('Password change error:', error);
     res.status(400).json({
       success: false,
       message: error.message
     });
   }
-};
-
-// Utility functions
-const extractBrowser = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Chrome')) return 'Chrome';
-  if (userAgent.includes('Firefox')) return 'Firefox';
-  if (userAgent.includes('Safari')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  return 'Other';
-};
-
-const extractOS = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Windows')) return 'Windows';
-  if (userAgent.includes('Mac')) return 'MacOS';
-  if (userAgent.includes('Linux')) return 'Linux';
-  if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
-  return 'Other';
 };
 
 module.exports = {

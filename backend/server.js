@@ -8,9 +8,18 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
+// Import local database
+const localDB = require('./database/localDB');
+
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
-const { authenticateToken, requireAdmin } = require('./middleware/auth');
+const { 
+  authenticateToken, 
+  requireAdmin, 
+  checkScopeAccess, 
+  checkActivityAccess, 
+  checkPageAccess 
+} = require('./middleware/auth');
 
 const app = express();
 
@@ -85,13 +94,15 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
-    database: mongoose.connection && mongoose.connection.readyState === 1 ? 'Connected' : 'Running with sample data (MongoDB not required for demo)',
+    database: 'Local SQLite Database (Active)',
     port: process.env.PORT || 5001,
     features: {
       multiUser: true,
       adminMonitoring: true,
       auditLogging: true,
-      roleBasedAccess: true
+      roleBasedAccess: true,
+      localDatabase: true,
+      rbacSupport: true
     }
   };
   
@@ -99,176 +110,126 @@ app.get('/health', (req, res) => {
   console.log('Health check requested:', healthData);
 });
 
-// Import routes (only if they exist)
-let authRoutes, userRoutes, emissionRoutes, dashboardRoutes;
-let analyticsRoutes, monitorRoutes, vehicleRoutes, generatorRoutes;
-let organizationRoutes, notificationRoutes, exportRoutes, adminRoutes;
+// Import controllers
+const authController = require('./controllers/authController');
+const userController = require('./controllers/userController');
+const adminController = require('./controllers/adminController');
+const dashboardController = require('./controllers/dashboardController');
+const emissionController = require('./controllers/emissionController');
 
-try {
-  authRoutes = require('./routes/auth');
-} catch (e) {
-  console.log('Auth routes not found, using inline routes');
-}
+// Authentication routes
+const authRouter = express.Router();
+authRouter.post('/login', authController.login);
+authRouter.post('/register', authenticateToken, requireAdmin, authController.register);
+authRouter.post('/logout', authenticateToken, authController.logout);
+authRouter.get('/verify', authenticateToken, authController.verifyToken);
+authRouter.patch('/profile', authenticateToken, authController.updateProfile);
+authRouter.patch('/change-password', authenticateToken, authController.changePassword);
+app.use('/api/auth', authRouter);
 
-try {
-  userRoutes = require('./routes/users');
-} catch (e) {
-  console.log('User routes not found, using inline routes');
-}
+// Admin routes with enhanced RBAC
+const adminRouter = express.Router();
+adminRouter.get('/dashboard', adminController.getAdminDashboard);
+adminRouter.get('/activities', adminController.getAllActivities);
+adminRouter.get('/user-summary', adminController.getUserActivitySummary);
+app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
 
-try {
-  emissionRoutes = require('./routes/emissions');
-} catch (e) {
-  console.log('Emission routes not found, using inline routes');
-}
+// User management routes with enhanced RBAC
+const userRouter = express.Router();
+userRouter.get('/', userController.getUsers);
+userRouter.get('/stats', userController.getUserStats);
+userRouter.get('/rbac-options', userController.getRBACOptions); // NEW: RBAC options endpoint
+userRouter.get('/:id', userController.getUserById);
+userRouter.post('/', requireAdmin, userController.createUser); // ENHANCED: With RBAC support
+userRouter.patch('/:id/role', requireAdmin, userController.updateUserRole);
+userRouter.patch('/:id/restrictions', requireAdmin, userController.updateUserRestrictions); // NEW: Update restrictions
+userRouter.patch('/:id/status', requireAdmin, userController.updateUserStatus);
+userRouter.delete('/:id', requireAdmin, userController.deleteUser);
+userRouter.patch('/bulk', requireAdmin, userController.bulkUpdateUsers);
+app.use('/api/users', authenticateToken, userRouter);
 
-try {
-  dashboardRoutes = require('./routes/dashboard');
-} catch (e) {
-  console.log('Dashboard routes not found, using inline routes');
-}
+// Emission routes with RBAC
+const emissionRouter = express.Router();
+emissionRouter.get('/', emissionController.getEmissions);
+emissionRouter.get('/categories', emissionController.getEmissionCategories);
+emissionRouter.get('/stats', emissionController.getEmissionStats);
+emissionRouter.get('/:id', emissionController.getEmissionById);
 
-try {
-  analyticsRoutes = require('./routes/analytics');
-} catch (e) {
-  console.log('Analytics routes not found, using inline routes');
-}
-
-try {
-  monitorRoutes = require('./routes/monitor');
-} catch (e) {
-  console.log('Monitor routes not found, using inline routes');
-}
-
-try {
-  vehicleRoutes = require('./routes/vehicles');
-} catch (e) {
-  console.log('Vehicle routes not found, using inline routes');
-}
-
-try {
-  generatorRoutes = require('./routes/generators');
-} catch (e) {
-  console.log('Generator routes not found, using inline routes');
-}
-
-try {
-  organizationRoutes = require('./routes/organization');
-} catch (e) {
-  console.log('Organization routes not found, using inline routes');
-}
-
-try {
-  notificationRoutes = require('./routes/notifications');
-} catch (e) {
-  console.log('Notification routes not found, using inline routes');
-}
-
-try {
-  exportRoutes = require('./routes/export');
-} catch (e) {
-  console.log('Export routes not found, using inline routes');
-}
-
-try {
-  adminRoutes = require('./routes/admin');
-} catch (e) {
-  console.log('Admin routes not found, using inline routes');
-}
-
-// API Routes
-if (authRoutes) {
-  app.use('/api/auth', authRoutes);
-} else {
-  // Inline auth routes for demo
-  const authController = require('./controllers/authController');
-  const authRouter = express.Router();
-  authRouter.post('/login', authController.login);
-  authRouter.post('/register', authController.register);
-  authRouter.post('/logout', authenticateToken, authController.logout);
-  authRouter.get('/verify', authenticateToken, authController.verifyToken);
-  authRouter.patch('/profile', authenticateToken, authController.updateProfile);
-  authRouter.patch('/change-password', authenticateToken, authController.changePassword);
-  app.use('/api/auth', authRouter);
-}
-
-// Admin routes with proper controller
-if (adminRoutes) {
-  app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRoutes);
-} else {
-  // Inline admin routes
-  const adminController = require('./controllers/adminController');
-  const adminRouter = express.Router();
+// RBAC-protected emission creation (check scope and activity access)
+emissionRouter.post('/', (req, res, next) => {
+  const { scope, category } = req.body;
   
-  adminRouter.get('/dashboard', adminController.getAdminDashboard);
-  adminRouter.get('/activities', adminController.getAllActivities);
-  adminRouter.get('/user-summary', adminController.getUserActivitySummary);
-  adminRouter.get('/audit-logs', adminController.getAuditLogs);
-  
-  app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
-}
+  // Check scope access
+  if (scope) {
+    return checkScopeAccess(scope)(req, res, () => {
+      // Check activity access if category is provided
+      if (category) {
+        return checkActivityAccess(category)(req, res, next);
+      }
+      next();
+    });
+  }
+  next();
+}, emissionController.createEmission);
 
-// User routes
-if (userRoutes) {
-  app.use('/api/users', authenticateToken, userRoutes);
-} else {
-  // Inline user routes
-  const userController = require('./controllers/userController');
-  const userRouter = express.Router();
-  
-  userRouter.get('/', userController.getUsers);
-  userRouter.get('/stats', userController.getUserStats);
-  userRouter.get('/:id', userController.getUserById);
-  userRouter.post('/', requireAdmin, userController.createUser);
-  userRouter.patch('/:id/role', requireAdmin, userController.updateUserRole);
-  userRouter.patch('/:id/status', requireAdmin, userController.updateUserStatus);
-  userRouter.delete('/:id', requireAdmin, userController.deleteUser);
-  userRouter.patch('/bulk', requireAdmin, userController.bulkUpdateUsers);
-  
-  app.use('/api/users', authenticateToken, userRouter);
-}
+emissionRouter.patch('/:id', emissionController.updateEmission);
+emissionRouter.patch('/:id/verify', requireAdmin, emissionController.verifyEmission);
+emissionRouter.delete('/:id', emissionController.deleteEmission);
+app.use('/api/emissions', authenticateToken, emissionRouter);
 
-// Emission routes
-if (emissionRoutes) {
-  app.use('/api/emissions', authenticateToken, emissionRoutes);
-} else {
-  // Inline emission routes
-  const emissionController = require('./controllers/emissionController');
-  const emissionRouter = express.Router();
-  
-  emissionRouter.get('/', emissionController.getEmissions);
-  emissionRouter.get('/categories', emissionController.getEmissionCategories);
-  emissionRouter.get('/stats', emissionController.getEmissionStats);
-  emissionRouter.get('/:id', emissionController.getEmissionById);
-  emissionRouter.post('/', emissionController.createEmission);
-  emissionRouter.patch('/:id', emissionController.updateEmission);
-  emissionRouter.patch('/:id/verify', requireAdmin, emissionController.verifyEmission);
-  emissionRouter.delete('/:id', emissionController.deleteEmission);
-  
-  app.use('/api/emissions', authenticateToken, emissionRouter);
-}
+// Dashboard routes with page access control
+const dashboardRouter = express.Router();
+dashboardRouter.get('/summary', checkPageAccess('/dashboard'), dashboardController.getDashboardSummary);
+dashboardRouter.get('/notifications', dashboardController.getDashboardNotifications);
+app.use('/api/dashboard', authenticateToken, dashboardRouter);
 
-// Dashboard routes
-if (dashboardRoutes) {
-  app.use('/api/dashboard', authenticateToken, dashboardRoutes);
-} else {
-  // Inline dashboard routes
-  const dashboardController = require('./controllers/dashboardController');
-  const dashboardRouter = express.Router();
+// Input page access control
+app.get('/api/input/access/:scope', authenticateToken, (req, res) => {
+  const scope = req.params.scope;
   
-  dashboardRouter.get('/summary', dashboardController.getDashboardSummary);
-  dashboardRouter.get('/notifications', dashboardController.getDashboardNotifications);
-  
-  app.use('/api/dashboard', authenticateToken, dashboardRouter);
-}
-
-// Other route placeholders
-app.use('/api/analytics', authenticateToken, (req, res) => {
-  res.json({ message: 'Analytics endpoint placeholder' });
+  // Check if user can access this scope
+  checkScopeAccess(scope)(req, res, () => {
+    res.json({
+      success: true,
+      hasAccess: true,
+      scope: scope,
+      userRole: req.user.role,
+      restrictions: req.user.restrictions
+    });
+  });
 });
 
-app.use('/api/monitor', authenticateToken, (req, res) => {
-  res.json({ message: 'Monitor endpoint placeholder' });
+// Monitor page access control
+app.get('/api/monitor/access', authenticateToken, (req, res) => {
+  checkPageAccess('/monitor')(req, res, () => {
+    res.json({
+      success: true,
+      hasAccess: true,
+      userRole: req.user.role,
+      restrictions: req.user.restrictions
+    });
+  });
+});
+
+// Analytics page access control
+app.get('/api/analytics/access', authenticateToken, (req, res) => {
+  checkPageAccess('/analytics')(req, res, () => {
+    res.json({
+      success: true,
+      hasAccess: true,
+      userRole: req.user.role,
+      restrictions: req.user.restrictions
+    });
+  });
+});
+
+// Other route placeholders with access control
+app.use('/api/analytics', authenticateToken, checkPageAccess('/analytics'), (req, res) => {
+  res.json({ message: 'Analytics endpoint placeholder', userRole: req.user.role });
+});
+
+app.use('/api/monitor', authenticateToken, checkPageAccess('/monitor'), (req, res) => {
+  res.json({ message: 'Monitor endpoint placeholder', userRole: req.user.role });
 });
 
 app.use('/api/vehicles', authenticateToken, (req, res) => {
@@ -294,6 +255,31 @@ app.use('/api/export', authenticateToken, (req, res) => {
   res.json({ message: 'Export endpoint placeholder' });
 });
 
+// Error handling middleware that doesn't exist - create a simple one
+const errorHandlerMiddleware = (err, req, res, next) => {
+  console.error('Error:', err);
+  
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      errors: Object.values(err.errors).map(e => e.message)
+    });
+  }
+  
+  if (err.code === 11000) {
+    return res.status(400).json({
+      success: false,
+      message: 'Duplicate key error'
+    });
+  }
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error'
+  });
+};
+
 // 404 handler for API routes
 app.use('/api/*', (req, res) => {
   res.status(404).json({
@@ -311,13 +297,13 @@ app.use('*', (req, res) => {
 });
 
 // Error handling middleware (must be last)
-app.use(errorHandler);
+app.use(errorHandlerMiddleware);
 
-// Database connection (optional for demo)
+// Database connection (optional MongoDB, but we're using SQLite primarily)
 const connectDB = async () => {
   try {
     if (!process.env.MONGODB_URI) {
-      console.log('⚠️  MONGODB_URI not set - running in demo mode');
+      console.log('⚠️  MONGODB_URI not set - using local SQLite database');
       return false;
     }
     
@@ -325,11 +311,10 @@ const connectDB = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    console.log(`✅ MongoDB Connected: ${conn.connection.host} (Secondary)`);
     return true;
   } catch (error) {
-    console.log('⚠️  MongoDB not available - running with enhanced demo mode');
-    console.log('💡 Multi-user features work with sample data. Connect database for persistence.');
+    console.log('⚠️  MongoDB not available - using local SQLite database (Primary)');
     return false;
   }
 };
@@ -342,6 +327,11 @@ const gracefulShutdown = async (signal) => {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
       console.log('MongoDB connection closed');
+    }
+    
+    if (localDB) {
+      localDB.close();
+      console.log('Local database connection closed');
     }
   } catch (error) {
     console.error('Error during shutdown:', error);
@@ -357,28 +347,34 @@ const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
   try {
-    // Try to connect to database but don't crash if it fails
+    // Initialize local database first
+    await localDB.init();
+    
+    // Try to connect to MongoDB as secondary database
     await connectDB();
     
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend (Multi-User)`);
+      console.log(`📊 Carbon Accounting Backend (Enhanced RBAC)`);
       console.log(`🌐 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API Base: http://localhost:${PORT}/api`);
       console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
       console.log(`👥 Multi-User: Enabled`);
-      console.log(`🔒 Role-Based Access: Enabled`);
+      console.log(`🔒 Role-Based Access: Enhanced with Local DB`);
       console.log(`📋 Admin Monitoring: Enabled`);
-      console.log(`📝 Audit Logging: Enabled`);
+      console.log(`📝 Activity Logging: Enabled`);
+      console.log(`🗄️  Database: Local SQLite (Primary)`);
+      console.log(`🛡️  RBAC: Scope & Activity Restrictions`);
       console.log(`💚 Status: Ready for connections`);
       console.log('🚀 ================================');
       console.log('');
       console.log('📌 Demo Credentials:');
-      console.log('   Email: demo@example.com');
-      console.log('   Password: password123');
-      console.log('   Role: Admin');
+      console.log('   Admin - Email: demo@example.com, Password: password123');
+      console.log('   Analyst - Email: analyst@example.com, Password: password123');
+      console.log('   Contributor - Email: contributor@example.com, Password: password123 (Restricted)');
+      console.log('   Viewer - Email: viewer@example.com, Password: password123');
       console.log('');
     });
 

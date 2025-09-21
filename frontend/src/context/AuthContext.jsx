@@ -1,4 +1,4 @@
-// context/AuthContext.jsx - Fixed with better API response handling
+// context/AuthContext.jsx - Enhanced with RBAC Support
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setPermissions(userData.permissions || {});
         setIsAuthenticated(true);
-        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role);
+        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
       } else {
         // Invalid token
         console.log('Token verification failed');
@@ -102,7 +102,7 @@ export const AuthProvider = ({ children }) => {
       setPermissions(userData.permissions || {});
       setIsAuthenticated(true);
       
-      console.log('Login successful for:', userData.email, 'Role:', userData.role);
+      console.log('Login successful for:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
       toast.success(`Welcome back, ${userData.name}!`);
       
       return { success: true, user: userData };
@@ -192,6 +192,114 @@ export const AuthProvider = ({ children }) => {
     return hasPermission(permissionKey);
   };
 
+  // RBAC: Check if user can access specific scope
+  const canAccessScope = (scope) => {
+    if (!isAuthenticated) return false;
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user?.role)) return true;
+    
+    // Viewers can access all scopes for viewing
+    if (user?.role === 'viewer') return true;
+    
+    // Contributors with restrictions
+    if (user?.role === 'contributor') {
+      if (!user.restrictions || !user.restrictions.allowedScopes) {
+        return true; // No restrictions = full access
+      }
+      return user.restrictions.allowedScopes.includes(parseInt(scope));
+    }
+    
+    return false;
+  };
+
+  // RBAC: Check if user can access specific activity
+  const canAccessActivity = (activity) => {
+    if (!isAuthenticated) return false;
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user?.role)) return true;
+    
+    // Viewers and contributors with no specific restrictions
+    if (user?.role === 'viewer') return true;
+    
+    if (user?.role === 'contributor') {
+      if (!user.restrictions || !user.restrictions.allowedActivities || user.restrictions.allowedActivities.length === 0) {
+        return true; // No activity restrictions = full access to allowed scopes
+      }
+      return user.restrictions.allowedActivities.includes(activity);
+    }
+    
+    return false;
+  };
+
+  // RBAC: Check if user can access specific page
+  const canAccessPage = (page) => {
+    if (!isAuthenticated) return false;
+    
+    // Admin has full access
+    if (user?.role === 'admin') return true;
+    
+    // Define role-based page access
+    const rolePageAccess = {
+      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings'],
+      contributor: ['/dashboard', '/input', '/monitor', '/settings'],
+      viewer: ['/dashboard', '/monitor']
+    };
+    
+    const allowedPages = rolePageAccess[user?.role] || [];
+    
+    if (!allowedPages.includes(page)) {
+      return false;
+    }
+    
+    // Check for specific restrictions
+    if (user?.role === 'contributor' && user?.restrictions?.restrictedPages) {
+      return !user.restrictions.restrictedPages.includes(page);
+    }
+    
+    return true;
+  };
+
+  // RBAC: Get user's allowed scopes
+  const getAllowedScopes = () => {
+    if (!isAuthenticated) return [];
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user?.role)) return [1, 2, 3];
+    
+    // Viewers can see all scopes
+    if (user?.role === 'viewer') return [1, 2, 3];
+    
+    // Contributors with restrictions
+    if (user?.role === 'contributor') {
+      if (!user.restrictions || !user.restrictions.allowedScopes) {
+        return [1, 2, 3]; // No restrictions = full access
+      }
+      return user.restrictions.allowedScopes;
+    }
+    
+    return [];
+  };
+
+  // RBAC: Get user's allowed activities
+  const getAllowedActivities = () => {
+    if (!isAuthenticated) return [];
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user?.role)) return [];
+    
+    // Contributors with restrictions
+    if (user?.role === 'contributor') {
+      if (!user.restrictions || !user.restrictions.allowedActivities) {
+        return []; // No restrictions = full access
+      }
+      return user.restrictions.allowedActivities;
+    }
+    
+    return [];
+  };
+
   // Role-based access control helpers
   const isAdmin = () => hasRole('admin');
   const isAnalyst = () => hasRole(['admin', 'analyst']);
@@ -206,7 +314,7 @@ export const AuthProvider = ({ children }) => {
   const canViewAllEmissions = () => hasRole(['admin', 'analyst']);
   const canVerifyEmissions = () => hasRole(['admin', 'analyst']);
   const canDeleteEmissions = () => hasRole(['admin', 'analyst']);
-  const canViewAnalytics = () => isViewer(); // All roles can view analytics
+  const canViewAnalytics = () => hasRole(['admin', 'analyst', 'contributor', 'viewer']);
   const canExportData = () => hasRole(['admin', 'analyst']);
   const canManageSystem = () => isAdmin();
   const canViewUserActivities = () => isAdmin();
@@ -246,7 +354,27 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    return roleMap[user.role] || roleMap.viewer;
+    const roleInfo = roleMap[user.role] || roleMap.viewer;
+    
+    // Add restriction info for contributors
+    if (user.role === 'contributor' && user.restrictions) {
+      const restrictions = [];
+      
+      if (user.restrictions.allowedScopes && user.restrictions.allowedScopes.length < 3) {
+        restrictions.push(`Limited to Scopes: ${user.restrictions.allowedScopes.join(', ')}`);
+      }
+      
+      if (user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0) {
+        restrictions.push(`${user.restrictions.allowedActivities.length} specific activities`);
+      }
+      
+      if (restrictions.length > 0) {
+        roleInfo.restrictions = restrictions;
+        roleInfo.description += ' (with restrictions)';
+      }
+    }
+    
+    return roleInfo;
   };
 
   const value = {
@@ -266,6 +394,13 @@ export const AuthProvider = ({ children }) => {
     hasPermission,
     hasRole,
     canAccess,
+    
+    // RBAC functions
+    canAccessScope,
+    canAccessActivity,
+    canAccessPage,
+    getAllowedScopes,
+    getAllowedActivities,
     
     // Role helpers
     isAdmin,

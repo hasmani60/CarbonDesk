@@ -1,36 +1,19 @@
-// controllers/userController.js - Complete with all required functions
+// controllers/userController.js - Updated with Local DB and Enhanced RBAC
 const bcrypt = require('bcryptjs');
-
-// Helper function to check if MongoDB is connected
-const isMongoConnected = () => {
-  try {
-    const mongoose = require('mongoose');
-    return mongoose.connection && mongoose.connection.readyState === 1;
-  } catch (error) {
-    return false;
-  }
-};
+const localDB = require('../database/localDB');
+const { emissionFactors } = require('../data/emissionFactors'); // Import emission factors for activity selection
 
 // Helper function to log admin activity
 const logAdminActivity = async (adminId, action, resourceType, resourceId, details, req) => {
   try {
-    if (!isMongoConnected()) {
-      console.log('MongoDB not connected - skipping activity log');
-      return;
-    }
-    const { Activity } = require('../models');
-    await Activity.create({
-      user: adminId,
+    await localDB.logActivity({
+      userId: adminId,
       action: `admin_${action}`,
       resourceType,
       resourceId,
       details,
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent'))
-      }
+      userAgent: req.get('User-Agent')
     });
   } catch (error) {
     console.error('Failed to log admin activity:', error);
@@ -50,57 +33,22 @@ const getUsers = async (req, res) => {
       search
     } = req.query;
 
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.json({
-        success: true,
-        data: getDemoUsers(),
-        pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          totalItems: 4,
-          itemsPerPage: 10
-        }
-      });
-    }
+    const filters = {};
+    if (role && role !== 'all') filters.role = role;
+    if (status && status !== 'all') filters.status = status;
+    if (search) filters.search = search;
+    if (limit !== 'all') filters.limit = parseInt(limit);
 
-    const { User, Activity, Emission } = require('../models');
-    const query = {};
-    
-    if (role && role !== 'all') query.role = role;
-    if (status && status !== 'all') query.status = status;
-    
-    if (search) {
-      query.$or = [
-        { name: new RegExp(search, 'i') },
-        { email: new RegExp(search, 'i') }
-      ];
-    }
+    const users = await localDB.getAllUsers(filters);
 
-    const users = await User.find(query)
-      .select('-password')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await User.countDocuments(query);
-
-    // Add additional user statistics
-    const usersWithStats = await Promise.all(users.map(async (user) => {
-      const emissionCount = await Emission.countDocuments({ user: user._id }).catch(() => 0);
-      const recentActivityCount = await Activity.countDocuments({
-        user: user._id,
-        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      }).catch(() => 0);
-
-      return {
-        ...user.toObject(),
-        statistics: {
-          emissionCount,
-          recentActivityCount,
-          joinedDaysAgo: Math.floor((new Date() - user.createdAt) / (1000 * 60 * 60 * 24))
-        }
-      };
+    // Calculate statistics for each user
+    const usersWithStats = users.map(user => ({
+      ...user,
+      statistics: {
+        emissionCount: 0, // Would need to calculate from emissions
+        recentActivityCount: 0, // Would need to calculate from activities
+        joinedDaysAgo: Math.floor((new Date() - new Date(user.created_at)) / (1000 * 60 * 60 * 24))
+      }
     }));
 
     // Log this admin activity
@@ -118,8 +66,8 @@ const getUsers = async (req, res) => {
       data: usersWithStats,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
+        totalPages: Math.ceil(users.length / parseInt(limit)),
+        totalItems: users.length,
         itemsPerPage: parseInt(limit)
       }
     });
@@ -137,15 +85,7 @@ const getUsers = async (req, res) => {
 // @access  Private (Admin only)
 const getUserById = async (req, res) => {
   try {
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required to get user details.'
-      });
-    }
-
-    const { User, Emission, Activity } = require('../models');
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await localDB.findUserById(req.params.id);
     
     if (!user) {
       return res.status(404).json({
@@ -154,32 +94,15 @@ const getUserById = async (req, res) => {
       });
     }
 
-    // Get user's emission statistics
-    const emissionStats = await Emission.aggregate([
-      { $match: { user: user._id } },
-      {
-        $group: {
-          _id: '$scope',
-          count: { $sum: 1 },
-          totalEmissions: { $sum: '$totalEmissions' }
-        }
-      }
-    ]).catch(() => []);
-
     // Get user's recent activities
-    const recentActivities = await Activity.find({ user: user._id })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .select('action createdAt details')
-      .catch(() => []);
+    const recentActivities = await localDB.getUserActivities(user.id, 10);
 
     const userWithStats = {
-      ...user.toObject(),
+      ...user,
       statistics: {
-        emissionStats,
         recentActivities,
-        totalEmissions: emissionStats.reduce((sum, stat) => sum + stat.totalEmissions, 0),
-        totalEmissionRecords: emissionStats.reduce((sum, stat) => sum + stat.count, 0)
+        totalActivities: recentActivities.length,
+        totalEmissionRecords: 0 // Would calculate from emissions
       }
     };
 
@@ -188,7 +111,7 @@ const getUserById = async (req, res) => {
       req.user.id,
       'viewed_user_detail',
       'user',
-      user._id,
+      user.id,
       `Viewed detailed profile of user: ${user.name}`,
       req
     );
@@ -206,12 +129,22 @@ const getUserById = async (req, res) => {
   }
 };
 
-// @desc    Create new user (Admin only) - MAIN ADD USER FUNCTIONALITY
+// @desc    Create new user (Admin only) - ENHANCED WITH RBAC
 // @route   POST /api/users
 // @access  Private (Admin only)
 const createUser = async (req, res) => {
   try {
-    const { name, email, password, role = 'contributor', status = 'active' } = req.body;
+    const { 
+      name, 
+      email, 
+      password, 
+      role = 'contributor', 
+      status = 'active',
+      // RBAC restrictions
+      allowedScopes = [],
+      allowedActivities = [],
+      restrictedPages = []
+    } = req.body;
 
     // Validate required fields
     if (!name || !email || !password) {
@@ -247,27 +180,8 @@ const createUser = async (req, res) => {
       });
     }
 
-    // Validate status
-    const validStatuses = ['active', 'inactive', 'suspended'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status specified. Must be one of: ${validStatuses.join(', ')}`
-      });
-    }
-
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required to create users. Please try again later.'
-      });
-    }
-
-    const { User, Activity } = require('../models');
-
     // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await localDB.findUserByEmail(email.toLowerCase());
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -275,51 +189,47 @@ const createUser = async (req, res) => {
       });
     }
 
+    // Prepare restrictions object for contributors
+    let restrictions = null;
+    if (role === 'contributor') {
+      restrictions = {
+        allowedScopes: allowedScopes.length > 0 ? allowedScopes : [1, 2, 3], // Default: all scopes
+        allowedActivities: allowedActivities.length > 0 ? allowedActivities : [], // Default: all activities
+        restrictedPages: restrictedPages || []
+      };
+    }
+
     // Create user with enhanced validation
-    const user = await User.create({
+    const userData = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
       role,
-      status
-    });
+      status,
+      restrictions: restrictions
+    };
+
+    const user = await localDB.createUser(userData);
 
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
       'created_user',
       'user',
-      user._id,
-      `Created new user: ${user.name} (${user.email}) with role: ${user.role}`,
+      user.id,
+      `Created new user: ${user.name} (${user.email}) with role: ${user.role}${restrictions ? ' with restrictions' : ''}`,
       req
     );
 
-    // Log user creation from user's perspective
-    await Activity.create({
-      user: user._id,
-      action: 'user_registered',
-      resourceType: 'user',
-      resourceId: user._id,
-      details: `Account created by admin: ${req.user.name || 'System Admin'}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent')),
-        createdBy: req.user.id
-      }
-    });
-
     // Return user without password
     const userResponse = {
-      id: user._id,
+      id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
       status: user.status,
-      permissions: user.permissions,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      restrictions: user.restrictions,
+      createdAt: new Date(),
       statistics: {
         emissionCount: 0,
         recentActivityCount: 1,
@@ -330,29 +240,10 @@ const createUser = async (req, res) => {
     res.status(201).json({
       success: true,
       data: userResponse,
-      message: `User created successfully with role: ${role}`
+      message: `User created successfully with role: ${role}${restrictions ? ' and custom restrictions' : ''}`
     });
   } catch (error) {
     console.error('Create user error:', error);
-    
-    // Handle MongoDB validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: errors
-      });
-    }
-
-    // Handle duplicate key errors
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to create user'
@@ -375,16 +266,7 @@ const updateUserRole = async (req, res) => {
       });
     }
 
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required to update user roles.'
-      });
-    }
-
-    const { User, Activity } = require('../models');
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await localDB.findUserById(req.params.id);
     
     if (!user) {
       return res.status(404).json({
@@ -394,7 +276,7 @@ const updateUserRole = async (req, res) => {
     }
 
     // Prevent user from changing their own role
-    if (user._id.toString() === req.user.id) {
+    if (user.id.toString() === req.user.id.toString()) {
       return res.status(400).json({
         success: false,
         message: 'You cannot change your own role'
@@ -403,47 +285,88 @@ const updateUserRole = async (req, res) => {
 
     const oldRole = user.role;
     
-    user.role = role;
-    await user.save();
+    // Update user role
+    await localDB.updateUser(user.id, { role });
 
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
       'updated_user_role',
       'user',
-      user._id,
+      user.id,
       `Changed user role: ${user.name} from ${oldRole} to ${role}`,
       req
     );
 
-    // Log activity for the affected user
-    await Activity.create({
-      user: user._id,
-      action: 'role_changed',
-      resourceType: 'user',
-      resourceId: user._id,
-      details: `Your role was changed from ${oldRole} to ${role} by admin: ${req.user.name || 'System Admin'}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent')),
-        changedBy: req.user.id,
-        oldRole: oldRole,
-        newRole: role
-      }
-    });
+    // Get updated user
+    const updatedUser = await localDB.findUserById(user.id);
 
     res.json({
       success: true,
-      data: {
-        ...user.toObject(),
-        permissions: user.permissions
-      },
+      data: updatedUser,
       message: `User role updated to ${role}`
     });
   } catch (error) {
     console.error('Update user role error:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Update user restrictions (for contributors)
+// @route   PATCH /api/users/:id/restrictions
+// @access  Private (Admin only)
+const updateUserRestrictions = async (req, res) => {
+  try {
+    const { allowedScopes, allowedActivities, restrictedPages } = req.body;
+    
+    const user = await localDB.findUserById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.role !== 'contributor') {
+      return res.status(400).json({
+        success: false,
+        message: 'Restrictions can only be applied to contributors'
+      });
+    }
+
+    const restrictions = {
+      allowedScopes: allowedScopes || [1, 2, 3],
+      allowedActivities: allowedActivities || [],
+      restrictedPages: restrictedPages || []
+    };
+
+    // Update user restrictions
+    await localDB.updateUser(user.id, { restrictions });
+
+    // Log this admin activity
+    await logAdminActivity(
+      req.user.id,
+      'updated_user_restrictions',
+      'user',
+      user.id,
+      `Updated restrictions for contributor: ${user.name}`,
+      req
+    );
+
+    // Get updated user
+    const updatedUser = await localDB.findUserById(user.id);
+
+    res.json({
+      success: true,
+      data: updatedUser,
+      message: 'User restrictions updated successfully'
+    });
+  } catch (error) {
+    console.error('Update user restrictions error:', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -466,16 +389,7 @@ const updateUserStatus = async (req, res) => {
       });
     }
 
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required to update user status.'
-      });
-    }
-
-    const { User, Activity } = require('../models');
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await localDB.findUserById(req.params.id);
     
     if (!user) {
       return res.status(404).json({
@@ -485,7 +399,7 @@ const updateUserStatus = async (req, res) => {
     }
 
     // Prevent user from changing their own status
-    if (user._id.toString() === req.user.id) {
+    if (user.id.toString() === req.user.id.toString()) {
       return res.status(400).json({
         success: false,
         message: 'You cannot change your own status'
@@ -494,40 +408,25 @@ const updateUserStatus = async (req, res) => {
 
     const oldStatus = user.status;
     
-    user.status = status;
-    await user.save();
+    // Update user status
+    await localDB.updateUser(user.id, { status });
 
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
       'updated_user_status',
       'user',
-      user._id,
+      user.id,
       `Changed user status: ${user.name} from ${oldStatus} to ${status}`,
       req
     );
 
-    // Log activity for the affected user
-    await Activity.create({
-      user: user._id,
-      action: 'status_changed',
-      resourceType: 'user',
-      resourceId: user._id,
-      details: `Your account status was changed from ${oldStatus} to ${status} by admin: ${req.user.name || 'System Admin'}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent')),
-        changedBy: req.user.id,
-        oldStatus: oldStatus,
-        newStatus: status
-      }
-    });
+    // Get updated user
+    const updatedUser = await localDB.findUserById(user.id);
 
     res.json({
       success: true,
-      data: user,
+      data: updatedUser,
       message: `User status updated to ${status}`
     });
   } catch (error) {
@@ -544,16 +443,7 @@ const updateUserStatus = async (req, res) => {
 // @access  Private (Admin only)
 const deleteUser = async (req, res) => {
   try {
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required to delete users.'
-      });
-    }
-
-    const { User, Emission } = require('../models');
-    const user = await User.findById(req.params.id);
+    const user = await localDB.findUserById(req.params.id);
     
     if (!user) {
       return res.status(404).json({
@@ -563,29 +453,23 @@ const deleteUser = async (req, res) => {
     }
 
     // Prevent admin from deleting themselves
-    if (user._id.toString() === req.user.id) {
+    if (user.id.toString() === req.user.id.toString()) {
       return res.status(400).json({
         success: false,
         message: 'You cannot delete your own account'
       });
     }
 
-    // Get user's emission count before deletion
-    const emissionCount = await Emission.countDocuments({ user: user._id }).catch(() => 0);
-    
-    // Soft delete: set status to inactive and modify email to prevent conflicts
-    const originalEmail = user.email;
-    user.status = 'inactive';
-    user.email = `deleted_${Date.now()}_${user.email}`;
-    await user.save();
+    // Soft delete the user
+    await localDB.deleteUser(user.id);
 
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
       'deleted_user',
       'user',
-      user._id,
-      `Deleted user: ${user.name} (${originalEmail}) - had ${emissionCount} emission records`,
+      user.id,
+      `Deleted user: ${user.name} (${user.email})`,
       req
     );
 
@@ -594,8 +478,7 @@ const deleteUser = async (req, res) => {
       message: 'User deleted successfully',
       data: {
         deletedUser: user.name,
-        originalEmail: originalEmail,
-        emissionCount: emissionCount
+        originalEmail: user.email
       }
     });
   } catch (error) {
@@ -612,60 +495,7 @@ const deleteUser = async (req, res) => {
 // @access  Private (Admin only)
 const getUserStats = async (req, res) => {
   try {
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.json({
-        success: true,
-        data: {
-          overview: {
-            totalUsers: 4,
-            activeUsers: 4,
-            inactiveUsers: 0,
-            suspendedUsers: 0,
-            adminUsers: 1,
-            analystUsers: 1,
-            contributorUsers: 1,
-            viewerUsers: 1
-          },
-          registrationTrends: []
-        }
-      });
-    }
-
-    const { User } = require('../models');
-
-    const stats = await User.aggregate([
-      {
-        $group: {
-          _id: null,
-          totalUsers: { $sum: 1 },
-          activeUsers: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
-          inactiveUsers: { $sum: { $cond: [{ $eq: ['$status', 'inactive'] }, 1, 0] } },
-          suspendedUsers: { $sum: { $cond: [{ $eq: ['$status', 'suspended'] }, 1, 0] } },
-          adminUsers: { $sum: { $cond: [{ $eq: ['$role', 'admin'] }, 1, 0] } },
-          analystUsers: { $sum: { $cond: [{ $eq: ['$role', 'analyst'] }, 1, 0] } },
-          contributorUsers: { $sum: { $cond: [{ $eq: ['$role', 'contributor'] }, 1, 0] } },
-          viewerUsers: { $sum: { $cond: [{ $eq: ['$role', 'viewer'] }, 1, 0] } }
-        }
-      }
-    ]);
-
-    // Get user registration trends (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const registrationTrends = await User.aggregate([
-      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' }
-          },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
-    ]);
+    const stats = await localDB.getUserStats();
 
     // Log this admin activity
     await logAdminActivity(
@@ -680,21 +510,58 @@ const getUserStats = async (req, res) => {
     res.json({
       success: true,
       data: {
-        overview: stats[0] || {
-          totalUsers: 0,
-          activeUsers: 0,
-          inactiveUsers: 0,
-          suspendedUsers: 0,
-          adminUsers: 0,
-          analystUsers: 0,
-          contributorUsers: 0,
-          viewerUsers: 0
+        overview: {
+          totalUsers: stats.totalUsers || 0,
+          activeUsers: stats.activeUsers || 0,
+          inactiveUsers: stats.inactiveUsers || 0,
+          suspendedUsers: 0, // Would need to add this to query
+          adminUsers: stats.adminUsers || 0,
+          analystUsers: stats.analystUsers || 0,
+          contributorUsers: stats.contributorUsers || 0,
+          viewerUsers: stats.viewerUsers || 0
         },
-        registrationTrends
+        registrationTrends: [] // Would need to implement date-based grouping
       }
     });
   } catch (error) {
     console.error('Get user stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get available scopes and activities for RBAC setup
+// @route   GET /api/users/rbac-options
+// @access  Private (Admin only)
+const getRBACOptions = async (req, res) => {
+  try {
+    const rbacOptions = {
+      scopes: [
+        { value: 1, label: 'Scope 1 - Direct Emissions' },
+        { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
+        { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
+      ],
+      activities: {
+        1: Object.keys(emissionFactors.scope1 || {}),
+        2: Object.keys(emissionFactors.scope2 || {}),
+        3: Object.keys(emissionFactors.scope3 || {})
+      },
+      roles: [
+        { value: 'admin', label: 'Administrator', description: 'Full system access' },
+        { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
+        { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
+        { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
+      ]
+    };
+
+    res.json({
+      success: true,
+      data: rbacOptions
+    });
+  } catch (error) {
+    console.error('Get RBAC options error:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -723,16 +590,8 @@ const bulkUpdateUsers = async (req, res) => {
       });
     }
 
-    // Check if MongoDB is connected
-    if (!isMongoConnected()) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection required for bulk operations.'
-      });
-    }
-
     // Validate updates
-    const allowedFields = ['role', 'status'];
+    const allowedFields = ['role', 'status', 'restrictions'];
     const updateFields = Object.keys(updates);
     const invalidFields = updateFields.filter(field => !allowedFields.includes(field));
     
@@ -743,13 +602,15 @@ const bulkUpdateUsers = async (req, res) => {
       });
     }
 
-    const { User } = require('../models');
-
-    // Perform bulk update
-    const result = await User.updateMany(
-      { _id: { $in: userIds } },
-      { $set: updates }
-    );
+    let modifiedCount = 0;
+    for (const userId of userIds) {
+      try {
+        await localDB.updateUser(userId, updates);
+        modifiedCount++;
+      } catch (error) {
+        console.error(`Failed to update user ${userId}:`, error);
+      }
+    }
 
     // Log this admin activity
     await logAdminActivity(
@@ -757,17 +618,17 @@ const bulkUpdateUsers = async (req, res) => {
       'bulk_updated_users',
       'user',
       null,
-      `Bulk updated ${result.modifiedCount} users with: ${JSON.stringify(updates)}`,
+      `Bulk updated ${modifiedCount} users with: ${JSON.stringify(updates)}`,
       req
     );
 
     res.json({
       success: true,
       data: {
-        matched: result.matchedCount,
-        modified: result.modifiedCount
+        matched: userIds.length,
+        modified: modifiedCount
       },
-      message: `Successfully updated ${result.modifiedCount} users`
+      message: `Successfully updated ${modifiedCount} users`
     });
   } catch (error) {
     console.error('Bulk update users error:', error);
@@ -778,72 +639,15 @@ const bulkUpdateUsers = async (req, res) => {
   }
 };
 
-// Helper functions
-const getDemoUsers = () => [
-  {
-    _id: 'demo_admin_id',
-    name: 'Demo Admin',
-    email: 'demo@example.com',
-    role: 'admin',
-    status: 'active',
-    createdAt: new Date(),
-    statistics: { emissionCount: 15, recentActivityCount: 5, joinedDaysAgo: 0 }
-  },
-  {
-    _id: 'demo_analyst_id',
-    name: 'Demo Analyst',
-    email: 'analyst@example.com',
-    role: 'analyst',
-    status: 'active',
-    createdAt: new Date(),
-    statistics: { emissionCount: 10, recentActivityCount: 3, joinedDaysAgo: 0 }
-  },
-  {
-    _id: 'demo_contributor_id',
-    name: 'Demo Contributor',
-    email: 'contributor@example.com',
-    role: 'contributor',
-    status: 'active',
-    createdAt: new Date(),
-    statistics: { emissionCount: 5, recentActivityCount: 2, joinedDaysAgo: 0 }
-  },
-  {
-    _id: 'demo_viewer_id',
-    name: 'Demo Viewer',
-    email: 'viewer@example.com',
-    role: 'viewer',
-    status: 'active',
-    createdAt: new Date(),
-    statistics: { emissionCount: 0, recentActivityCount: 1, joinedDaysAgo: 0 }
-  }
-];
-
-const extractBrowser = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Chrome')) return 'Chrome';
-  if (userAgent.includes('Firefox')) return 'Firefox';
-  if (userAgent.includes('Safari')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  return 'Other';
-};
-
-const extractOS = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Windows')) return 'Windows';
-  if (userAgent.includes('Mac')) return 'MacOS';
-  if (userAgent.includes('Linux')) return 'Linux';
-  if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
-  return 'Other';
-};
-
 module.exports = {
   getUsers,
   getUserById,
   createUser,
   updateUserRole,
+  updateUserRestrictions, // NEW: For managing contributor restrictions
   updateUserStatus,
   deleteUser,
   getUserStats,
+  getRBACOptions, // NEW: For getting RBAC dropdown options
   bulkUpdateUsers
 };

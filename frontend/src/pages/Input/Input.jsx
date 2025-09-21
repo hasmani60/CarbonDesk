@@ -1,7 +1,8 @@
-// frontend/src/pages/Input/Input.jsx
+// pages/Input/Input.jsx - Enhanced with RBAC Support
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Info, Lock, Shield } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
@@ -11,6 +12,7 @@ import { saveEmission } from '../../utils/localStorage';
 import toast from 'react-hot-toast';
 
 const Input = () => {
+  const { user, canAccessScope, canAccessActivity, getAllowedScopes, getAllowedActivities } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeScope, setActiveScope] = useState(searchParams.get('scope') || '1');
   const [categories, setCategories] = useState([]);
@@ -19,6 +21,7 @@ const Input = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showEmissionForm, setShowEmissionForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const scopes = [
     { id: '1', label: 'Scope 1', description: 'Direct emissions from owned or controlled sources' },
@@ -88,54 +91,6 @@ const Input = () => {
         description: 'Emissions from recharging refrigerants in air conditioners',
         subcategories: ['R134a', 'R410a'],
         icon: '🌨️'
-      },
-      {
-        name: 'Purchase of paper',
-        description: 'GHG emissions embedded in the production and transportation of office paper products',
-        subcategories: ['A4', 'Kraft', 'Prints'],
-        icon: '📄'
-      },
-      {
-        name: 'Purchase of packing material (plastic)',
-        description: 'Emissions from procuring plastic packaging materials',
-        subcategories: ['HDPE', 'LDPE', 'Shrink wrap'],
-        icon: '📦'
-      },
-      {
-        name: 'LPG Cylinders Purchase',
-        description: 'Direct emissions from using LPG cylinders for cooking or maintenance work',
-        subcategories: ['LPG'],
-        icon: '🔥'
-      },
-      {
-        name: 'Fuel for Forklift',
-        description: 'Fuel used by forklifts in factory operations',
-        subcategories: ['Diesel', 'Battery'],
-        icon: '🏗️'
-      },
-      {
-        name: 'Oil used for lubrication',
-        description: 'Lubricants like engine or gear oil used during equipment operation',
-        subcategories: ['Hydraulic', 'Engine Oil', 'Gear oil'],
-        icon: '🛢️'
-      },
-      {
-        name: 'Gas purchased for Maintenance',
-        description: 'Industrial gases like nitrogen or acetylene used for maintenance',
-        subcategories: ['Nitrogen', 'Oxygen', 'Acetylene'],
-        icon: '⚙️'
-      },
-      {
-        name: 'Cotton Waste for boiler starters',
-        description: 'Cotton waste used for igniting boilers',
-        subcategories: ['Cotton Waste'],
-        icon: '🧸'
-      },
-      {
-        name: 'Transport: Factory to warehouse',
-        description: 'Emissions from in-house transportation of finished goods between company facilities',
-        subcategories: ['Company Vehicle'],
-        icon: '🚛'
       }
     ],
     '2': [
@@ -176,12 +131,6 @@ const Input = () => {
         description: 'Travel-related emissions from flights, trains, or taxis used by employees for work purposes',
         subcategories: ['Air', 'Rail', 'Taxi'],
         icon: '✈️'
-      },
-      {
-        name: 'Transport of EPT sludge',
-        description: 'Emissions from moving effluent treatment plant sludge to external treatment centers',
-        subcategories: ['Truck'],
-        icon: '🏭'
       }
     ]
   };
@@ -189,25 +138,65 @@ const Input = () => {
   useEffect(() => {
     const scope = searchParams.get('scope');
     if (scope && ['1', '2', '3'].includes(scope)) {
-      setActiveScope(scope);
+      // Check if user can access this scope
+      if (canAccessScope(scope)) {
+        setActiveScope(scope);
+        setAccessDenied(false);
+      } else {
+        setAccessDenied(true);
+        // Redirect to first allowed scope
+        const allowedScopes = getAllowedScopes();
+        if (allowedScopes.length > 0) {
+          setActiveScope(allowedScopes[0].toString());
+          setSearchParams({ scope: allowedScopes[0].toString() });
+        }
+      }
     }
     loadCategories();
-  }, [searchParams]);
+  }, [searchParams, canAccessScope, getAllowedScopes]);
 
   const loadCategories = () => {
-    setCategories(emissionCategories[activeScope] || []);
+    if (!canAccessScope(activeScope)) {
+      setCategories([]);
+      setLoading(false);
+      return;
+    }
+
+    let allCategories = emissionCategories[activeScope] || [];
+    
+    // Filter categories based on user's allowed activities (for contributors with restrictions)
+    const allowedActivities = getAllowedActivities();
+    if (user?.role === 'contributor' && allowedActivities.length > 0) {
+      allCategories = allCategories.filter(category => 
+        allowedActivities.includes(category.name)
+      );
+    }
+    
+    setCategories(allCategories);
     setLoading(false);
   };
 
   const handleScopeChange = (scope) => {
+    // Check if user can access this scope
+    if (!canAccessScope(scope)) {
+      toast.error(`Access denied. You don't have permission to access Scope ${scope}`);
+      return;
+    }
+
     setActiveScope(scope);
     setSearchParams({ scope });
-    setCategories(emissionCategories[scope] || []);
     setExpandedCategories({});
     setSelectedCategory(null);
+    loadCategories();
   };
 
   const toggleCategoryExpansion = (categoryName) => {
+    // Check if user can access this activity
+    if (!canAccessActivity(categoryName)) {
+      toast.error(`Access denied. You don't have permission to access ${categoryName}`);
+      return;
+    }
+
     setExpandedCategories(prev => ({
       ...prev,
       [categoryName]: !prev[categoryName]
@@ -215,6 +204,17 @@ const Input = () => {
   };
 
   const handleCategorySelect = (category, selectedType) => {
+    // Double-check permissions
+    if (!canAccessScope(activeScope)) {
+      toast.error(`Access denied. You don't have permission to access Scope ${activeScope}`);
+      return;
+    }
+
+    if (!canAccessActivity(category.name)) {
+      toast.error(`Access denied. You don't have permission to access ${category.name}`);
+      return;
+    }
+
     setSelectedCategory({
       ...category,
       selectedType,
@@ -225,7 +225,13 @@ const Input = () => {
 
   const handleEmissionSubmit = async (emissionData) => {
     try {
-      // Save to local storage instead of API
+      // Final permission check before submission
+      if (!canAccessScope(activeScope) || !canAccessActivity(selectedCategory.name)) {
+        toast.error('Access denied. Insufficient permissions to create this emission record.');
+        return;
+      }
+
+      // Save to local storage
       const emissionRecord = {
         scope: parseInt(activeScope),
         category: selectedCategory.name,
@@ -237,7 +243,9 @@ const Input = () => {
         location: emissionData.location,
         description: emissionData.description,
         factor: emissionData.emissionFactor,
-        calculatedEmissions: emissionData.calculatedEmissions
+        calculatedEmissions: emissionData.calculatedEmissions,
+        user: user.id,
+        userName: user.name
       };
       
       await saveEmission(emissionRecord);
@@ -258,10 +266,75 @@ const Input = () => {
     category.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Get available scopes for user
+  const availableScopes = scopes.filter(scope => canAccessScope(scope.id));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-lg text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  // Access denied for this scope
+  if (accessDenied || !canAccessScope(activeScope)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock className="w-8 h-8 text-red-600" />
+          </div>
+          
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h1>
+          
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <Shield className="w-5 h-5 text-yellow-600 mr-3" />
+              <div className="text-left">
+                <p className="text-sm font-medium text-yellow-800">
+                  Scope {activeScope} Access Denied
+                </p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Your role ({user?.role}) doesn't have permission to access this scope.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {availableScopes.length > 0 && (
+            <div className="mb-6">
+              <p className="text-sm text-gray-600 mb-3">Available scopes for your role:</p>
+              <div className="space-y-2">
+                {availableScopes.map(scope => (
+                  <button
+                    key={scope.id}
+                    onClick={() => handleScopeChange(scope.id)}
+                    className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="font-medium text-gray-900">{scope.label}</div>
+                    <div className="text-sm text-gray-500">{scope.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => window.history.back()}
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={() => window.location.href = '/dashboard'}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Dashboard
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -278,11 +351,29 @@ const Input = () => {
         ]}
       />
 
+      {/* RBAC Info for Restricted Users */}
+      {user?.role === 'contributor' && user?.restrictions && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <Shield className="w-5 h-5 text-blue-600" />
+            <h3 className="font-medium text-blue-900">Access Restrictions Applied</h3>
+          </div>
+          <div className="text-sm text-blue-800 space-y-1">
+            {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length < 3 && (
+              <p>• Limited to Scopes: {user.restrictions.allowedScopes.join(', ')}</p>
+            )}
+            {user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0 && (
+              <p>• Limited to {user.restrictions.allowedActivities.length} specific activities</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Scope Tabs */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex space-x-1">
-            {scopes.map((scope) => (
+            {availableScopes.map((scope) => (
               <button
                 key={scope.id}
                 onClick={() => handleScopeChange(scope.id)}
@@ -293,6 +384,9 @@ const Input = () => {
                 }`}
               >
                 {scope.label}
+                {!canAccessScope(scope.id) && (
+                  <Lock className="w-3 h-3 ml-1 inline" />
+                )}
               </button>
             ))}
           </div>
@@ -302,7 +396,7 @@ const Input = () => {
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search Emission..."
+              placeholder="Search Activities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
@@ -324,61 +418,80 @@ const Input = () => {
         <div className="p-6">
           {filteredCategories.length > 0 ? (
             <div className="space-y-4">
-              {filteredCategories.map((category, index) => (
-                <div key={index} className="border rounded-lg">
-                  <button
-                    onClick={() => toggleCategoryExpansion(category.name)}
-                    className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <span className="text-2xl">{category.icon}</span>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{category.name}</h3>
-                        <p className="text-sm text-gray-500">{category.description}</p>
+              {filteredCategories.map((category, index) => {
+                const hasActivityAccess = canAccessActivity(category.name);
+                
+                return (
+                  <div key={index} className={`border rounded-lg ${!hasActivityAccess ? 'opacity-50' : ''}`}>
+                    <button
+                      onClick={() => hasActivityAccess ? toggleCategoryExpansion(category.name) : null}
+                      disabled={!hasActivityAccess}
+                      className={`w-full flex items-center justify-between p-4 text-left transition-colors ${
+                        hasActivityAccess ? 'hover:bg-gray-50' : 'cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span className="text-2xl">{category.icon}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-gray-900">{category.name}</h3>
+                            {!hasActivityAccess && (
+                              <Lock className="w-4 h-4 text-red-500" title="Access Restricted" />
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500">{category.description}</p>
+                        </div>
                       </div>
-                    </div>
-                    {expandedCategories[category.name] ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
+                      {hasActivityAccess && (
+                        expandedCategories[category.name] ? (
+                          <ChevronUp className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        )
+                      )}
+                    </button>
 
-                  {expandedCategories[category.name] && (
-                    <div className="border-t bg-gray-50 p-4">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                        {category.subcategories.map((subcategory, subIndex) => {
-                          const factorData = emissionFactors[`scope${activeScope}`]?.[category.name]?.[subcategory];
-                          
-                          return (
-                            <button
-                              key={subIndex}
-                              onClick={() => handleCategorySelect(category, subcategory)}
-                              className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
-                            >
-                              <div className="flex items-center justify-center mb-2">
-                                <InfoTooltip 
-                                  content={factorData?.description || `${subcategory} emission source`}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                />
-                              </div>
-                              <span className="text-sm font-medium text-emerald-800">
-                                {subcategory}
-                              </span>
-                            </button>
-                          );
-                        })}
+                    {expandedCategories[category.name] && hasActivityAccess && (
+                      <div className="border-t bg-gray-50 p-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                          {category.subcategories.map((subcategory, subIndex) => {
+                            const factorData = emissionFactors[`scope${activeScope}`]?.[category.name]?.[subcategory];
+                            
+                            return (
+                              <button
+                                key={subIndex}
+                                onClick={() => handleCategorySelect(category, subcategory)}
+                                className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
+                              >
+                                <div className="flex items-center justify-center mb-2">
+                                  <InfoTooltip 
+                                    content={factorData?.description || `${subcategory} emission source`}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  />
+                                </div>
+                                <span className="text-sm font-medium text-emerald-800">
+                                  {subcategory}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-12">
-              <div className="text-gray-400 mb-2">No categories found</div>
+              <div className="text-gray-400 mb-2">
+                {categories.length === 0 ? 'No activities available for your access level' : 'No categories found'}
+              </div>
               <p className="text-sm text-gray-500">
-                Try adjusting your search terms or select a different scope.
+                {categories.length === 0 ? 
+                  'Contact your administrator to request access to additional activities.' :
+                  'Try adjusting your search terms or select a different scope.'
+                }
               </p>
             </div>
           )}

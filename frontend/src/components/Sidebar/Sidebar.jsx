@@ -1,4 +1,4 @@
-// components/Sidebar/Sidebar.jsx - Updated without Permissions section
+// components/Sidebar/Sidebar.jsx - Fixed scope routing
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
@@ -36,17 +36,17 @@ const Sidebar = () => {
       hasSubmenu: true,
       roles: ['admin', 'analyst', 'contributor'], // Viewers can't input data
       submenu: [
-        { path: '/input?scope=1', label: 'Scope 1' },
-        { path: '/input?scope=2', label: 'Scope 2' },
-        { path: '/input?scope=3', label: 'Scope 3' }
+        { path: '/input?scope=1', label: 'Scope 1' }, // FIXED: Correct scope parameter
+        { path: '/input?scope=2', label: 'Scope 2' }, // FIXED: Correct scope parameter
+        { path: '/input?scope=3', label: 'Scope 3' }  // FIXED: Correct scope parameter
       ]
     },
-    { path: '/monitor', icon: Monitor, label: 'Monitor', roles: ['admin', 'analyst', 'contributor'] },
+    { path: '/monitor', icon: Monitor, label: 'Monitor', roles: ['admin', 'analyst', 'contributor', 'viewer'] }, // FIXED: Added viewer access
     { path: '/analytics', icon: BarChart3, label: 'Analytics', roles: ['admin', 'analyst', 'contributor', 'viewer'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'analyst', 'contributor', 'viewer'] }
   ];
 
-  // Admin-only navigation items - UPDATED: Removed permissions
+  // Admin-only navigation items
   const adminNavItems = [
     {
       path: '/admin',
@@ -57,19 +57,37 @@ const Sidebar = () => {
       submenu: [
         { path: '/admin/monitor', label: 'User Activities', icon: Activity },
         { path: '/admin/users', label: 'User Management', icon: UserCog }
-        // REMOVED: { path: '/admin/system', label: 'System Overview', icon: Activity }
       ]
     }
-    // REMOVED: Permissions section completely
   ];
 
-  // Filter navigation items based on user role
+  // Filter navigation items based on user role and permissions
   const getVisibleNavItems = () => {
     if (!user?.role) return [];
     
-    const visibleBase = baseNavItems.filter(item => 
+    let visibleBase = baseNavItems.filter(item => 
       item.roles.includes(user.role)
     );
+    
+    // Apply additional restrictions for contributors based on their permissions
+    if (user.role === 'contributor' && user.restrictions) {
+      visibleBase = visibleBase.filter(item => {
+        // If contributor has scope restrictions, filter input submenu
+        if (item.path === '/input' && user.restrictions.allowedScopes) {
+          item.submenu = item.submenu.filter(subItem => {
+            const scopeNum = subItem.path.split('scope=')[1];
+            return user.restrictions.allowedScopes.includes(parseInt(scopeNum));
+          });
+        }
+        
+        // If contributor has no access to certain pages
+        if (user.restrictions.restrictedPages && user.restrictions.restrictedPages.includes(item.path)) {
+          return false;
+        }
+        
+        return true;
+      });
+    }
     
     const visibleAdmin = adminNavItems.filter(item => 
       item.roles.includes(user.role)
@@ -95,6 +113,16 @@ const Sidebar = () => {
     }
     if (path === '/admin') {
       return location.pathname.startsWith('/admin');
+    }
+    return location.pathname === path;
+  };
+
+  // FIXED: Correct submenu active state checking
+  const isSubmenuActive = (path) => {
+    if (path.includes('scope=')) {
+      const currentScope = new URLSearchParams(location.search).get('scope');
+      const pathScope = path.split('scope=')[1];
+      return location.pathname === '/input' && currentScope === pathScope;
     }
     return location.pathname === path;
   };
@@ -132,6 +160,12 @@ const Sidebar = () => {
             <span className={`text-xs font-medium ${userRoleInfo.color}`}>
               {userRoleInfo.label}
             </span>
+            {/* Show restrictions for contributors */}
+            {user.role === 'contributor' && user.restrictions && (
+              <span className="text-xs text-orange-600">
+                (Restricted)
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -180,7 +214,7 @@ const Sidebar = () => {
                           <Link
                             to={subItem.path}
                             className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-lg transition-colors ${
-                              location.pathname === subItem.path || location.search.includes(subItem.path.split('?')[1])
+                              isSubmenuActive(subItem.path) // FIXED: Use correct submenu active check
                                 ? 'bg-emerald-50 text-emerald-700'
                                 : 'text-gray-600 hover:bg-gray-100'
                             }`}

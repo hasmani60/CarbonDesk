@@ -1,47 +1,6 @@
-// middleware/auth.js - Fixed authentication middleware
+// middleware/auth.js - Updated authentication middleware for Local DB
 const jwt = require('jsonwebtoken');
-
-// Demo users for fallback when database is not available
-const demoUsers = {
-  'demo_admin_id': {
-    _id: 'demo_admin_id',
-    name: 'Demo Admin',
-    email: 'demo@example.com',
-    role: 'admin',
-    status: 'active'
-  },
-  'demo_analyst_id': {
-    _id: 'demo_analyst_id',
-    name: 'Demo Analyst',
-    email: 'analyst@example.com',
-    role: 'analyst',
-    status: 'active'
-  },
-  'demo_contributor_id': {
-    _id: 'demo_contributor_id',
-    name: 'Demo Contributor',
-    email: 'contributor@example.com',
-    role: 'contributor',
-    status: 'active'
-  },
-  'demo_viewer_id': {
-    _id: 'demo_viewer_id',
-    name: 'Demo Viewer',
-    email: 'viewer@example.com',
-    role: 'viewer',
-    status: 'active'
-  }
-};
-
-// Helper function to check if MongoDB is connected
-const isMongoConnected = () => {
-  try {
-    const mongoose = require('mongoose');
-    return mongoose.connection && mongoose.connection.readyState === 1;
-  } catch (error) {
-    return false;
-  }
-};
+const localDB = require('../database/localDB');
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -68,65 +27,37 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    // Try to get user from database first
-    let user;
-    try {
-      if (isMongoConnected()) {
-        const { User } = require('../models');
-        user = await User.findById(decoded.id);
-        console.log('Auth middleware - Database user found:', !!user);
-      }
-    } catch (dbError) {
-      console.log('Auth middleware - Database not available, using demo users');
+    // Get user from local database
+    const user = await localDB.findUserById(decoded.id);
+    console.log('Auth middleware - Database user found:', !!user);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
     }
 
-    // If database user found, use it
-    if (user) {
-      // Check if user account is active
-      if (user.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          message: 'User account is not active'
-        });
-      }
-
-      req.user = {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        permissions: user.permissions || {}
-      };
-      
-      console.log('Auth middleware - Database user set:', req.user);
-      return next();
+    // Check if user account is active
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'User account is not active'
+      });
     }
 
-    // Fallback to demo users if database not available
-    const demoUser = demoUsers[decoded.id];
-    if (demoUser) {
-      const { getRolePermissions } = require('../models');
-      const permissions = getRolePermissions ? getRolePermissions(demoUser.role) : {};
-      
-      req.user = {
-        id: demoUser._id,
-        name: demoUser.name,
-        email: demoUser.email,
-        role: demoUser.role,
-        status: demoUser.status,
-        permissions: permissions
-      };
-      
-      console.log('Auth middleware - Demo user set:', req.user);
-      return next();
-    }
-
-    // User not found
-    return res.status(401).json({
-      success: false,
-      message: 'User not found'
-    });
+    // Set user information in request
+    req.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      restrictions: user.restrictions || null
+    };
+    
+    console.log('Auth middleware - User set:', req.user);
+    return next();
 
   } catch (error) {
     console.error('Auth middleware error:', error.message);
@@ -192,6 +123,116 @@ const requireAdmin = (req, res, next) => {
 
   console.log('Auth middleware - Admin access granted for:', req.user.email);
   next();
+};
+
+// RBAC middleware for checking scope and activity restrictions (for contributors)
+const checkScopeAccess = (requiredScope) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(req.user.role)) {
+      return next();
+    }
+
+    // Contributors with restrictions
+    if (req.user.role === 'contributor' && req.user.restrictions) {
+      const allowedScopes = req.user.restrictions.allowedScopes || [1, 2, 3];
+      
+      if (!allowedScopes.includes(parseInt(requiredScope))) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You don't have permission to access Scope ${requiredScope}`
+        });
+      }
+    }
+
+    next();
+  };
+};
+
+// RBAC middleware for checking activity restrictions (for contributors)
+const checkActivityAccess = (requiredActivity) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(req.user.role)) {
+      return next();
+    }
+
+    // Contributors with restrictions
+    if (req.user.role === 'contributor' && req.user.restrictions) {
+      const allowedActivities = req.user.restrictions.allowedActivities || [];
+      
+      // If no specific activities are restricted, allow all
+      if (allowedActivities.length > 0 && !allowedActivities.includes(requiredActivity)) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You don't have permission to access activity: ${requiredActivity}`
+        });
+      }
+    }
+
+    next();
+  };
+};
+
+// RBAC middleware for checking page restrictions
+const checkPageAccess = (page) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Admin has full access
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Check role-based page access
+    const rolePageAccess = {
+      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings'],
+      contributor: ['/dashboard', '/input', '/monitor', '/settings'], // Note: /analytics removed
+      viewer: ['/dashboard', '/monitor'] // Limited access
+    };
+
+    const allowedPages = rolePageAccess[req.user.role] || [];
+    
+    if (!allowedPages.includes(page)) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. Your role (${req.user.role}) doesn't have access to ${page}`
+      });
+    }
+
+    // Additional restrictions for contributors
+    if (req.user.role === 'contributor' && req.user.restrictions) {
+      const restrictedPages = req.user.restrictions.restrictedPages || [];
+      
+      if (restrictedPages.includes(page)) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. This page has been restricted for your account.`
+        });
+      }
+    }
+
+    next();
+  };
 };
 
 // Check if user can access resource (own data or admin)
@@ -275,6 +316,9 @@ module.exports = {
   authenticateToken,
   authorizeRoles,
   requireAdmin,
+  checkScopeAccess,       // NEW: For scope-based access control
+  checkActivityAccess,    // NEW: For activity-based access control
+  checkPageAccess,        // NEW: For page-based access control
   authorizeResourceAccess,
   authorizeResourceModification,
   logActivity

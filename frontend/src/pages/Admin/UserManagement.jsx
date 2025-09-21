@@ -1,4 +1,4 @@
-// pages/Admin/UserManagement.jsx - Complete User Management with Add User
+// pages/Admin/UserManagement.jsx - Enhanced with RBAC Support
 import { useState, useEffect } from 'react';
 import { 
   Users, 
@@ -16,10 +16,13 @@ import {
   FileText,
   BarChart3,
   RefreshCw,
-  Download
+  Download,
+  Settings,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { adminAPI } from '../../services/api';
+import { adminAPI, usersAPI } from '../../services/api';
+import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
 
@@ -31,6 +34,7 @@ const UserManagement = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userStats, setUserStats] = useState(null);
+  const [rbacOptions, setRBACOptions] = useState(null);
   const [filters, setFilters] = useState({
     role: 'all',
     status: 'all'
@@ -46,6 +50,7 @@ const UserManagement = () => {
     if (isAdmin()) {
       loadUsers();
       loadUserStats();
+      loadRBACOptions();
     }
   }, [searchQuery, filters, pagination.currentPage]);
 
@@ -86,7 +91,6 @@ const UserManagement = () => {
       setUserStats(stats.data || stats);
     } catch (error) {
       console.error('Error loading user stats:', error);
-      // Set demo stats
       setUserStats({
         overview: {
           totalUsers: 4,
@@ -98,6 +102,34 @@ const UserManagement = () => {
           contributorUsers: 1,
           viewerUsers: 1
         }
+      });
+    }
+  };
+
+  const loadRBACOptions = async () => {
+    try {
+      const options = await usersAPI.getRBACOptions();
+      setRBACOptions(options.data || options);
+    } catch (error) {
+      console.error('Error loading RBAC options:', error);
+      // Fallback RBAC options
+      setRBACOptions({
+        scopes: [
+          { value: 1, label: 'Scope 1 - Direct Emissions' },
+          { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
+          { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
+        ],
+        activities: {
+          1: Object.keys(emissionFactors.scope1 || {}),
+          2: Object.keys(emissionFactors.scope2 || {}),
+          3: Object.keys(emissionFactors.scope3 || {})
+        },
+        roles: [
+          { value: 'admin', label: 'Administrator', description: 'Full system access' },
+          { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
+          { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
+          { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
+        ]
       });
     }
   };
@@ -168,8 +200,7 @@ const UserManagement = () => {
         'Status': userItem.status,
         'Created': new Date(userItem.createdAt).toLocaleDateString(),
         'Last Login': userItem.lastLogin ? new Date(userItem.lastLogin).toLocaleDateString() : 'Never',
-        'Emissions': userItem.statistics?.emissionCount || 0,
-        'Activities': userItem.statistics?.recentActivityCount || 0
+        'Restrictions': userItem.restrictions ? JSON.stringify(userItem.restrictions) : 'None'
       }));
 
       const csvContent = convertToCSV(exportData);
@@ -216,6 +247,7 @@ const UserManagement = () => {
       status: 'active',
       createdAt: new Date(),
       lastLogin: new Date(),
+      restrictions: null,
       statistics: { emissionCount: 15, recentActivityCount: 5 }
     },
     {
@@ -226,6 +258,7 @@ const UserManagement = () => {
       status: 'active',
       createdAt: new Date(),
       lastLogin: new Date(),
+      restrictions: null,
       statistics: { emissionCount: 10, recentActivityCount: 3 }
     },
     {
@@ -236,6 +269,11 @@ const UserManagement = () => {
       status: 'active',
       createdAt: new Date(),
       lastLogin: new Date(),
+      restrictions: {
+        allowedScopes: [1, 2],
+        allowedActivities: ['Fuel from Generator'],
+        restrictedPages: []
+      },
       statistics: { emissionCount: 5, recentActivityCount: 2 }
     },
     {
@@ -246,6 +284,7 @@ const UserManagement = () => {
       status: 'active',
       createdAt: new Date(),
       lastLogin: new Date(),
+      restrictions: null,
       statistics: { emissionCount: 0, recentActivityCount: 1 }
     }
   ];
@@ -361,11 +400,13 @@ const UserManagement = () => {
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center">
               <div className="p-2 bg-yellow-100 rounded-lg">
-                <Clock className="w-6 h-6 text-yellow-600" />
+                <Lock className="w-6 h-6 text-yellow-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Inactive</p>
-                <p className="text-2xl font-bold text-gray-900">{userStats.overview.inactiveUsers}</p>
+                <p className="text-sm font-medium text-gray-600">Restricted</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {users.filter(u => u.restrictions && Object.keys(u.restrictions).length > 0).length}
+                </p>
               </div>
             </div>
           </div>
@@ -425,7 +466,7 @@ const UserManagement = () => {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-          <p className="text-sm text-gray-600 mt-1">Manage user accounts, roles, and permissions</p>
+          <p className="text-sm text-gray-600 mt-1">Manage user accounts, roles, and RBAC permissions</p>
         </div>
 
         {loading ? (
@@ -447,6 +488,7 @@ const UserManagement = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Role</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Restrictions</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Activity</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Actions</th>
@@ -473,7 +515,7 @@ const UserManagement = () => {
                         value={userItem.role}
                         onChange={(e) => handleUpdateUserRole(userItem._id, e.target.value)}
                         className="text-xs px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        disabled={userItem._id === user.id} // Prevent self-modification
+                        disabled={userItem._id === user.id}
                       >
                         <option value="admin">Admin</option>
                         <option value="analyst">Analyst</option>
@@ -492,12 +534,40 @@ const UserManagement = () => {
                         value={userItem.status}
                         onChange={(e) => handleUpdateUserStatus(userItem._id, e.target.value)}
                         className={`text-xs px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getStatusBadgeColor(userItem.status)}`}
-                        disabled={userItem._id === user.id} // Prevent self-modification
+                        disabled={userItem._id === user.id}
                       >
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
                         <option value="suspended">Suspended</option>
                       </select>
+                    </td>
+                    <td className="px-6 py-4">
+                      {userItem.restrictions ? (
+                        <div className="text-xs space-y-1">
+                          {userItem.restrictions.allowedScopes && userItem.restrictions.allowedScopes.length < 3 && (
+                            <div className="flex items-center space-x-1">
+                              <Lock className="w-3 h-3 text-orange-500" />
+                              <span className="text-orange-600">
+                                Scopes: {userItem.restrictions.allowedScopes.join(', ')}
+                              </span>
+                            </div>
+                          )}
+                          {userItem.restrictions.allowedActivities && userItem.restrictions.allowedActivities.length > 0 && (
+                            <div className="flex items-center space-x-1">
+                              <Settings className="w-3 h-3 text-blue-500" />
+                              <span className="text-blue-600">
+                                {userItem.restrictions.allowedActivities.length} activities
+                              </span>
+                            </div>
+                          )}
+                          {(!userItem.restrictions.allowedScopes || userItem.restrictions.allowedScopes.length === 3) && 
+                           (!userItem.restrictions.allowedActivities || userItem.restrictions.allowedActivities.length === 0) && (
+                            <span className="text-gray-500">None</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">None</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
@@ -536,63 +606,47 @@ const UserManagement = () => {
             </table>
           </div>
         )}
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="border-t px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing {((pagination.currentPage - 1) * pagination.itemsPerPage) + 1} to{' '}
-                {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}{' '}
-                of {pagination.totalItems} users
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, currentPage: Math.max(1, prev.currentPage - 1) }))}
-                  disabled={pagination.currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-600">
-                  Page {pagination.currentPage} of {pagination.totalPages}
-                </span>
-                <button
-                  onClick={() => setPagination(prev => ({ ...prev, currentPage: Math.min(prev.totalPages, prev.currentPage + 1) }))}
-                  disabled={pagination.currentPage === pagination.totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Create User Modal */}
-      {showUserModal && (
+      {showUserModal && rbacOptions && (
         <CreateUserModal
           onSubmit={handleCreateUser}
           onClose={() => setShowUserModal(false)}
           loading={loading}
+          rbacOptions={rbacOptions}
         />
       )}
     </div>
   );
 };
 
-// Create User Modal Component
-const CreateUserModal = ({ onSubmit, onClose, loading }) => {
+// Enhanced Create User Modal Component with RBAC
+const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     role: 'contributor',
-    status: 'active'
+    status: 'active',
+    allowedScopes: [1, 2, 3], // Default: all scopes
+    allowedActivities: [], // Default: all activities
+    restrictedPages: []
   });
   const [errors, setErrors] = useState({});
+  const [showRestrictions, setShowRestrictions] = useState(false);
+
+  useEffect(() => {
+    setShowRestrictions(formData.role === 'contributor');
+    if (formData.role !== 'contributor') {
+      setFormData(prev => ({
+        ...prev,
+        allowedScopes: [1, 2, 3],
+        allowedActivities: [],
+        restrictedPages: []
+      }));
+    }
+  }, [formData.role]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -624,9 +678,41 @@ const CreateUserModal = ({ onSubmit, onClose, loading }) => {
     }
   };
 
+  const handleScopeChange = (scope, checked) => {
+    if (checked) {
+      setFormData(prev => ({
+        ...prev,
+        allowedScopes: [...prev.allowedScopes, scope]
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        allowedScopes: prev.allowedScopes.filter(s => s !== scope)
+      }));
+    }
+  };
+
+  const handleActivityChange = (activity, checked) => {
+    if (checked) {
+      setFormData(prev => ({
+        ...prev,
+        allowedActivities: [...prev.allowedActivities, activity]
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        allowedActivities: prev.allowedActivities.filter(a => a !== activity)
+      }));
+    }
+  };
+
+  const getActivitiesForScope = (scope) => {
+    return rbacOptions.activities[scope] || [];
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900">Create New User</h2>
           <button
@@ -638,36 +724,39 @@ const CreateUserModal = ({ onSubmit, onClose, loading }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Name *
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                errors.name ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="Enter full name"
-            />
-            {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
-          </div>
+          {/* Basic Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                  errors.name ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="Enter full name"
+              />
+              {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email Address *
-            </label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                errors.email ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="Enter email address"
-            />
-            {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address *
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                  errors.email ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="Enter email address"
+              />
+              {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+            </div>
           </div>
 
           <div>
@@ -686,35 +775,99 @@ const CreateUserModal = ({ onSubmit, onClose, loading }) => {
             {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Role
-            </label>
-            <select
-              value={formData.role}
-              onChange={(e) => setFormData({...formData, role: e.target.value})}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="contributor">Contributor</option>
-              <option value="analyst">Analyst</option>
-              <option value="viewer">Viewer</option>
-              <option value="admin">Admin</option>
-            </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Role *
+              </label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({...formData, role: e.target.value})}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {rbacOptions.roles.map(role => (
+                  <option key={role.value} value={role.value}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {rbacOptions.roles.find(r => r.value === formData.role)?.description}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({...formData, status: e.target.value})}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({...formData, status: e.target.value})}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
+          {/* RBAC Restrictions for Contributors */}
+          {showRestrictions && (
+            <div className="border-t pt-4">
+              <div className="flex items-center space-x-2 mb-4">
+                <Lock className="w-5 h-5 text-orange-500" />
+                <h3 className="text-lg font-medium text-gray-900">Access Restrictions</h3>
+                <span className="text-sm text-gray-500">(For Contributors)</span>
+              </div>
+
+              {/* Scope Restrictions */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Allowed Scopes (leave all checked for full access)
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {rbacOptions.scopes.map(scope => (
+                    <label key={scope.value} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.allowedScopes.includes(scope.value)}
+                        onChange={(e) => handleScopeChange(scope.value, e.target.checked)}
+                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm text-gray-700">{scope.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Activity Restrictions */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Allowed Activities (leave empty for all activities in allowed scopes)
+                </label>
+                <div className="space-y-3">
+                  {formData.allowedScopes.map(scope => (
+                    <div key={scope} className="border rounded-lg p-3">
+                      <h4 className="font-medium text-gray-900 mb-2">Scope {scope} Activities</h4>
+                      <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                        {getActivitiesForScope(scope).map(activity => (
+                          <label key={activity} className="flex items-center space-x-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={formData.allowedActivities.includes(activity)}
+                              onChange={(e) => handleActivityChange(activity, e.target.checked)}
+                              className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="text-gray-700 truncate" title={activity}>{activity}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex space-x-3 pt-4">
             <button 
@@ -747,13 +900,13 @@ const CreateUserModal = ({ onSubmit, onClose, loading }) => {
 
         <div className="mt-4 p-3 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>Role Permissions:</strong>
+            <strong>Role Permissions & RBAC:</strong>
           </p>
           <ul className="text-xs text-blue-700 mt-1 space-y-1">
             <li><strong>Admin:</strong> Full system access and user management</li>
             <li><strong>Analyst:</strong> Data analysis, reporting, and verification</li>
-            <li><strong>Contributor:</strong> Data entry and own data management</li>
-            <li><strong>Viewer:</strong> Read-only access to data</li>
+            <li><strong>Contributor:</strong> Data entry (can be restricted to specific scopes/activities)</li>
+            <li><strong>Viewer:</strong> Read-only access to dashboard and monitor</li>
           </ul>
         </div>
       </div>
