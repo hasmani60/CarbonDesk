@@ -1,4 +1,4 @@
-// middleware/auth.js - Updated authentication middleware for Local DB
+// middleware/auth.js - Updated authentication middleware with strict RBAC enforcement
 const jwt = require('jsonwebtoken');
 const localDB = require('../database/localDB');
 
@@ -188,7 +188,7 @@ const checkActivityAccess = (requiredActivity) => {
   };
 };
 
-// RBAC middleware for checking page restrictions
+// UPDATED: Enhanced page access control with strict RBAC enforcement
 const checkPageAccess = (page) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -198,24 +198,29 @@ const checkPageAccess = (page) => {
       });
     }
 
-    // Admin has full access
-    if (req.user.role === 'admin') {
-      return next();
-    }
-
-    // Check role-based page access
-    const rolePageAccess = {
-      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings'],
-      contributor: ['/dashboard', '/input', '/monitor', '/settings'], // Note: /analytics removed
-      viewer: ['/dashboard', '/monitor'] // Limited access
+    // STRICT RBAC: Define exact page access per role
+    const strictRolePageAccess = {
+      admin: ['/dashboard', '/input', '/monitor', '/analytics', '/settings', '/admin'], // Admin has access to all
+      analyst: ['/analytics', '/settings'], // FIXED: Only Analytics and Settings
+      contributor: ['/input', '/settings'], // FIXED: Only Input and Settings
+      viewer: ['/dashboard', '/monitor', '/analytics', '/settings'] // FIXED: Dashboard, Monitor, Analytics, Settings
     };
 
-    const allowedPages = rolePageAccess[req.user.role] || [];
+    const allowedPages = strictRolePageAccess[req.user.role] || [];
     
-    if (!allowedPages.includes(page)) {
+    // Check if the page is in the allowed list for this role
+    const hasAccess = allowedPages.some(allowedPage => {
+      if (allowedPage === '/admin' && page.startsWith('/admin')) {
+        return true; // Admin routes
+      }
+      return page === allowedPage || page.startsWith(allowedPage + '/');
+    });
+
+    if (!hasAccess) {
       return res.status(403).json({
         success: false,
-        message: `Access denied. Your role (${req.user.role}) doesn't have access to ${page}`
+        message: `Access denied. Your role (${req.user.role}) doesn't have access to ${page}`,
+        allowedPages: allowedPages
       });
     }
 
@@ -233,6 +238,77 @@ const checkPageAccess = (page) => {
 
     next();
   };
+};
+
+// UPDATED: Route-level access control middleware for API endpoints
+const enforceRouteAccess = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  const { role } = req.user;
+  const { method, path } = req;
+
+  // Define route access rules based on roles
+  const routeAccess = {
+    admin: {
+      // Admin can access all routes
+      GET: ['*'],
+      POST: ['*'],
+      PUT: ['*'],
+      PATCH: ['*'],
+      DELETE: ['*']
+    },
+    analyst: {
+      // Analyst: Only analytics and settings
+      GET: ['/api/analytics/*', '/api/settings/*', '/api/auth/*'],
+      POST: ['/api/auth/*'],
+      PATCH: ['/api/auth/*', '/api/settings/*'],
+      PUT: ['/api/settings/*'],
+      DELETE: []
+    },
+    contributor: {
+      // Contributor: Only input (emissions) and settings
+      GET: ['/api/emissions/*', '/api/settings/*', '/api/auth/*', '/api/dashboard/summary'], // Allow dashboard summary for input page
+      POST: ['/api/emissions/*', '/api/auth/*'],
+      PATCH: ['/api/emissions/*', '/api/auth/*', '/api/settings/*'],
+      PUT: ['/api/emissions/*', '/api/settings/*'],
+      DELETE: ['/api/emissions/*'] // Can delete own emissions
+    },
+    viewer: {
+      // Viewer: Dashboard, monitor, analytics, settings (read-only mostly)
+      GET: ['/api/dashboard/*', '/api/monitor/*', '/api/analytics/*', '/api/settings/*', '/api/auth/*', '/api/emissions/*'],
+      POST: ['/api/auth/*'],
+      PATCH: ['/api/auth/*', '/api/settings/*'],
+      PUT: ['/api/settings/*'],
+      DELETE: []
+    }
+  };
+
+  const allowedRoutes = routeAccess[role]?.[method] || [];
+  
+  // Check if route is allowed
+  const isAllowed = allowedRoutes.some(route => {
+    if (route === '*') return true;
+    if (route.endsWith('/*')) {
+      const baseRoute = route.slice(0, -2);
+      return path.startsWith(baseRoute);
+    }
+    return path === route || path.startsWith(route + '/');
+  });
+
+  if (!isAllowed) {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Your role (${role}) cannot ${method} ${path}`,
+      allowedRoutes: allowedRoutes
+    });
+  }
+
+  next();
 };
 
 // Check if user can access resource (own data or admin)
@@ -312,14 +388,36 @@ const logActivity = (action, resourceType = null) => {
   };
 };
 
+// Middleware to validate user can access their own data only (for non-admin users)
+const requireOwnership = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  // Admin can access all data
+  if (req.user.role === 'admin') {
+    return next();
+  }
+
+  // For other users, they can only access their own data
+  // This will be enforced at the query level in controllers
+  req.ownershipRequired = true;
+  next();
+};
+
 module.exports = {
   authenticateToken,
   authorizeRoles,
   requireAdmin,
-  checkScopeAccess,       // NEW: For scope-based access control
-  checkActivityAccess,    // NEW: For activity-based access control
-  checkPageAccess,        // NEW: For page-based access control
+  checkScopeAccess,
+  checkActivityAccess,
+  checkPageAccess,
+  enforceRouteAccess, // NEW: Strict route-level access control
   authorizeResourceAccess,
   authorizeResourceModification,
-  logActivity
+  logActivity,
+  requireOwnership // NEW: Ownership validation
 };

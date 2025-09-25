@@ -1,4 +1,4 @@
-// components/Sidebar/Sidebar.jsx - Fixed scope routing
+// components/Sidebar/Sidebar.jsx - Fixed RBAC and scope routing
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
@@ -22,29 +22,58 @@ import { useState } from 'react';
 const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, isAdmin, isAnalyst, isContributor } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [isAdminExpanded, setIsAdminExpanded] = useState(false);
 
-  // Base navigation items available to all users
-  const baseNavItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard', roles: ['admin', 'analyst', 'contributor', 'viewer'] },
-    { 
-      path: '/input', 
-      icon: FileText, 
-      label: 'Input',
-      hasSubmenu: true,
-      roles: ['admin', 'analyst', 'contributor'], // Viewers can't input data
-      submenu: [
-        { path: '/input?scope=1', label: 'Scope 1' }, // FIXED: Correct scope parameter
-        { path: '/input?scope=2', label: 'Scope 2' }, // FIXED: Correct scope parameter
-        { path: '/input?scope=3', label: 'Scope 3' }  // FIXED: Correct scope parameter
+  // FIXED: Corrected role-based navigation according to requirements
+  const getNavItemsForRole = (role) => {
+    const baseNavItems = {
+      admin: [
+        { path: '/dashboard', icon: Home, label: 'Dashboard' },
+        { 
+          path: '/input', 
+          icon: FileText, 
+          label: 'Input',
+          hasSubmenu: true,
+          submenu: [
+            { path: '/input?scope=1', label: 'Scope 1' },
+            { path: '/input?scope=2', label: 'Scope 2' },
+            { path: '/input?scope=3', label: 'Scope 3' }
+          ]
+        },
+        { path: '/monitor', icon: Monitor, label: 'Monitor' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/settings', icon: Settings, label: 'Settings' }
+      ],
+      analyst: [
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/settings', icon: Settings, label: 'Settings' }
+      ],
+      contributor: [
+        { 
+          path: '/input', 
+          icon: FileText, 
+          label: 'Input',
+          hasSubmenu: true,
+          submenu: [
+            { path: '/input?scope=1', label: 'Scope 1' },
+            { path: '/input?scope=2', label: 'Scope 2' },
+            { path: '/input?scope=3', label: 'Scope 3' }
+          ]
+        },
+        { path: '/settings', icon: Settings, label: 'Settings' }
+      ],
+      viewer: [
+        { path: '/dashboard', icon: Home, label: 'Dashboard' },
+        { path: '/monitor', icon: Monitor, label: 'Monitor' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/settings', icon: Settings, label: 'Settings' }
       ]
-    },
-    { path: '/monitor', icon: Monitor, label: 'Monitor', roles: ['admin', 'analyst', 'contributor', 'viewer'] }, // FIXED: Added viewer access
-    { path: '/analytics', icon: BarChart3, label: 'Analytics', roles: ['admin', 'analyst', 'contributor', 'viewer'] },
-    { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'analyst', 'contributor', 'viewer'] }
-  ];
+    };
+
+    return baseNavItems[role] || [];
+  };
 
   // Admin-only navigation items
   const adminNavItems = [
@@ -61,13 +90,11 @@ const Sidebar = () => {
     }
   ];
 
-  // Filter navigation items based on user role and permissions
+  // Get navigation items based on user role
   const getVisibleNavItems = () => {
     if (!user?.role) return [];
     
-    let visibleBase = baseNavItems.filter(item => 
-      item.roles.includes(user.role)
-    );
+    let visibleBase = getNavItemsForRole(user.role);
     
     // Apply additional restrictions for contributors based on their permissions
     if (user.role === 'contributor' && user.restrictions) {
@@ -89,9 +116,8 @@ const Sidebar = () => {
       });
     }
     
-    const visibleAdmin = adminNavItems.filter(item => 
-      item.roles.includes(user.role)
-    );
+    // Add admin items for admin users
+    const visibleAdmin = user.role === 'admin' ? adminNavItems : [];
     
     return [...visibleBase, ...visibleAdmin];
   };
@@ -245,7 +271,7 @@ const Sidebar = () => {
         </ul>
 
         {/* Admin Quick Actions */}
-        {isAdmin() && (
+        {user?.role === 'admin' && (
           <div className="mt-8 px-3">
             <div className="border-t pt-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">

@@ -1,8 +1,9 @@
-// pages/Input/Input.jsx - Enhanced with RBAC Support
+// pages/Input/Input.jsx - Complete rewrite with fixed imports and RBAC
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, ChevronUp, Info, Lock, Shield } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Search, ChevronDown, ChevronUp, Info, Lock, Shield, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useActivity } from '../../context/ActivityContext';
 import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
@@ -13,8 +14,10 @@ import toast from 'react-hot-toast';
 
 const Input = () => {
   const { user, canAccessScope, canAccessActivity, getAllowedScopes, getAllowedActivities } = useAuth();
+  const { logPageView, logEmissionAction } = useActivity();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeScope, setActiveScope] = useState(searchParams.get('scope') || '1');
+  const [activeScope, setActiveScope] = useState('1');
   const [categories, setCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState({});
@@ -23,13 +26,14 @@ const Input = () => {
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
 
+  // Scope definitions
   const scopes = [
     { id: '1', label: 'Scope 1', description: 'Direct emissions from owned or controlled sources' },
     { id: '2', label: 'Scope 2', description: 'Indirect emissions from purchased energy' },
     { id: '3', label: 'Scope 3', description: 'All other indirect emissions from value chain activities' }
   ];
 
-  // Updated emission categories based on the PDF
+  // Emission categories data
   const emissionCategories = {
     '1': [
       {
@@ -135,28 +139,75 @@ const Input = () => {
     ]
   };
 
+  // RBAC check - ensure user can access Input page
   useEffect(() => {
-    const scope = searchParams.get('scope');
-    if (scope && ['1', '2', '3'].includes(scope)) {
-      // Check if user can access this scope
-      if (canAccessScope(scope)) {
-        setActiveScope(scope);
+    if (!user) return;
+    
+    // Check if user role is allowed to access input
+    if (!['admin', 'contributor'].includes(user.role)) {
+      navigate('/dashboard');
+      toast.error(`Access denied. Your role (${user.role}) cannot access the Input page.`);
+      return;
+    }
+
+    // Log page view
+    logPageView('Input', { userRole: user.role, allowedScopes: getAllowedScopes() });
+  }, [user, navigate, logPageView, getAllowedScopes]);
+
+  // Initialize scope and load categories
+  useEffect(() => {
+    initializeScope();
+  }, [user]);
+
+  // Handle URL scope parameter changes
+  useEffect(() => {
+    const scopeParam = searchParams.get('scope');
+    if (scopeParam && ['1', '2', '3'].includes(scopeParam) && scopeParam !== activeScope) {
+      handleScopeChange(scopeParam, false); // Don't update URL again
+    }
+  }, [searchParams]);
+
+  // Load categories when active scope changes
+  useEffect(() => {
+    if (activeScope) {
+      loadCategories();
+    }
+  }, [activeScope, user]);
+
+  const initializeScope = () => {
+    if (!user) return;
+    
+    const scopeParam = searchParams.get('scope');
+    const allowedScopes = getAllowedScopes();
+    
+    if (allowedScopes.length === 0) {
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+
+    if (scopeParam && ['1', '2', '3'].includes(scopeParam)) {
+      // Check if user can access the requested scope
+      if (canAccessScope(scopeParam)) {
+        setActiveScope(scopeParam);
         setAccessDenied(false);
       } else {
-        setAccessDenied(true);
         // Redirect to first allowed scope
-        const allowedScopes = getAllowedScopes();
-        if (allowedScopes.length > 0) {
-          setActiveScope(allowedScopes[0].toString());
-          setSearchParams({ scope: allowedScopes[0].toString() });
-        }
+        const firstAllowed = allowedScopes[0].toString();
+        setActiveScope(firstAllowed);
+        setSearchParams({ scope: firstAllowed });
+        toast.warning(`Access denied to Scope ${scopeParam}. Redirected to Scope ${firstAllowed}.`);
       }
+    } else {
+      // No scope specified, use first allowed scope
+      const firstAllowed = allowedScopes[0].toString();
+      setActiveScope(firstAllowed);
+      setSearchParams({ scope: firstAllowed });
     }
-    loadCategories();
-  }, [searchParams, canAccessScope, getAllowedScopes]);
+  };
 
   const loadCategories = () => {
-    if (!canAccessScope(activeScope)) {
+    if (!user || !canAccessScope(activeScope)) {
       setCategories([]);
       setLoading(false);
       return;
@@ -166,7 +217,7 @@ const Input = () => {
     
     // Filter categories based on user's allowed activities (for contributors with restrictions)
     const allowedActivities = getAllowedActivities();
-    if (user?.role === 'contributor' && allowedActivities.length > 0) {
+    if (user.role === 'contributor' && allowedActivities.length > 0) {
       allCategories = allCategories.filter(category => 
         allowedActivities.includes(category.name)
       );
@@ -176,7 +227,7 @@ const Input = () => {
     setLoading(false);
   };
 
-  const handleScopeChange = (scope) => {
+  const handleScopeChange = (scope, updateUrl = true) => {
     // Check if user can access this scope
     if (!canAccessScope(scope)) {
       toast.error(`Access denied. You don't have permission to access Scope ${scope}`);
@@ -184,10 +235,18 @@ const Input = () => {
     }
 
     setActiveScope(scope);
-    setSearchParams({ scope });
+    if (updateUrl) {
+      setSearchParams({ scope });
+    }
     setExpandedCategories({});
     setSelectedCategory(null);
-    loadCategories();
+
+    // Log scope change activity
+    logPageView(`Input - Scope ${scope}`, { 
+      previousScope: activeScope,
+      userRole: user?.role,
+      scopeChanged: true
+    });
   };
 
   const toggleCategoryExpansion = (categoryName) => {
@@ -221,6 +280,14 @@ const Input = () => {
       scope: activeScope
     });
     setShowEmissionForm(true);
+
+    // Log category selection
+    logEmissionAction('category_selected', null, 
+      `Selected ${category.name} - ${selectedType} in Scope ${activeScope}`, {
+        scope: activeScope,
+        category: category.name,
+        type: selectedType
+      });
   };
 
   const handleEmissionSubmit = async (emissionData) => {
@@ -233,6 +300,7 @@ const Input = () => {
 
       // Save to local storage
       const emissionRecord = {
+        id: `emission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         scope: parseInt(activeScope),
         category: selectedCategory.name,
         type: selectedCategory.selectedType,
@@ -245,10 +313,24 @@ const Input = () => {
         factor: emissionData.emissionFactor,
         calculatedEmissions: emissionData.calculatedEmissions,
         user: user.id,
-        userName: user.name
+        userName: user.name,
+        createdAt: new Date().toISOString(),
+        status: 'submitted'
       };
       
       await saveEmission(emissionRecord);
+      
+      // Log successful emission creation
+      logEmissionAction('created', emissionRecord.id, 
+        `Created emission record: ${selectedCategory.name} - ${selectedCategory.selectedType}`, {
+          scope: activeScope,
+          category: selectedCategory.name,
+          type: selectedCategory.selectedType,
+          amount: emissionData.amount,
+          unit: emissionData.unit,
+          calculatedEmissions: emissionData.calculatedEmissions
+        });
+
       toast.success('Emission data saved successfully!');
       setShowEmissionForm(false);
       setSelectedCategory(null);
@@ -258,9 +340,18 @@ const Input = () => {
     } catch (error) {
       toast.error('Failed to save emission data');
       console.error('Emission submission error:', error);
+      
+      // Log failed emission creation
+      logEmissionAction('creation_failed', null, 
+        `Failed to create emission record: ${error.message}`, {
+          scope: activeScope,
+          category: selectedCategory?.name,
+          error: error.message
+        });
     }
   };
 
+  // Filter categories based on search query
   const filteredCategories = categories.filter(category =>
     category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     category.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -269,16 +360,64 @@ const Input = () => {
   // Get available scopes for user
   const availableScopes = scopes.filter(scope => canAccessScope(scope.id));
 
+  // Show loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-lg text-gray-600">Loading...</div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+        <span className="ml-3 text-lg text-gray-600">Loading...</span>
       </div>
     );
   }
 
-  // Access denied for this scope
-  if (accessDenied || !canAccessScope(activeScope)) {
+  // Access denied for Input page entirely
+  if (!user || !['admin', 'contributor'].includes(user.role)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Shield className="w-8 h-8 text-red-600" />
+          </div>
+          
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h1>
+          
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3" />
+              <div className="text-left">
+                <p className="text-sm font-medium text-yellow-800">
+                  Input Page Access Denied
+                </p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Your role ({user?.role || 'unknown'}) doesn't have permission to access the Input page.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-sm text-gray-600 mb-6">
+            <p><strong>Input page is available to:</strong></p>
+            <ul className="mt-2 space-y-1">
+              <li>• Admin (full access)</li>
+              <li>• Contributor (restricted based on permissions)</li>
+            </ul>
+          </div>
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Access denied for this scope or no available scopes
+  if (accessDenied || availableScopes.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
@@ -286,49 +425,35 @@ const Input = () => {
             <Lock className="w-8 h-8 text-red-600" />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Scope Access Restricted</h1>
           
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <div className="flex items-center">
               <Shield className="w-5 h-5 text-yellow-600 mr-3" />
               <div className="text-left">
                 <p className="text-sm font-medium text-yellow-800">
-                  Scope {activeScope} Access Denied
+                  No Accessible Scopes
                 </p>
                 <p className="text-sm text-yellow-700 mt-1">
-                  Your role ({user?.role}) doesn't have permission to access this scope.
+                  Your account doesn't have access to any emission scopes.
                 </p>
               </div>
             </div>
           </div>
 
-          {availableScopes.length > 0 && (
-            <div className="mb-6">
-              <p className="text-sm text-gray-600 mb-3">Available scopes for your role:</p>
-              <div className="space-y-2">
-                {availableScopes.map(scope => (
-                  <button
-                    key={scope.id}
-                    onClick={() => handleScopeChange(scope.id)}
-                    className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="font-medium text-gray-900">{scope.label}</div>
-                    <div className="text-sm text-gray-500">{scope.description}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="text-sm text-gray-600 mb-6">
+            <p>Contact your administrator to request access to emission scopes.</p>
+          </div>
 
           <div className="flex space-x-3">
             <button
-              onClick={() => window.history.back()}
+              onClick={() => navigate('/settings')}
               className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors"
             >
-              Go Back
+              Settings
             </button>
             <button
-              onClick={() => window.location.href = '/dashboard'}
+              onClick={() => navigate('/dashboard')}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
             >
               Dashboard
@@ -346,7 +471,6 @@ const Input = () => {
         title="Add Emission"
         breadcrumb={[
           { label: 'App', href: '/' },
-          { label: 'Dashboard', href: '/dashboard' },
           { label: 'Add Emission' }
         ]}
       />
@@ -455,7 +579,7 @@ const Input = () => {
                       <div className="border-t bg-gray-50 p-4">
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                           {category.subcategories.map((subcategory, subIndex) => {
-                            const factorData = emissionFactors[`scope${activeScope}`]?.[category.name]?.[subcategory];
+                            const factorData = emissionFactors?.[`scope${activeScope}`]?.[category.name]?.[subcategory];
                             
                             return (
                               <button
@@ -463,12 +587,14 @@ const Input = () => {
                                 onClick={() => handleCategorySelect(category, subcategory)}
                                 className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
                               >
-                                <div className="flex items-center justify-center mb-2">
-                                  <InfoTooltip 
-                                    content={factorData?.description || `${subcategory} emission source`}
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                  />
-                                </div>
+                                {factorData && (
+                                  <div className="flex items-center justify-center mb-2">
+                                    <InfoTooltip 
+                                      content={factorData.description || `${subcategory} emission source`}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                    />
+                                  </div>
+                                )}
                                 <span className="text-sm font-medium text-emerald-800">
                                   {subcategory}
                                 </span>

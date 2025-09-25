@@ -18,7 +18,9 @@ const {
   requireAdmin, 
   checkScopeAccess, 
   checkActivityAccess, 
-  checkPageAccess 
+  checkPageAccess,
+  enforceRouteAccess,
+  authorizeRoles
 } = require('./middleware/auth');
 
 const app = express();
@@ -102,7 +104,8 @@ app.get('/health', (req, res) => {
       auditLogging: true,
       roleBasedAccess: true,
       localDatabase: true,
-      rbacSupport: true
+      rbacSupport: true,
+      strictRBAC: true // NEW: Indicating strict RBAC is enabled
     }
   };
   
@@ -117,7 +120,7 @@ const adminController = require('./controllers/adminController');
 const dashboardController = require('./controllers/dashboardController');
 const emissionController = require('./controllers/emissionController');
 
-// Authentication routes
+// Authentication routes (no RBAC restrictions)
 const authRouter = express.Router();
 authRouter.post('/login', authController.login);
 authRouter.post('/register', authenticateToken, requireAdmin, authController.register);
@@ -127,111 +130,234 @@ authRouter.patch('/profile', authenticateToken, authController.updateProfile);
 authRouter.patch('/change-password', authenticateToken, authController.changePassword);
 app.use('/api/auth', authRouter);
 
-// Admin routes with enhanced RBAC
+// STRICT RBAC: Admin routes (Admin only)
 const adminRouter = express.Router();
 adminRouter.get('/dashboard', adminController.getAdminDashboard);
 adminRouter.get('/activities', adminController.getAllActivities);
 adminRouter.get('/user-summary', adminController.getUserActivitySummary);
 app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
 
-// User management routes with enhanced RBAC
+// STRICT RBAC: User management routes (Admin only)
 const userRouter = express.Router();
 userRouter.get('/', userController.getUsers);
 userRouter.get('/stats', userController.getUserStats);
-userRouter.get('/rbac-options', userController.getRBACOptions); // NEW: RBAC options endpoint
+userRouter.get('/rbac-options', userController.getRBACOptions);
 userRouter.get('/:id', userController.getUserById);
-userRouter.post('/', requireAdmin, userController.createUser); // ENHANCED: With RBAC support
+userRouter.post('/', requireAdmin, userController.createUser);
 userRouter.patch('/:id/role', requireAdmin, userController.updateUserRole);
-userRouter.patch('/:id/restrictions', requireAdmin, userController.updateUserRestrictions); // NEW: Update restrictions
+userRouter.patch('/:id/restrictions', requireAdmin, userController.updateUserRestrictions);
 userRouter.patch('/:id/status', requireAdmin, userController.updateUserStatus);
 userRouter.delete('/:id', requireAdmin, userController.deleteUser);
 userRouter.patch('/bulk', requireAdmin, userController.bulkUpdateUsers);
 app.use('/api/users', authenticateToken, userRouter);
 
-// Emission routes with RBAC
+// STRICT RBAC: Emission routes with role-specific access
 const emissionRouter = express.Router();
-emissionRouter.get('/', emissionController.getEmissions);
-emissionRouter.get('/categories', emissionController.getEmissionCategories);
-emissionRouter.get('/stats', emissionController.getEmissionStats);
-emissionRouter.get('/:id', emissionController.getEmissionById);
 
-// RBAC-protected emission creation (check scope and activity access)
-emissionRouter.post('/', (req, res, next) => {
-  const { scope, category } = req.body;
-  
-  // Check scope access
-  if (scope) {
-    return checkScopeAccess(scope)(req, res, () => {
-      // Check activity access if category is provided
-      if (category) {
-        return checkActivityAccess(category)(req, res, next);
-      }
-      next();
-    });
-  }
-  next();
-}, emissionController.createEmission);
+// GET routes: Different access per role
+emissionRouter.get('/', 
+  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'), // All roles can view
+  emissionController.getEmissions
+);
+emissionRouter.get('/categories',
+  authorizeRoles('admin', 'analyst', 'contributor'), // Only roles that can create emissions
+  emissionController.getEmissionCategories
+);
+emissionRouter.get('/stats',
+  authorizeRoles('admin', 'analyst', 'viewer'), // Analytics access
+  emissionController.getEmissionStats
+);
+emissionRouter.get('/:id',
+  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
+  emissionController.getEmissionById
+);
 
-emissionRouter.patch('/:id', emissionController.updateEmission);
-emissionRouter.patch('/:id/verify', requireAdmin, emissionController.verifyEmission);
-emissionRouter.delete('/:id', emissionController.deleteEmission);
+// POST routes: Only admin and contributors can create
+emissionRouter.post('/', 
+  authorizeRoles('admin', 'contributor'), // Only admin and contributors
+  (req, res, next) => {
+    const { scope, category } = req.body;
+    
+    // Check scope access for contributors
+    if (scope && req.user.role === 'contributor') {
+      return checkScopeAccess(scope)(req, res, () => {
+        // Check activity access if category is provided
+        if (category) {
+          return checkActivityAccess(category)(req, res, next);
+        }
+        next();
+      });
+    }
+    next();
+  },
+  emissionController.createEmission
+);
+
+// PATCH routes: Admin and contributors can update, analysts can verify
+emissionRouter.patch('/:id',
+  authorizeRoles('admin', 'contributor'),
+  emissionController.updateEmission
+);
+
+emissionRouter.patch('/:id/verify',
+  authorizeRoles('admin', 'analyst'), // Admin and analyst can verify
+  emissionController.verifyEmission
+);
+
+// DELETE routes: Only admin and contributors
+emissionRouter.delete('/:id',
+  authorizeRoles('admin', 'contributor'),
+  emissionController.deleteEmission
+);
+
 app.use('/api/emissions', authenticateToken, emissionRouter);
 
-// Dashboard routes with page access control
+// STRICT RBAC: Dashboard routes with specific role access
 const dashboardRouter = express.Router();
-dashboardRouter.get('/summary', checkPageAccess('/dashboard'), dashboardController.getDashboardSummary);
-dashboardRouter.get('/notifications', dashboardController.getDashboardNotifications);
+dashboardRouter.get('/summary', 
+  authorizeRoles('admin', 'viewer', 'contributor'), // Dashboard access for admin, viewer, contributor
+  dashboardController.getDashboardSummary
+);
+dashboardRouter.get('/notifications', 
+  authorizeRoles('admin', 'viewer', 'contributor'),
+  dashboardController.getDashboardNotifications
+);
 app.use('/api/dashboard', authenticateToken, dashboardRouter);
 
-// Input page access control
-app.get('/api/input/access/:scope', authenticateToken, (req, res) => {
+// STRICT RBAC: Analytics routes (Admin, Analyst, Viewer only)
+const analyticsRouter = express.Router();
+analyticsRouter.get('*', 
+  authorizeRoles('admin', 'analyst', 'viewer'),
+  (req, res) => {
+    res.json({ 
+      message: 'Analytics endpoint placeholder', 
+      userRole: req.user.role,
+      hasAccess: true
+    });
+  }
+);
+app.use('/api/analytics', authenticateToken, analyticsRouter);
+
+// STRICT RBAC: Monitor routes (Admin, Viewer only)
+const monitorRouter = express.Router();
+monitorRouter.get('*', 
+  authorizeRoles('admin', 'viewer'),
+  (req, res) => {
+    res.json({ 
+      message: 'Monitor endpoint placeholder', 
+      userRole: req.user.role,
+      hasAccess: true
+    });
+  }
+);
+app.use('/api/monitor', authenticateToken, monitorRouter);
+
+// STRICT RBAC: Settings routes (All authenticated users)
+const settingsRouter = express.Router();
+settingsRouter.get('*', 
+  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
+  (req, res) => {
+    res.json({ 
+      message: 'Settings endpoint placeholder', 
+      userRole: req.user.role,
+      hasAccess: true
+    });
+  }
+);
+app.use('/api/settings', authenticateToken, settingsRouter);
+
+// Access control check endpoints for frontend
+app.get('/api/access/scope/:scope', authenticateToken, (req, res) => {
   const scope = req.params.scope;
   
-  // Check if user can access this scope
-  checkScopeAccess(scope)(req, res, () => {
-    res.json({
-      success: true,
-      hasAccess: true,
+  try {
+    // Check if user can access this scope
+    checkScopeAccess(scope)(req, res, () => {
+      res.json({
+        success: true,
+        hasAccess: true,
+        scope: scope,
+        userRole: req.user.role,
+        restrictions: req.user.restrictions
+      });
+    });
+  } catch (error) {
+    res.status(403).json({
+      success: false,
+      hasAccess: false,
       scope: scope,
       userRole: req.user.role,
-      restrictions: req.user.restrictions
+      message: error.message
     });
-  });
+  }
 });
 
-// Monitor page access control
-app.get('/api/monitor/access', authenticateToken, (req, res) => {
-  checkPageAccess('/monitor')(req, res, () => {
-    res.json({
-      success: true,
-      hasAccess: true,
+app.get('/api/access/page/:page', authenticateToken, (req, res) => {
+  const page = `/${req.params.page}`;
+  
+  try {
+    checkPageAccess(page)(req, res, () => {
+      res.json({
+        success: true,
+        hasAccess: true,
+        page: page,
+        userRole: req.user.role,
+        restrictions: req.user.restrictions
+      });
+    });
+  } catch (error) {
+    res.status(403).json({
+      success: false,
+      hasAccess: false,
+      page: page,
       userRole: req.user.role,
-      restrictions: req.user.restrictions
+      message: error.message
     });
+  }
+});
+
+// RBAC info endpoint
+app.get('/api/rbac/info', authenticateToken, (req, res) => {
+  const { role } = req.user;
+  
+  const rolePermissions = {
+    admin: {
+      pages: ['dashboard', 'input', 'monitor', 'analytics', 'settings', 'admin'],
+      actions: ['create', 'read', 'update', 'delete', 'verify', 'manage_users'],
+      scopes: [1, 2, 3],
+      description: 'Full system access'
+    },
+    analyst: {
+      pages: ['analytics', 'settings'],
+      actions: ['read', 'verify'],
+      scopes: [1, 2, 3],
+      description: 'Analytics and verification access only'
+    },
+    contributor: {
+      pages: ['input', 'settings'],
+      actions: ['create', 'read', 'update', 'delete'],
+      scopes: req.user.restrictions?.allowedScopes || [1, 2, 3],
+      description: 'Data entry and management only'
+    },
+    viewer: {
+      pages: ['dashboard', 'monitor', 'analytics', 'settings'],
+      actions: ['read'],
+      scopes: [1, 2, 3],
+      description: 'Read-only access to data and analytics'
+    }
+  };
+
+  res.json({
+    success: true,
+    data: {
+      userRole: role,
+      permissions: rolePermissions[role] || rolePermissions.viewer,
+      restrictions: req.user.restrictions || null
+    }
   });
 });
 
-// Analytics page access control
-app.get('/api/analytics/access', authenticateToken, (req, res) => {
-  checkPageAccess('/analytics')(req, res, () => {
-    res.json({
-      success: true,
-      hasAccess: true,
-      userRole: req.user.role,
-      restrictions: req.user.restrictions
-    });
-  });
-});
-
-// Other route placeholders with access control
-app.use('/api/analytics', authenticateToken, checkPageAccess('/analytics'), (req, res) => {
-  res.json({ message: 'Analytics endpoint placeholder', userRole: req.user.role });
-});
-
-app.use('/api/monitor', authenticateToken, checkPageAccess('/monitor'), (req, res) => {
-  res.json({ message: 'Monitor endpoint placeholder', userRole: req.user.role });
-});
-
+// Placeholder routes for other endpoints (with RBAC)
 app.use('/api/vehicles', authenticateToken, (req, res) => {
   res.json({ message: 'Vehicles endpoint placeholder' });
 });
@@ -251,11 +377,11 @@ app.use('/api/notifications', authenticateToken, (req, res) => {
   });
 });
 
-app.use('/api/export', authenticateToken, (req, res) => {
-  res.json({ message: 'Export endpoint placeholder' });
+app.use('/api/export', authenticateToken, authorizeRoles('admin', 'analyst'), (req, res) => {
+  res.json({ message: 'Export endpoint placeholder - Admin/Analyst only' });
 });
 
-// Error handling middleware that doesn't exist - create a simple one
+// Error handling middleware
 const errorHandlerMiddleware = (err, req, res, next) => {
   console.error('Error:', err);
   
@@ -356,24 +482,28 @@ const startServer = async () => {
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend (Enhanced RBAC)`);
+      console.log(`📊 Carbon Accounting Backend (Strict RBAC Enforced)`);
       console.log(`🌐 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API Base: http://localhost:${PORT}/api`);
       console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
       console.log(`👥 Multi-User: Enabled`);
-      console.log(`🔒 Role-Based Access: Enhanced with Local DB`);
+      console.log(`🔒 Strict RBAC: Enforced on Frontend & Backend`);
       console.log(`📋 Admin Monitoring: Enabled`);
-      console.log(`📝 Activity Logging: Enabled`);
+      console.log(`📝 Activity Logging: Enhanced`);
       console.log(`🗄️  Database: Local SQLite (Primary)`);
-      console.log(`🛡️  RBAC: Scope & Activity Restrictions`);
+      console.log(`🛡️  Role Restrictions:`);
+      console.log(`     - Admin: All access`);
+      console.log(`     - Analyst: Analytics & Settings only`);
+      console.log(`     - Contributor: Input & Settings only`);
+      console.log(`     - Viewer: Dashboard, Monitor, Analytics & Settings`);
       console.log(`💚 Status: Ready for connections`);
       console.log('🚀 ================================');
       console.log('');
       console.log('📌 Demo Credentials:');
       console.log('   Admin - Email: demo@example.com, Password: password123');
       console.log('   Analyst - Email: analyst@example.com, Password: password123');
-      console.log('   Contributor - Email: contributor@example.com, Password: password123 (Restricted)');
+      console.log('   Contributor - Email: contributor@example.com, Password: password123');
       console.log('   Viewer - Email: viewer@example.com, Password: password123');
       console.log('');
     });

@@ -1,4 +1,4 @@
-// pages/Admin/UserManagement.jsx - Enhanced with RBAC Support
+// pages/Admin/UserManagement.jsx - Enhanced with Real-time Activity Logging
 import { useState, useEffect } from 'react';
 import { 
   Users, 
@@ -18,9 +18,18 @@ import {
   RefreshCw,
   Download,
   Settings,
-  Lock
+  Lock,
+  Activity,
+  Calendar,
+  MousePointer,
+  Database,
+  AlertCircle,
+  TrendingUp,
+  ExternalLink,
+  Filter as FilterIcon
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useActivity } from '../../context/ActivityContext';
 import { adminAPI, usersAPI } from '../../services/api';
 import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
@@ -28,16 +37,22 @@ import toast from 'react-hot-toast';
 
 const UserManagement = () => {
   const { user, isAdmin } = useAuth();
+  const { getRecentActivities, getActivitySummaryForAdmin } = useActivity();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showActivitiesModal, setShowActivitiesModal] = useState(false);
+  const [selectedUserActivities, setSelectedUserActivities] = useState([]);
   const [userStats, setUserStats] = useState(null);
   const [rbacOptions, setRBACOptions] = useState(null);
+  const [activitySummary, setActivitySummary] = useState(null);
+  const [recentActivities, setRecentActivities] = useState([]);
   const [filters, setFilters] = useState({
     role: 'all',
-    status: 'all'
+    status: 'all',
+    activity: 'all'
   });
   const [pagination, setPagination] = useState({
     currentPage: 1,
@@ -51,8 +66,22 @@ const UserManagement = () => {
       loadUsers();
       loadUserStats();
       loadRBACOptions();
+      loadActivitySummary();
+      loadRecentActivities();
     }
   }, [searchQuery, filters, pagination.currentPage]);
+
+  // Real-time activity updates
+  useEffect(() => {
+    const handleActivityUpdate = (event) => {
+      console.log('New activity logged:', event.detail);
+      loadRecentActivities();
+      loadActivitySummary();
+    };
+
+    window.addEventListener('user-activity-logged', handleActivityUpdate);
+    return () => window.removeEventListener('user-activity-logged', handleActivityUpdate);
+  }, []);
 
   const loadUsers = async () => {
     try {
@@ -66,7 +95,23 @@ const UserManagement = () => {
       });
 
       if (response.success !== false) {
-        setUsers(response.data || response || []);
+        const usersData = response.data || response || [];
+        
+        // Enhance users with activity data
+        const enhancedUsers = await Promise.all(usersData.map(async (userItem) => {
+          const userActivities = getRecentActivities(5, { userId: userItem._id });
+          return {
+            ...userItem,
+            statistics: {
+              ...userItem.statistics,
+              recentActivities: userActivities,
+              lastActivity: userActivities.length > 0 ? userActivities[0].timestamp : null,
+              totalActivities: userActivities.length
+            }
+          };
+        }));
+
+        setUsers(enhancedUsers);
         if (response.pagination) {
           setPagination(prev => ({
             ...prev,
@@ -78,8 +123,8 @@ const UserManagement = () => {
       console.error('Error loading users:', error);
       toast.error('Failed to load users');
       
-      // Fallback to demo data
-      setUsers(getDemoUsers());
+      // Fallback to demo data with activity
+      setUsers(getDemoUsersWithActivity());
     } finally {
       setLoading(false);
     }
@@ -112,7 +157,6 @@ const UserManagement = () => {
       setRBACOptions(options.data || options);
     } catch (error) {
       console.error('Error loading RBAC options:', error);
-      // Fallback RBAC options
       setRBACOptions({
         scopes: [
           { value: 1, label: 'Scope 1 - Direct Emissions' },
@@ -134,6 +178,31 @@ const UserManagement = () => {
     }
   };
 
+  const loadActivitySummary = () => {
+    try {
+      const summary = getActivitySummaryForAdmin();
+      setActivitySummary(summary);
+    } catch (error) {
+      console.error('Error loading activity summary:', error);
+    }
+  };
+
+  const loadRecentActivities = () => {
+    try {
+      const activities = getRecentActivities(20, {}); // Get recent 20 activities
+      setRecentActivities(activities);
+    } catch (error) {
+      console.error('Error loading recent activities:', error);
+    }
+  };
+
+  const handleShowUserActivities = (userItem) => {
+    const userActivities = getRecentActivities(50, { userId: userItem._id });
+    setSelectedUserActivities(userActivities);
+    setSelectedUser(userItem);
+    setShowActivitiesModal(true);
+  };
+
   const handleCreateUser = async (userData) => {
     try {
       setLoading(true);
@@ -144,6 +213,7 @@ const UserManagement = () => {
         setShowUserModal(false);
         loadUsers();
         loadUserStats();
+        loadActivitySummary();
       }
     } catch (error) {
       console.error('Create user error:', error);
@@ -160,6 +230,7 @@ const UserManagement = () => {
       toast.success('User role updated successfully');
       loadUsers();
       loadUserStats();
+      loadActivitySummary();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update user role');
     }
@@ -171,6 +242,7 @@ const UserManagement = () => {
       toast.success('User status updated successfully');
       loadUsers();
       loadUserStats();
+      loadActivitySummary();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update user status');
     }
@@ -186,6 +258,7 @@ const UserManagement = () => {
       toast.success('User deleted successfully');
       loadUsers();
       loadUserStats();
+      loadActivitySummary();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete user');
     }
@@ -200,6 +273,8 @@ const UserManagement = () => {
         'Status': userItem.status,
         'Created': new Date(userItem.createdAt).toLocaleDateString(),
         'Last Login': userItem.lastLogin ? new Date(userItem.lastLogin).toLocaleDateString() : 'Never',
+        'Total Activities': userItem.statistics?.totalActivities || 0,
+        'Last Activity': userItem.statistics?.lastActivity ? new Date(userItem.statistics.lastActivity).toLocaleDateString() : 'Never',
         'Restrictions': userItem.restrictions ? JSON.stringify(userItem.restrictions) : 'None'
       }));
 
@@ -238,7 +313,7 @@ const UserManagement = () => {
     return csvRows.join('\n');
   };
 
-  const getDemoUsers = () => [
+  const getDemoUsersWithActivity = () => [
     {
       _id: 'demo_admin',
       name: 'Demo Admin',
@@ -248,7 +323,16 @@ const UserManagement = () => {
       createdAt: new Date(),
       lastLogin: new Date(),
       restrictions: null,
-      statistics: { emissionCount: 15, recentActivityCount: 5 }
+      statistics: { 
+        emissionCount: 15, 
+        recentActivityCount: 5,
+        totalActivities: 25,
+        lastActivity: new Date(),
+        recentActivities: [
+          { action: 'admin_created_user', timestamp: new Date(), details: 'Created new user: John Doe' },
+          { action: 'viewed_admin_dashboard', timestamp: new Date(Date.now() - 3600000), details: 'Accessed admin dashboard' }
+        ]
+      }
     },
     {
       _id: 'demo_analyst',
@@ -259,7 +343,16 @@ const UserManagement = () => {
       createdAt: new Date(),
       lastLogin: new Date(),
       restrictions: null,
-      statistics: { emissionCount: 10, recentActivityCount: 3 }
+      statistics: { 
+        emissionCount: 10, 
+        recentActivityCount: 3,
+        totalActivities: 18,
+        lastActivity: new Date(Date.now() - 1800000),
+        recentActivities: [
+          { action: 'verified_emission', timestamp: new Date(Date.now() - 1800000), details: 'Verified emission record' },
+          { action: 'viewed_analytics', timestamp: new Date(Date.now() - 3600000), details: 'Viewed analytics page' }
+        ]
+      }
     },
     {
       _id: 'demo_contributor',
@@ -274,7 +367,16 @@ const UserManagement = () => {
         allowedActivities: ['Fuel from Generator'],
         restrictedPages: []
       },
-      statistics: { emissionCount: 5, recentActivityCount: 2 }
+      statistics: { 
+        emissionCount: 5, 
+        recentActivityCount: 2,
+        totalActivities: 12,
+        lastActivity: new Date(Date.now() - 7200000),
+        recentActivities: [
+          { action: 'created_emission', timestamp: new Date(Date.now() - 7200000), details: 'Created emission: Fuel from Generator' },
+          { action: 'viewed_input', timestamp: new Date(Date.now() - 10800000), details: 'Accessed input page' }
+        ]
+      }
     },
     {
       _id: 'demo_viewer',
@@ -285,7 +387,16 @@ const UserManagement = () => {
       createdAt: new Date(),
       lastLogin: new Date(),
       restrictions: null,
-      statistics: { emissionCount: 0, recentActivityCount: 1 }
+      statistics: { 
+        emissionCount: 0, 
+        recentActivityCount: 1,
+        totalActivities: 8,
+        lastActivity: new Date(Date.now() - 14400000),
+        recentActivities: [
+          { action: 'viewed_dashboard', timestamp: new Date(Date.now() - 14400000), details: 'Viewed dashboard' },
+          { action: 'viewed_monitor', timestamp: new Date(Date.now() - 18000000), details: 'Accessed monitor page' }
+        ]
+      }
     }
   ];
 
@@ -318,6 +429,32 @@ const UserManagement = () => {
     return icons[role] || null;
   };
 
+  const getActivityIcon = (action) => {
+    if (action.includes('login')) return <Users className="w-4 h-4" />;
+    if (action.includes('emission')) return <Database className="w-4 h-4" />;
+    if (action.includes('admin')) return <Shield className="w-4 h-4" />;
+    if (action.includes('viewed')) return <Eye className="w-4 h-4" />;
+    return <Activity className="w-4 h-4" />;
+  };
+
+  const getSeverityColor = (action) => {
+    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50';
+    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50';
+    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50';
+    return 'text-gray-600 bg-gray-50';
+  };
+
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return date.toLocaleDateString();
+  };
+
   if (!isAdmin()) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -333,7 +470,7 @@ const UserManagement = () => {
   return (
     <div className="space-y-6">
       <PageHeader 
-        title="User Management"
+        title="User Management & Activity Monitoring"
         breadcrumb={[
           { label: 'Admin', href: '/admin' },
           { label: 'User Management' }
@@ -358,60 +495,113 @@ const UserManagement = () => {
         }
       />
 
-      {/* User Statistics Cards */}
-      {userStats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Users className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Users</p>
-                <p className="text-2xl font-bold text-gray-900">{userStats.overview.totalUsers}</p>
-              </div>
+      {/* Activity Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600" />
             </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Active Users</p>
-                <p className="text-2xl font-bold text-gray-900">{userStats.overview.activeUsers}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <Crown className="w-6 h-6 text-red-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Admins</p>
-                <p className="text-2xl font-bold text-gray-900">{userStats.overview.adminUsers}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Lock className="w-6 h-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Restricted</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {users.filter(u => u.restrictions && Object.keys(u.restrictions).length > 0).length}
-                </p>
-              </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Users</p>
+              <p className="text-2xl font-bold text-gray-900">{userStats?.overview.totalUsers || 0}</p>
             </div>
           </div>
         </div>
-      )}
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Activity className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Activities</p>
+              <p className="text-2xl font-bold text-gray-900">{activitySummary?.totalActivities || 0}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-orange-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Recent (24h)</p>
+              <p className="text-2xl font-bold text-gray-900">{activitySummary?.recentActivities || 0}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Critical Activities</p>
+              <p className="text-2xl font-bold text-gray-900">{activitySummary?.criticalActivities || 0}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activities Panel */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="px-6 py-4 border-b">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <Activity className="w-5 h-5 mr-2 text-emerald-600" />
+              Recent User Activities
+            </h3>
+            <button 
+              onClick={loadRecentActivities}
+              className="flex items-center space-x-2 text-sm text-emerald-600 hover:text-emerald-700"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-4">
+          {recentActivities.length > 0 ? (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {recentActivities.slice(0, 10).map((activity, index) => (
+                <div key={index} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50">
+                  <div className={`p-2 rounded-lg ${getSeverityColor(activity.action)}`}>
+                    {getActivityIcon(activity.action)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-900">
+                        {activity.user?.name || 'Unknown User'}
+                      </p>
+                      <span className="text-xs text-gray-500">
+                        {formatTimestamp(activity.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 truncate">{activity.details}</p>
+                    <div className="flex items-center mt-1 space-x-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${getRoleBadgeColor(activity.user?.role)}`}>
+                        {activity.user?.role}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {activity.action.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No recent activities found</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Filters and Search */}
       <div className="bg-white rounded-lg shadow p-4">
@@ -466,7 +656,7 @@ const UserManagement = () => {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-          <p className="text-sm text-gray-600 mt-1">Manage user accounts, roles, and RBAC permissions</p>
+          <p className="text-sm text-gray-600 mt-1">Manage user accounts, roles, RBAC permissions, and monitor activities</p>
         </div>
 
         {loading ? (
@@ -488,8 +678,8 @@ const UserManagement = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Role</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Restrictions</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Activity</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Restrictions</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -542,6 +732,30 @@ const UserManagement = () => {
                       </select>
                     </td>
                     <td className="px-6 py-4">
+                      <div className="text-sm space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-900 font-medium">
+                            {userItem.statistics?.totalActivities || 0} total
+                          </span>
+                          <button
+                            onClick={() => handleShowUserActivities(userItem)}
+                            className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center"
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            View
+                          </button>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Last: {userItem.statistics?.lastActivity ? formatTimestamp(userItem.statistics.lastActivity) : 'Never'}
+                        </div>
+                        {userItem.statistics?.recentActivities && userItem.statistics.recentActivities.length > 0 && (
+                          <div className="text-xs text-blue-600">
+                            Latest: {userItem.statistics.recentActivities[0].action.replace(/_/g, ' ')}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
                       {userItem.restrictions ? (
                         <div className="text-xs space-y-1">
                           {userItem.restrictions.allowedScopes && userItem.restrictions.allowedScopes.length < 3 && (
@@ -569,14 +783,6 @@ const UserManagement = () => {
                         <span className="text-gray-500">None</span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">
-                        {userItem.statistics?.emissionCount || 0} emissions
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {userItem.statistics?.recentActivityCount || 0} recent activities
-                      </div>
-                    </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {new Date(userItem.createdAt).toLocaleDateString()}
                     </td>
@@ -588,6 +794,13 @@ const UserManagement = () => {
                           title="Edit User"
                         >
                           <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleShowUserActivities(userItem)}
+                          className="text-blue-600 hover:text-blue-900 transition-colors"
+                          title="View Activities"
+                        >
+                          <Activity className="w-4 h-4" />
                         </button>
                         {userItem._id !== user.id && (
                           <button
@@ -617,6 +830,133 @@ const UserManagement = () => {
           rbacOptions={rbacOptions}
         />
       )}
+
+      {/* User Activities Modal */}
+      {showActivitiesModal && selectedUser && (
+        <UserActivitiesModal
+          user={selectedUser}
+          activities={selectedUserActivities}
+          onClose={() => {
+            setShowActivitiesModal(false);
+            setSelectedUser(null);
+            setSelectedUserActivities([]);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// User Activities Modal Component
+const UserActivitiesModal = ({ user, activities, onClose }) => {
+  const [filteredActivities, setFilteredActivities] = useState(activities);
+  const [activityFilter, setActivityFilter] = useState('all');
+
+  useEffect(() => {
+    if (activityFilter === 'all') {
+      setFilteredActivities(activities);
+    } else {
+      setFilteredActivities(activities.filter(a => a.action.includes(activityFilter)));
+    }
+  }, [activities, activityFilter]);
+
+  const getActivityIcon = (action) => {
+    if (action.includes('login')) return <Users className="w-4 h-4" />;
+    if (action.includes('emission')) return <Database className="w-4 h-4" />;
+    if (action.includes('admin')) return <Shield className="w-4 h-4" />;
+    if (action.includes('viewed')) return <Eye className="w-4 h-4" />;
+    return <Activity className="w-4 h-4" />;
+  };
+
+  const getSeverityColor = (action) => {
+    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50';
+    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50';
+    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50';
+    return 'text-gray-600 bg-gray-50';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">User Activities</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Activity history for {user.name} ({user.email})
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <XCircle className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="p-6 border-b">
+          <div className="flex items-center space-x-4">
+            <select
+              value={activityFilter}
+              onChange={(e) => setActivityFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Activities</option>
+              <option value="login">Login Events</option>
+              <option value="emission">Emission Activities</option>
+              <option value="admin">Admin Actions</option>
+              <option value="viewed">Page Views</option>
+            </select>
+            <div className="text-sm text-gray-600">
+              Showing {filteredActivities.length} of {activities.length} activities
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+          {filteredActivities.length > 0 ? (
+            <div className="p-6 space-y-4">
+              {filteredActivities.map((activity, index) => (
+                <div key={index} className="flex items-start space-x-4 p-4 rounded-lg border hover:bg-gray-50">
+                  <div className={`p-2 rounded-lg ${getSeverityColor(activity.action)}`}>
+                    {getActivityIcon(activity.action)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-sm font-medium text-gray-900">
+                        {activity.action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </h4>
+                      <span className="text-sm text-gray-500">
+                        {new Date(activity.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600">{activity.details}</p>
+                    {activity.resourceType && (
+                      <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
+                        <span>Resource: {activity.resourceType}</span>
+                        {activity.resourceId && <span>ID: {activity.resourceId}</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">No activities found for the selected filter</p>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t bg-gray-50">
+          <button
+            onClick={onClose}
+            className="w-full bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -900,13 +1240,13 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
 
         <div className="mt-4 p-3 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>Role Permissions & RBAC:</strong>
+            <strong>STRICT RBAC Permissions:</strong>
           </p>
           <ul className="text-xs text-blue-700 mt-1 space-y-1">
-            <li><strong>Admin:</strong> Full system access and user management</li>
-            <li><strong>Analyst:</strong> Data analysis, reporting, and verification</li>
-            <li><strong>Contributor:</strong> Data entry (can be restricted to specific scopes/activities)</li>
-            <li><strong>Viewer:</strong> Read-only access to dashboard and monitor</li>
+            <li><strong>Admin:</strong> Full system access</li>
+            <li><strong>Analyst:</strong> Analytics & Settings only</li>
+            <li><strong>Contributor:</strong> Input & Settings only (can be further restricted)</li>
+            <li><strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)</li>
           </ul>
         </div>
       </div>
