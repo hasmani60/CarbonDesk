@@ -1,6 +1,6 @@
-// Updated EmissionForm.jsx with dynamic activity types and real-time monitor updates
+// Updated EmissionForm.jsx with locked activity type and source selection
 import { useState, useEffect } from 'react';
-import { X, Calendar, Upload } from 'lucide-react';
+import { X, Calendar, Upload, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
@@ -13,9 +13,11 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
   const { user } = useAuth();
   const { addEmissionNotification } = useNotifications();
   const { logEmissionAction, logActivity } = useActivity();
+  
+  // Initialize form with locked activity type and source based on selection from Input page
   const [formData, setFormData] = useState({
-    activityType: category?.selectedSubcategory || '',
-    source: '',
+    activityType: category?.name || '',  // Use category.name as activity type
+    source: category?.selectedType || '', // Use selectedType as source
     amount: '',
     unit: 'kg',
     startDate: '',
@@ -23,67 +25,36 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
     location: '',
     description: ''
   });
-  const [availableActivityTypes, setAvailableActivityTypes] = useState([]);
-  const [availableSources, setAvailableSources] = useState([]);
+  
   const [loading, setLoading] = useState(false);
+  const [lockedFields, setLockedFields] = useState({
+    activityType: false,
+    source: false
+  });
 
-  const units = ['kg', 'tons', 'litres', 'kWh', 'km', 'hours'];
-
-  // Load activity types based on scope when component mounts
+  // Set up locked fields and correct unit when component mounts
   useEffect(() => {
-    loadActivityTypes();
-  }, [scope]);
+    if (category && scope) {
+      // Lock both activity type and source since they're pre-selected
+      setLockedFields({
+        activityType: true,
+        source: true
+      });
 
-  // Load sources when activity type changes
-  useEffect(() => {
-    if (formData.activityType) {
-      loadSourcesForActivity();
-    }
-  }, [formData.activityType, scope]);
-
-  const loadActivityTypes = () => {
-    try {
+      // Set correct unit based on the selected source
       const scopeKey = `scope${scope}`;
-      const scopeData = emissionFactors[scopeKey];
+      const sourceData = emissionFactors[scopeKey]?.[category.name]?.[category.selectedType];
       
-      if (scopeData) {
-        const activityTypes = Object.keys(scopeData);
-        setAvailableActivityTypes(activityTypes);
-        
-        // Set default activity type if category is provided
-        if (category?.selectedSubcategory && activityTypes.includes(category.selectedSubcategory)) {
-          setFormData(prev => ({ ...prev, activityType: category.selectedSubcategory }));
-        } else if (activityTypes.length > 0) {
-          setFormData(prev => ({ ...prev, activityType: activityTypes[0] }));
-        }
+      if (sourceData) {
+        setFormData(prev => ({
+          ...prev,
+          activityType: category.name,
+          source: category.selectedType,
+          unit: sourceData.unit || 'kg'
+        }));
       }
-    } catch (error) {
-      console.error('Error loading activity types:', error);
     }
-  };
-
-  const loadSourcesForActivity = () => {
-    try {
-      const scopeKey = `scope${scope}`;
-      const activityData = emissionFactors[scopeKey]?.[formData.activityType];
-      
-      if (activityData) {
-        const sources = Object.keys(activityData);
-        setAvailableSources(sources);
-        
-        // Set first source as default if available
-        if (sources.length > 0) {
-          setFormData(prev => ({ 
-            ...prev, 
-            source: sources[0],
-            unit: activityData[sources[0]].unit || 'kg'
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('Error loading sources:', error);
-    }
-  };
+  }, [category, scope]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -163,27 +134,25 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Update unit when source changes
-    if (name === 'source') {
-      const scopeKey = `scope${scope}`;
-      const sourceData = emissionFactors[scopeKey]?.[formData.activityType]?.[value];
-      if (sourceData) {
-        setFormData(prev => ({ ...prev, unit: sourceData.unit }));
-      }
+    // Only allow changes to non-locked fields
+    if (lockedFields[name]) {
+      toast.warning(`${name === 'activityType' ? 'Activity Type' : 'Source'} is locked based on your selection`);
+      return;
     }
+    
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleActivityTypeChange = (e) => {
-    const newActivityType = e.target.value;
-    setFormData(prev => ({ 
-      ...prev, 
-      activityType: newActivityType,
-      source: '', // Reset source when activity type changes
-      unit: 'kg' // Reset unit
-    }));
+  // Get emission factor data for display
+  const getEmissionFactorData = () => {
+    if (!formData.activityType || !formData.source || !scope) return null;
+    
+    const scopeKey = `scope${scope}`;
+    return emissionFactors[scopeKey]?.[formData.activityType]?.[formData.source];
   };
+
+  const factorData = getEmissionFactorData();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -192,7 +161,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Add Emission Data</h2>
             <p className="text-sm text-gray-600">
-              Scope {scope} - {formData.activityType || 'Select Activity Type'}
+              Scope {scope} - {formData.activityType} ({formData.source})
             </p>
           </div>
           <button
@@ -205,50 +174,51 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Activity Type Dropdown */}
+            {/* Locked Activity Type Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Activity Type*
+                <Lock className="w-3 h-3 inline ml-1 text-gray-400" />
               </label>
-              <select
-                name="activityType"
-                value={formData.activityType}
-                onChange={handleActivityTypeChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">Select Activity Type</option>
-                {availableActivityTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  name="activityType"
+                  value={formData.activityType}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                />
+                <Lock className="w-4 h-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Selected from Scope {scope} categories
+              </p>
             </div>
 
-            {/* Source Dropdown */}
+            {/* Locked Source Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Source*
+                <Lock className="w-3 h-3 inline ml-1 text-gray-400" />
               </label>
-              <select
-                name="source"
-                value={formData.source}
-                onChange={handleChange}
-                required
-                disabled={!formData.activityType}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100"
-              >
-                <option value="">Select Source</option>
-                {availableSources.map(source => (
-                  <option key={source} value={source}>{source}</option>
-                ))}
-              </select>
-              {formData.activityType && formData.source && (
+              <div className="relative">
+                <input
+                  type="text"
+                  name="source"
+                  value={formData.source}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                />
+                <Lock className="w-4 h-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              </div>
+              {factorData && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {emissionFactors[`scope${scope}`]?.[formData.activityType]?.[formData.source]?.description}
+                  {factorData.description}
                 </p>
               )}
             </div>
 
+            {/* Editable Amount Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Amount*
@@ -263,22 +233,22 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 step="0.01"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 placeholder="Enter quantity"
+                autoFocus
               />
             </div>
 
+            {/* Unit Field - Shows correct unit based on source */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Unit*
               </label>
-              <select
+              <input
+                type="text"
                 name="unit"
                 value={formData.unit}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value={formData.unit}>{formData.unit}</option>
-              </select>
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+              />
               <p className="text-xs text-gray-500 mt-1">
                 Unit is automatically set based on source selection
               </p>
@@ -347,8 +317,22 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
             </div>
           </div>
 
+          {/* Locked Selection Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Lock className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Selection Locked</span>
+            </div>
+            <div className="text-xs text-blue-700 space-y-1">
+              <p><strong>Scope:</strong> {scope}</p>
+              <p><strong>Activity Type:</strong> {formData.activityType}</p>
+              <p><strong>Source:</strong> {formData.source}</p>
+              <p className="text-blue-600">Only Amount and Unit can be modified for this selection.</p>
+            </div>
+          </div>
+
           {/* Emission Preview */}
-          {formData.amount && formData.source && formData.activityType && (
+          {formData.amount && formData.source && formData.activityType && factorData && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-emerald-800">
@@ -359,8 +343,8 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
                 </span>
               </div>
               <div className="text-xs text-emerald-600 mt-1">
-                <p>Emission Factor: {getEmissionFactor(scope, formData.activityType, formData.source).factor}</p>
-                <p>Based on: {getEmissionFactor(scope, formData.activityType, formData.source).description}</p>
+                <p>Emission Factor: {factorData.factor}</p>
+                <p>Calculation: {formData.amount} {formData.unit} × {factorData.factor} = {(parseFloat(formData.amount) * factorData.factor).toFixed(2)} CO₂e</p>
               </div>
             </div>
           )}
@@ -384,7 +368,7 @@ const EmissionForm = ({ category, scope, onSubmit, onClose }) => {
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !formData.amount}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
               >
                 {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
