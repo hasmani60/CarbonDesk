@@ -212,19 +212,75 @@ const Input = () => {
       setLoading(false);
       return;
     }
-
+  
     let allCategories = emissionCategories[activeScope] || [];
     
-    // Filter categories based on user's allowed activities (for contributors with restrictions)
-    const allowedActivities = getAllowedActivities();
-    if (user.role === 'contributor' && allowedActivities.length > 0) {
-      allCategories = allCategories.filter(category => 
-        allowedActivities.includes(category.name)
-      );
+    // Enhanced filtering based on user's granular restrictions
+    if (user.role === 'contributor' && user.restrictions) {
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // If user has specific activity restrictions, filter accordingly
+      if (allowedActivities && allowedActivities.length > 0) {
+        // Only show categories that have at least one allowed activity
+        allCategories = allCategories.filter(category => {
+          // Check if any subcategory (activity type) is allowed
+          const hasAllowedActivity = category.subcategories.some(subcategory => {
+            const fullActivityName = category.name; // The main activity name
+            return allowedActivities.includes(fullActivityName);
+          });
+          return hasAllowedActivity;
+        });
+        
+        // Also filter subcategories within each category
+        allCategories = allCategories.map(category => {
+          // If the main activity is allowed, show all subcategories
+          if (allowedActivities.includes(category.name)) {
+            return category;
+          }
+          
+          // Otherwise, this category shouldn't be shown (filtered out above)
+          return category;
+        });
+      }
+      // If user has scope-level access but no specific activity restrictions,
+      // show all categories in the scope (this is handled by the allowedScopes check above)
     }
     
+    console.log(`Loaded ${allCategories.length} categories for scope ${activeScope}:`, allCategories.map(c => c.name));
     setCategories(allCategories);
     setLoading(false);
+  };
+  
+  // ADD this new function to check if a specific category/activity is accessible:
+  const isCategoryAccessible = (categoryName) => {
+    if (!user) return false;
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user.role)) return true;
+    
+    // For contributors, check restrictions
+    if (user.role === 'contributor') {
+      if (!user.restrictions) {
+        return true; // Legacy users with no restrictions
+      }
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // If user has specific activity restrictions, check if this activity is allowed
+      if (allowedActivities && allowedActivities.length > 0) {
+        return allowedActivities.includes(categoryName);
+      }
+      
+      // If no specific activity restrictions, check if scope is allowed
+      if (allowedScopes && allowedScopes.includes(parseInt(activeScope))) {
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Viewers can access for viewing but not for adding
+    return user.role === 'viewer';
   };
 
   const handleScopeChange = (scope, updateUrl = true) => {
@@ -251,11 +307,11 @@ const Input = () => {
 
   const toggleCategoryExpansion = (categoryName) => {
     // Check if user can access this activity
-    if (!canAccessActivity(categoryName)) {
+    if (!isCategoryAccessible(categoryName)) {
       toast.error(`Access denied. You don't have permission to access ${categoryName}`);
       return;
     }
-
+  
     setExpandedCategories(prev => ({
       ...prev,
       [categoryName]: !prev[categoryName]
@@ -263,24 +319,30 @@ const Input = () => {
   };
 
   const handleCategorySelect = (category, selectedType) => {
-    // Double-check permissions
+    // Enhanced permission checks
     if (!canAccessScope(activeScope)) {
       toast.error(`Access denied. You don't have permission to access Scope ${activeScope}`);
       return;
     }
-
-    if (!canAccessActivity(category.name)) {
+  
+    if (!isCategoryAccessible(category.name)) {
       toast.error(`Access denied. You don't have permission to access ${category.name}`);
       return;
     }
-
+  
+    // Additional check for viewers (they can see but not add)
+    if (user.role === 'viewer') {
+      toast.error(`Access denied. Viewers cannot add emission data`);
+      return;
+    }
+  
     setSelectedCategory({
       ...category,
       selectedType,
       scope: activeScope
     });
     setShowEmissionForm(true);
-
+  
     // Log category selection
     logEmissionAction('category_selected', null, 
       `Selected ${category.name} - ${selectedType} in Scope ${activeScope}`, {
@@ -540,87 +602,106 @@ const Input = () => {
 
         {/* Categories */}
         <div className="p-6">
-          {filteredCategories.length > 0 ? (
-            <div className="space-y-4">
-              {filteredCategories.map((category, index) => {
-                const hasActivityAccess = canAccessActivity(category.name);
-                
-                return (
-                  <div key={index} className={`border rounded-lg ${!hasActivityAccess ? 'opacity-50' : ''}`}>
-                    <button
-                      onClick={() => hasActivityAccess ? toggleCategoryExpansion(category.name) : null}
-                      disabled={!hasActivityAccess}
-                      className={`w-full flex items-center justify-between p-4 text-left transition-colors ${
-                        hasActivityAccess ? 'hover:bg-gray-50' : 'cursor-not-allowed'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">{category.icon}</span>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-gray-900">{category.name}</h3>
-                            {!hasActivityAccess && (
-                              <Lock className="w-4 h-4 text-red-500" title="Access Restricted" />
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500">{category.description}</p>
-                        </div>
-                      </div>
-                      {hasActivityAccess && (
-                        expandedCategories[category.name] ? (
-                          <ChevronUp className="w-5 h-5 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-gray-400" />
-                        )
-                      )}
-                    </button>
-
-                    {expandedCategories[category.name] && hasActivityAccess && (
-                      <div className="border-t bg-gray-50 p-4">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                          {category.subcategories.map((subcategory, subIndex) => {
-                            const factorData = emissionFactors?.[`scope${activeScope}`]?.[category.name]?.[subcategory];
-                            
-                            return (
-                              <button
-                                key={subIndex}
-                                onClick={() => handleCategorySelect(category, subcategory)}
-                                className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
-                              >
-                                {factorData && (
-                                  <div className="flex items-center justify-center mb-2">
-                                    <InfoTooltip 
-                                      content={factorData.description || `${subcategory} emission source`}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                    />
-                                  </div>
-                                )}
-                                <span className="text-sm font-medium text-emerald-800">
-                                  {subcategory}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="text-gray-400 mb-2">
-                {categories.length === 0 ? 'No activities available for your access level' : 'No categories found'}
+        {filteredCategories.length > 0 ? (
+  <div className="space-y-4">
+    {filteredCategories.map((category, index) => {
+      const hasActivityAccess = isCategoryAccessible(category.name);
+      
+      return (
+        <div key={index} className={`border rounded-lg ${!hasActivityAccess ? 'opacity-50 bg-red-50 border-red-200' : ''}`}>
+          <button
+            onClick={() => hasActivityAccess ? toggleCategoryExpansion(category.name) : null}
+            disabled={!hasActivityAccess}
+            className={`w-full flex items-center justify-between p-4 text-left transition-colors ${
+              hasActivityAccess ? 'hover:bg-gray-50' : 'cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <span className="text-2xl">{category.icon}</span>
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-medium text-gray-900">{category.name}</h3>
+                  {!hasActivityAccess && (
+                    <div className="flex items-center space-x-1">
+                      <Lock className="w-4 h-4 text-red-500" title="Access Restricted" />
+                      <span className="text-xs text-red-600 font-medium">RESTRICTED</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">{category.description}</p>
+                {!hasActivityAccess && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Contact your administrator to request access to this activity.
+                  </p>
+                )}
               </div>
-              <p className="text-sm text-gray-500">
-                {categories.length === 0 ? 
-                  'Contact your administrator to request access to additional activities.' :
-                  'Try adjusting your search terms or select a different scope.'
-                }
-              </p>
+            </div>
+            {hasActivityAccess && (
+              expandedCategories[category.name] ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )
+            )}
+          </button>
+
+          {expandedCategories[category.name] && hasActivityAccess && (
+            <div className="border-t bg-gray-50 p-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {category.subcategories.map((subcategory, subIndex) => {
+                  const factorData = emissionFactors?.[`scope${activeScope}`]?.[category.name]?.[subcategory];
+                  
+                  return (
+                    <button
+                      key={subIndex}
+                      onClick={() => handleCategorySelect(category, subcategory)}
+                      className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
+                    >
+                      {factorData && (
+                        <div className="flex items-center justify-center mb-2">
+                          <InfoTooltip 
+                            content={factorData.description || `${subcategory} emission source`}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          />
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-emerald-800">
+                        {subcategory}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
+        </div>
+      );
+    })}
+  </div>
+) : (
+  <div className="text-center py-12">
+    <div className="text-gray-400 mb-2">
+      {categories.length === 0 ? 'No activities available for your access level' : 'No categories found'}
+    </div>
+    <p className="text-sm text-gray-500">
+      {categories.length === 0 ? 
+        'Contact your administrator to request access to additional activities.' :
+        'Try adjusting your search terms or select a different scope.'
+      }
+    </p>
+    {user?.restrictions && (
+      <div className="mt-4 p-3 bg-blue-50 rounded-lg inline-block">
+        <p className="text-sm text-blue-800 font-medium">Your Access Level:</p>
+        {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
+          <p className="text-xs text-blue-700">Allowed Scopes: {user.restrictions.allowedScopes.join(', ')}</p>
+        )}
+        {user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0 && (
+          <p className="text-xs text-blue-700">Specific Activities: {user.restrictions.allowedActivities.length} activities</p>
+        )}
+      </div>
+    )}
+  </div>
+)}
         </div>
       </div>
 

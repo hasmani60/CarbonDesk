@@ -18,6 +18,104 @@ const logActivity = async (userId, action, resourceType, resourceId, details, re
   }
 };
 
+const checkUserAccess = (user, scope, activityName = null) => {
+  // Admin and analysts have full access
+  if (['admin', 'analyst'].includes(user.role)) {
+    return { allowed: true };
+  }
+  
+  // Viewers cannot create emissions
+  if (user.role === 'viewer') {
+    return { 
+      allowed: false, 
+      message: 'Viewers cannot create emission records' 
+    };
+  }
+  
+  // Contributors need to be checked against restrictions
+  if (user.role === 'contributor') {
+    // No restrictions = full access (legacy users)
+    if (!user.restrictions) {
+      return { allowed: true };
+    }
+    
+    const { allowedScopes, allowedActivities } = user.restrictions;
+    
+    // Check scope access
+    const scopeNumber = parseInt(scope);
+    
+    // If user has specific activity restrictions
+    if (allowedActivities && allowedActivities.length > 0) {
+      if (activityName) {
+        // Check if this specific activity is allowed
+        if (!allowedActivities.includes(activityName)) {
+          return { 
+            allowed: false, 
+            message: `Access denied. You don't have permission to access activity: ${activityName}` 
+          };
+        }
+      } else {
+        // General scope check - see if user has any activities in this scope
+        const scopeActivities = {
+          1: Object.keys(emissionFactors.scope1 || {}),
+          2: Object.keys(emissionFactors.scope2 || {}),
+          3: Object.keys(emissionFactors.scope3 || {})
+        };
+        
+        const activitiesInScope = scopeActivities[scopeNumber] || [];
+        const hasActivityInScope = allowedActivities.some(activity => 
+          activitiesInScope.includes(activity)
+        );
+        
+        if (!hasActivityInScope) {
+          return { 
+            allowed: false, 
+            message: `Access denied. You don't have permission to access any activities in Scope ${scopeNumber}` 
+          };
+        }
+      }
+    }
+    
+    // If user has scope-level restrictions
+    if (allowedScopes && allowedScopes.length > 0) {
+      if (!allowedScopes.includes(scopeNumber)) {
+        // But check if they have specific activities in this scope
+        if (allowedActivities && allowedActivities.length > 0) {
+          const scopeActivities = {
+            1: Object.keys(emissionFactors.scope1 || {}),
+            2: Object.keys(emissionFactors.scope2 || {}),
+            3: Object.keys(emissionFactors.scope3 || {})
+          };
+          
+          const activitiesInScope = scopeActivities[scopeNumber] || [];
+          const hasActivityInScope = allowedActivities.some(activity => 
+            activitiesInScope.includes(activity)
+          );
+          
+          if (!hasActivityInScope) {
+            return { 
+              allowed: false, 
+              message: `Access denied. You don't have permission to access Scope ${scopeNumber}` 
+            };
+          }
+        } else {
+          return { 
+            allowed: false, 
+            message: `Access denied. You don't have permission to access Scope ${scopeNumber}` 
+          };
+        }
+      }
+    }
+    
+    return { allowed: true };
+  }
+  
+  return { 
+    allowed: false, 
+    message: 'Invalid user role for emission creation' 
+  };
+};
+
 // @desc    Get all emissions
 // @route   GET /api/emissions
 // @access  Private
@@ -158,6 +256,19 @@ const createEmission = async (req, res) => {
       user: req.user.id  // Always set to current user
     };
 
+    // Enhanced access control check
+    const scope = emissionData.scope;
+    const activityType = emissionData.activityType || emissionData.category; // Handle both field names
+    
+    // Check if user can access this scope and activity
+    const accessCheck = checkUserAccess(req.user, scope, activityType);
+    if (!accessCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.message
+      });
+    }
+
     // Set default emission factor if not provided
     if (!emissionData.emissionFactor) {
       emissionData.emissionFactor = getEmissionFactor(emissionData.source, emissionData.unit);
@@ -166,13 +277,14 @@ const createEmission = async (req, res) => {
     const emission = await Emission.create(emissionData);
     await emission.populate('user', 'name email');
 
-    // Log creation activity
+    // Log creation activity with access level info
     await logActivity(
       req.user.id,
       'created_emission',
       'emission',
       emission._id,
-      `Created emission record: ${emission.activityType} - ${emission.amount} ${emission.unit}`,
+      `Created emission record: ${emission.activityType} - ${emission.amount} ${emission.unit} ` +
+      `(User role: ${req.user.role}, Restrictions: ${req.user.restrictions ? 'Yes' : 'No'})`,
       req
     );
 
@@ -190,9 +302,7 @@ const createEmission = async (req, res) => {
   }
 };
 
-// @desc    Update emission
-// @route   PATCH /api/emissions/:id
-// @access  Private
+// REPLACE the updateEmission function with this enhanced version:
 const updateEmission = async (req, res) => {
   try {
     let query = { _id: req.params.id };
@@ -209,6 +319,20 @@ const updateEmission = async (req, res) => {
         success: false,
         message: 'Emission not found or access denied'
       });
+    }
+
+    // If updating scope or activity, check access
+    const newScope = req.body.scope || emission.scope;
+    const newActivityType = req.body.activityType || req.body.category || emission.activityType;
+    
+    if (req.body.scope !== undefined || req.body.activityType !== undefined || req.body.category !== undefined) {
+      const accessCheck = checkUserAccess(req.user, newScope, newActivityType);
+      if (!accessCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: accessCheck.message
+        });
+      }
     }
 
     // Store original values for audit log
@@ -238,7 +362,8 @@ const updateEmission = async (req, res) => {
       'updated_emission',
       'emission',
       updatedEmission._id,
-      `Updated emission record: ${updatedEmission.activityType}${changes.length ? `. Changes: ${changes.join(', ')}` : ''}`,
+      `Updated emission record: ${updatedEmission.activityType}${changes.length ? `. Changes: ${changes.join(', ')}` : ''} ` +
+      `(User role: ${req.user.role})`,
       req
     );
 
@@ -250,6 +375,111 @@ const updateEmission = async (req, res) => {
   } catch (error) {
     console.error('Update emission error:', error);
     res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ADD this new endpoint to get user's allowed activities for frontend validation:
+const getUserAllowedActivities = async (req, res) => {
+  try {
+    const user = req.user;
+    
+    // Admin and analysts have access to all activities
+    if (['admin', 'analyst'].includes(user.role)) {
+      const allActivities = {
+        1: Object.keys(emissionFactors.scope1 || {}),
+        2: Object.keys(emissionFactors.scope2 || {}),
+        3: Object.keys(emissionFactors.scope3 || {})
+      };
+      
+      return res.json({
+        success: true,
+        data: {
+          allowedScopes: [1, 2, 3],
+          allowedActivities: allActivities,
+          hasRestrictions: false
+        }
+      });
+    }
+    
+    // Viewers can see all but not create
+    if (user.role === 'viewer') {
+      const allActivities = {
+        1: Object.keys(emissionFactors.scope1 || {}),
+        2: Object.keys(emissionFactors.scope2 || {}),
+        3: Object.keys(emissionFactors.scope3 || {})
+      };
+      
+      return res.json({
+        success: true,
+        data: {
+          allowedScopes: [1, 2, 3],
+          allowedActivities: allActivities,
+          hasRestrictions: false,
+          canCreate: false
+        }
+      });
+    }
+    
+    // Contributors with restrictions
+    if (user.role === 'contributor') {
+      if (!user.restrictions) {
+        // Legacy users with no restrictions
+        const allActivities = {
+          1: Object.keys(emissionFactors.scope1 || {}),
+          2: Object.keys(emissionFactors.scope2 || {}),
+          3: Object.keys(emissionFactors.scope3 || {})
+        };
+        
+        return res.json({
+          success: true,
+          data: {
+            allowedScopes: [1, 2, 3],
+            allowedActivities: allActivities,
+            hasRestrictions: false
+          }
+        });
+      }
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // Build effective allowed activities per scope
+      const effectiveActivities = {};
+      
+      [1, 2, 3].forEach(scope => {
+        const scopeActivities = Object.keys(emissionFactors[`scope${scope}`] || {});
+        
+        // If scope is explicitly allowed, include all its activities
+        if (allowedScopes && allowedScopes.includes(scope)) {
+          effectiveActivities[scope] = scopeActivities;
+        } else {
+          // Include only specifically allowed activities for this scope
+          effectiveActivities[scope] = allowedActivities ? 
+            allowedActivities.filter(activity => scopeActivities.includes(activity)) : 
+            [];
+        }
+      });
+      
+      return res.json({
+        success: true,
+        data: {
+          allowedScopes: allowedScopes || [],
+          allowedActivities: effectiveActivities,
+          hasRestrictions: true,
+          restrictions: user.restrictions
+        }
+      });
+    }
+    
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied'
+    });
+  } catch (error) {
+    console.error('Get user allowed activities error:', error);
+    res.status(500).json({
       success: false,
       message: error.message
     });
@@ -498,5 +728,6 @@ module.exports = {
   deleteEmission,
   verifyEmission,
   getEmissionStats,
-  getEmissionCategories
+  getEmissionCategories,
+  getUserAllowedActivities
 };

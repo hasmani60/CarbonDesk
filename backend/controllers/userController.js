@@ -134,17 +134,27 @@ const getUserById = async (req, res) => {
 // @access  Private (Admin only)
 const createUser = async (req, res) => {
   try {
+    console.log('📝 CREATE USER REQUEST BODY:', JSON.stringify(req.body, null, 2));
+    
     const { 
       name, 
       email, 
       password, 
       role = 'contributor', 
       status = 'active',
-      // RBAC restrictions
+      // Enhanced RBAC restrictions
       allowedScopes = [],
       allowedActivities = [],
       restrictedPages = []
     } = req.body;
+
+    console.log('📊 EXTRACTED VALUES:');
+    console.log('- Name:', name);
+    console.log('- Email:', email);
+    console.log('- Role:', role);
+    console.log('- Allowed Scopes:', allowedScopes);
+    console.log('- Allowed Activities:', allowedActivities);
+    console.log('- Restricted Pages:', restrictedPages);
 
     // Validate required fields
     if (!name || !email || !password) {
@@ -189,17 +199,49 @@ const createUser = async (req, res) => {
       });
     }
 
-    // Prepare restrictions object for contributors
+    // ENHANCED: Build restrictions object (even for non-contributors for debugging)
     let restrictions = null;
+    
+    // For contributors, always create restrictions object
     if (role === 'contributor') {
+      console.log('🔒 BUILDING RESTRICTIONS FOR CONTRIBUTOR:');
+      
+      // Ensure we have arrays
+      const finalAllowedScopes = Array.isArray(allowedScopes) ? allowedScopes : [];
+      const finalAllowedActivities = Array.isArray(allowedActivities) ? allowedActivities : [];
+      const finalRestrictedPages = Array.isArray(restrictedPages) ? restrictedPages : [];
+      
+      console.log('- Final Allowed Scopes:', finalAllowedScopes);
+      console.log('- Final Allowed Activities:', finalAllowedActivities);
+      console.log('- Final Restricted Pages:', finalRestrictedPages);
+
+      // Build restrictions object
       restrictions = {
-        allowedScopes: allowedScopes.length > 0 ? allowedScopes : [1, 2, 3], // Default: all scopes
-        allowedActivities: allowedActivities.length > 0 ? allowedActivities : [], // Default: all activities
-        restrictedPages: restrictedPages || []
+        allowedScopes: finalAllowedScopes,
+        allowedActivities: finalAllowedActivities,
+        restrictedPages: finalRestrictedPages,
+        createdAt: new Date().toISOString(),
+        createdBy: req.user.id,
+        version: '2.0'
       };
+
+      console.log('📦 FINAL RESTRICTIONS OBJECT:', JSON.stringify(restrictions, null, 2));
+
+      // Validate that contributor has some access
+      const hasAnyAccess = finalAllowedScopes.length > 0 || finalAllowedActivities.length > 0;
+      
+      if (!hasAnyAccess) {
+        console.log('❌ VALIDATION FAILED: No access granted');
+        return res.status(400).json({
+          success: false,
+          message: 'Contributor must have access to at least one scope or activity'
+        });
+      }
+    } else {
+      console.log(`ℹ️  Role is ${role}, no restrictions needed`);
     }
 
-    // Create user with enhanced validation
+    // Create user data object
     const userData = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
@@ -209,15 +251,37 @@ const createUser = async (req, res) => {
       restrictions: restrictions
     };
 
-    const user = await localDB.createUser(userData);
+    console.log('👤 USER DATA TO BE CREATED:', {
+      ...userData,
+      password: '[HIDDEN]',
+      restrictions: userData.restrictions
+    });
 
-    // Log this admin activity
+    // Create user
+    const user = await localDB.createUser(userData);
+    console.log('✅ USER CREATED SUCCESSFULLY:', user.id);
+
+    // Verify the user was created with restrictions
+    const verifyUser = await localDB.findUserById(user.id);
+    console.log('🔍 VERIFICATION - User from DB:', {
+      id: verifyUser.id,
+      name: verifyUser.name,
+      email: verifyUser.email,
+      role: verifyUser.role,
+      restrictions: verifyUser.restrictions
+    });
+
+    // Log this admin activity with enhanced details
     await logAdminActivity(
       req.user.id,
-      'created_user',
+      'created_user_with_granular_access',
       'user',
       user.id,
-      `Created new user: ${user.name} (${user.email}) with role: ${user.role}${restrictions ? ' with restrictions' : ''}`,
+      `Created new user: ${user.name} (${user.email}) with role: ${user.role}` +
+      (restrictions ? 
+        ` | Scopes: [${restrictions.allowedScopes.join(', ')}] | Activities: ${restrictions.allowedActivities.length}` : 
+        ' | No restrictions'
+      ),
       req
     );
 
@@ -237,13 +301,24 @@ const createUser = async (req, res) => {
       }
     };
 
+    // Generate success message with access summary
+    let successMessage = `User created successfully with role: ${role}`;
+    if (restrictions && restrictions.allowedScopes.length > 0) {
+      successMessage += ` | Scope access: ${restrictions.allowedScopes.join(', ')}`;
+    }
+    if (restrictions && restrictions.allowedActivities.length > 0) {
+      successMessage += ` | Activity restrictions: ${restrictions.allowedActivities.length} specific activities`;
+    }
+
+    console.log('🎉 SUCCESS MESSAGE:', successMessage);
+
     res.status(201).json({
       success: true,
       data: userResponse,
-      message: `User created successfully with role: ${role}${restrictions ? ' and custom restrictions' : ''}`
+      message: successMessage
     });
   } catch (error) {
-    console.error('Create user error:', error);
+    console.error('❌ CREATE USER ERROR:', error);
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to create user'
@@ -334,15 +409,68 @@ const updateUserRestrictions = async (req, res) => {
     if (user.role !== 'contributor') {
       return res.status(400).json({
         success: false,
-        message: 'Restrictions can only be applied to contributors'
+        message: 'Enhanced restrictions can only be applied to contributors'
       });
     }
 
-    const restrictions = {
-      allowedScopes: allowedScopes || [1, 2, 3],
-      allowedActivities: allowedActivities || [],
-      restrictedPages: restrictedPages || []
+    // Validate the new restrictions format
+    const validScopes = [1, 2, 3];
+    if (allowedScopes && allowedScopes.length > 0) {
+      const invalidScopes = allowedScopes.filter(scope => !validScopes.includes(scope));
+      if (invalidScopes.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid scopes: ${invalidScopes.join(', ')}`
+        });
+      }
+    }
+
+    // Validate activities against available emission factors
+    const availableActivities = {
+      1: Object.keys(emissionFactors.scope1 || {}),
+      2: Object.keys(emissionFactors.scope2 || {}),
+      3: Object.keys(emissionFactors.scope3 || {})
     };
+
+    if (allowedActivities && allowedActivities.length > 0) {
+      const allValidActivities = [
+        ...availableActivities[1],
+        ...availableActivities[2],
+        ...availableActivities[3]
+      ];
+      
+      const invalidActivities = allowedActivities.filter(activity => 
+        !allValidActivities.includes(activity)
+      );
+      
+      if (invalidActivities.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid activities: ${invalidActivities.join(', ')}`
+        });
+      }
+    }
+
+    // Build enhanced restrictions
+    const restrictions = {
+      allowedScopes: allowedScopes || [],
+      allowedActivities: allowedActivities || [],
+      restrictedPages: restrictedPages || [],
+      updatedAt: new Date(),
+      updatedBy: req.user.id,
+      version: '2.0'
+    };
+
+    // Ensure user has some access
+    const hasAnyAccess = restrictions.allowedScopes.length > 0 || 
+                        restrictions.allowedActivities.length > 0;
+    
+    if (!hasAnyAccess) {
+      return res.status(400).json({
+        success: false,
+        message: 'User must have access to at least one scope or activity'
+      });
+    }
 
     // Update user restrictions
     await localDB.updateUser(user.id, { restrictions });
@@ -350,10 +478,12 @@ const updateUserRestrictions = async (req, res) => {
     // Log this admin activity
     await logAdminActivity(
       req.user.id,
-      'updated_user_restrictions',
+      'updated_user_restrictions_granular',
       'user',
       user.id,
-      `Updated restrictions for contributor: ${user.name}`,
+      `Updated granular restrictions for contributor: ${user.name} | ` +
+      `Scopes: [${restrictions.allowedScopes.join(', ')}] | ` +
+      `Activities: ${restrictions.allowedActivities.length}`,
       req
     );
 
@@ -363,7 +493,7 @@ const updateUserRestrictions = async (req, res) => {
     res.json({
       success: true,
       data: updatedUser,
-      message: 'User restrictions updated successfully'
+      message: 'Enhanced user restrictions updated successfully'
     });
   } catch (error) {
     console.error('Update user restrictions error:', error);
@@ -548,11 +678,16 @@ const getRBACOptions = async (req, res) => {
         2: Object.keys(emissionFactors.scope2 || {}),
         3: Object.keys(emissionFactors.scope3 || {})
       },
+      activityDetails: {
+        1: emissionFactors.scope1 || {},
+        2: emissionFactors.scope2 || {},
+        3: emissionFactors.scope3 || {}
+      },
       roles: [
         { value: 'admin', label: 'Administrator', description: 'Full system access' },
-        { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
-        { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
-        { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
+        { value: 'analyst', label: 'Analyst', description: 'Analytics & Settings access only' },
+        { value: 'contributor', label: 'Contributor', description: 'Input & Settings access (with optional restrictions)' },
+        { value: 'viewer', label: 'Viewer', description: 'Dashboard, Monitor, Analytics & Settings (read-only)' }
       ]
     };
 

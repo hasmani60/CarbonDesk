@@ -167,6 +167,10 @@ emissionRouter.get('/stats',
   authorizeRoles('admin', 'analyst', 'viewer'), // Analytics access
   emissionController.getEmissionStats
 );
+emissionRouter.get('/user/allowed-activities',  // NEW ROUTE
+  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
+  emissionController.getUserAllowedActivities
+);
 emissionRouter.get('/:id',
   authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
   emissionController.getEmissionById
@@ -178,16 +182,8 @@ emissionRouter.post('/',
   (req, res, next) => {
     const { scope, category } = req.body;
     
-    // Check scope access for contributors
-    if (scope && req.user.role === 'contributor') {
-      return checkScopeAccess(scope)(req, res, () => {
-        // Check activity access if category is provided
-        if (category) {
-          return checkActivityAccess(category)(req, res, next);
-        }
-        next();
-      });
-    }
+    // Enhanced access check will be done in the controller
+    // Just pass through for now
     next();
   },
   emissionController.createEmission

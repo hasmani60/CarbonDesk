@@ -1,4 +1,4 @@
-// pages/Admin/UserManagement.jsx - Enhanced with Real-time Activity Logging
+// pages/Admin/UserManagement.jsx - Enhanced with Activity-Specific Restrictions
 import { useState, useEffect } from 'react';
 import { 
   Users, 
@@ -26,7 +26,16 @@ import {
   AlertCircle,
   TrendingUp,
   ExternalLink,
-  Filter as FilterIcon
+  Filter as FilterIcon,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Plus,
+  Minus,
+  Target,
+  List,
+  Check,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
@@ -60,6 +69,74 @@ const UserManagement = () => {
     totalItems: 0,
     itemsPerPage: 10
   });
+
+  // Helper function to count activities by scope
+  const getActivityCountByScope = (restrictions, scope) => {
+    if (!restrictions || !restrictions.allowedActivities) return 0;
+    
+    const activitiesInScope = Object.keys(emissionFactors[`scope${scope}`] || {});
+    return restrictions.allowedActivities.filter(activity => 
+      activitiesInScope.includes(activity)
+    ).length;
+  };
+
+  // Helper function to display restrictions in user table
+  const getRestrictionsDisplay = (userItem) => {
+    if (!userItem.restrictions) {
+      return <span className="text-gray-500">None</span>;
+    }
+
+    const { allowedScopes, allowedActivities } = userItem.restrictions;
+    const restrictions = [];
+
+    // Check scope restrictions
+    if (allowedScopes && allowedScopes.length < 3) {
+      restrictions.push(
+        <div key="scopes" className="flex items-center space-x-1">
+          <Lock className="w-3 h-3 text-orange-500" />
+          <span className="text-orange-600">
+            Scopes: {allowedScopes.join(', ')}
+          </span>
+        </div>
+      );
+    }
+
+    // Check activity restrictions
+    if (allowedActivities && allowedActivities.length > 0) {
+      // Count activities per scope
+      const activityCountByScope = {};
+      allowedActivities.forEach(activity => {
+        for (let scope = 1; scope <= 3; scope++) {
+          const activitiesInScope = Object.keys(emissionFactors[`scope${scope}`] || {});
+          if (activitiesInScope.includes(activity)) {
+            activityCountByScope[scope] = (activityCountByScope[scope] || 0) + 1;
+            break;
+          }
+        }
+      });
+
+      const scopeActivityDetails = Object.entries(activityCountByScope)
+        .map(([scope, count]) => `S${scope}:${count}`)
+        .join(', ');
+
+      restrictions.push(
+        <div key="activities" className="flex items-center space-x-1">
+          <Settings className="w-3 h-3 text-blue-500" />
+          <span className="text-blue-600">
+            Activities: {scopeActivityDetails}
+          </span>
+        </div>
+      );
+    }
+
+    return restrictions.length > 0 ? (
+      <div className="text-xs space-y-1">
+        {restrictions}
+      </div>
+    ) : (
+      <span className="text-gray-500">None</span>
+    );
+  };
 
   useEffect(() => {
     if (isAdmin()) {
@@ -206,7 +283,26 @@ const UserManagement = () => {
   const handleCreateUser = async (userData) => {
     try {
       setLoading(true);
-      const response = await adminAPI.createUser(userData);
+      
+      console.log('📤 FRONTEND: Sending user creation request');
+      console.log('📊 Original userData:', userData);
+      
+      // Prepare the final data to send
+      const dataToSend = {
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+        role: userData.role,
+        status: userData.status,
+        allowedScopes: userData.allowedScopes || [],
+        allowedActivities: userData.allowedActivities || [],
+        restrictedPages: userData.restrictedPages || []
+      };
+      
+      console.log('📦 FRONTEND: Final data to send:', dataToSend);
+      
+      const response = await adminAPI.createUser(dataToSend);
+      console.log('✅ FRONTEND: Response received:', response);
       
       if (response.success !== false) {
         toast.success(`User created successfully: ${userData.name}`);
@@ -214,9 +310,11 @@ const UserManagement = () => {
         loadUsers();
         loadUserStats();
         loadActivitySummary();
+      } else {
+        throw new Error(response.message || 'Unknown error');
       }
     } catch (error) {
-      console.error('Create user error:', error);
+      console.error('❌ FRONTEND: Create user error:', error);
       const message = error.response?.data?.message || error.message || 'Failed to create user';
       toast.error(message);
     } finally {
@@ -756,32 +854,7 @@ const UserManagement = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {userItem.restrictions ? (
-                        <div className="text-xs space-y-1">
-                          {userItem.restrictions.allowedScopes && userItem.restrictions.allowedScopes.length < 3 && (
-                            <div className="flex items-center space-x-1">
-                              <Lock className="w-3 h-3 text-orange-500" />
-                              <span className="text-orange-600">
-                                Scopes: {userItem.restrictions.allowedScopes.join(', ')}
-                              </span>
-                            </div>
-                          )}
-                          {userItem.restrictions.allowedActivities && userItem.restrictions.allowedActivities.length > 0 && (
-                            <div className="flex items-center space-x-1">
-                              <Settings className="w-3 h-3 text-blue-500" />
-                              <span className="text-blue-600">
-                                {userItem.restrictions.allowedActivities.length} activities
-                              </span>
-                            </div>
-                          )}
-                          {(!userItem.restrictions.allowedScopes || userItem.restrictions.allowedScopes.length === 3) && 
-                           (!userItem.restrictions.allowedActivities || userItem.restrictions.allowedActivities.length === 0) && (
-                            <span className="text-gray-500">None</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-gray-500">None</span>
-                      )}
+                      {getRestrictionsDisplay(userItem)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {new Date(userItem.createdAt).toLocaleDateString()}
@@ -961,7 +1034,7 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
   );
 };
 
-// Enhanced Create User Modal Component with RBAC
+// Enhanced Create User Modal with Activity-Specific Restrictions
 const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -970,14 +1043,27 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     role: 'contributor',
     status: 'active',
     allowedScopes: [1, 2, 3], // Default: all scopes
-    allowedActivities: [], // Default: all activities
+    allowedActivities: [], // Default: all activities (empty means no restrictions)
     restrictedPages: []
   });
   const [errors, setErrors] = useState({});
   const [showRestrictions, setShowRestrictions] = useState(false);
+  const [scopeSelectionMode, setScopeSelectionMode] = useState({}); // 'scope' or 'activity' per scope
+  const [expandedScopes, setExpandedScopes] = useState({ 1: false, 2: false, 3: false });
+  const [accessPreview, setAccessPreview] = useState('');
+  const [activitySearchTerm, setActivitySearchTerm] = useState({});
 
+  // Available activities per scope from emission factors
+  const activitiesPerScope = {
+    1: Object.keys(emissionFactors.scope1 || {}),
+    2: Object.keys(emissionFactors.scope2 || {}),
+    3: Object.keys(emissionFactors.scope3 || {})
+  };
+
+  // Separate useEffect for role changes only
   useEffect(() => {
     setShowRestrictions(formData.role === 'contributor');
+    
     if (formData.role !== 'contributor') {
       setFormData(prev => ({
         ...prev,
@@ -985,8 +1071,74 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         allowedActivities: [],
         restrictedPages: []
       }));
+      setScopeSelectionMode({});
+      setExpandedScopes({ 1: false, 2: false, 3: false });
+    } else {
+      // Only initialize scope selection mode when role changes to contributor
+      // Don't reset if already a contributor (to preserve user selections)
+      setScopeSelectionMode(prev => {
+        // If already has some scope selection mode, don't reset
+        if (Object.keys(prev).length > 0) {
+          return prev;
+        }
+        
+        // Initialize scope selection mode for new contributors
+        const initialMode = {};
+        [1, 2, 3].forEach(scope => {
+          // Default to 'none' for new contributors
+          initialMode[scope] = 'none';
+        });
+        
+        console.log('🔧 Initialized scope selection mode for new contributor:', initialMode);
+        return initialMode;
+      });
     }
-  }, [formData.role]);
+  }, [formData.role]); // Only depend on role changes
+
+  // Separate useEffect for updating access preview
+  useEffect(() => {
+    updateAccessPreview();
+  }, [formData.allowedScopes, formData.allowedActivities, scopeSelectionMode]);
+
+  const updateAccessPreview = () => {
+    if (formData.role !== 'contributor') {
+      setAccessPreview('Full access according to role permissions');
+      return;
+    }
+
+    let preview = '';
+    const scopesWithAccess = [];
+    const activitiesWithAccess = [];
+
+    // Check scope-level access
+    formData.allowedScopes.forEach(scope => {
+      if (scopeSelectionMode[scope] === 'scope') {
+        scopesWithAccess.push(`Scope ${scope} (all activities)`);
+      }
+    });
+
+    // Check activity-level access
+    formData.allowedActivities.forEach(activity => {
+      // Find which scope this activity belongs to
+      for (let scope = 1; scope <= 3; scope++) {
+        if (activitiesPerScope[scope].includes(activity)) {
+          activitiesWithAccess.push(`${activity} (Scope ${scope})`);
+          break;
+        }
+      }
+    });
+
+    if (scopesWithAccess.length === 0 && activitiesWithAccess.length === 0) {
+      preview = 'No access to any scopes or activities';
+    } else {
+      preview = [
+        scopesWithAccess.length > 0 ? `Scope Access: ${scopesWithAccess.join(', ')}` : '',
+        activitiesWithAccess.length > 0 ? `Activity Access: ${activitiesWithAccess.join(', ')}` : ''
+      ].filter(Boolean).join('\n');
+    }
+
+    setAccessPreview(preview);
+  };
 
   const validateForm = () => {
     const newErrors = {};
@@ -1006,6 +1158,14 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
+
+    // Validate access restrictions for contributors
+    if (formData.role === 'contributor') {
+      const hasAnyAccess = formData.allowedScopes.length > 0 || formData.allowedActivities.length > 0;
+      if (!hasAnyAccess) {
+        newErrors.access = 'User must have access to at least one scope or activity';
+      }
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -1013,48 +1173,239 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    console.log('📝 FORM SUBMIT: Raw form data:', formData);
+    console.log('📝 FORM SUBMIT: Scope selection mode:', scopeSelectionMode);
+    
     if (validateForm()) {
-      onSubmit(formData);
+      // Prepare final restrictions object
+      const finalFormData = { ...formData };
+      
+      if (formData.role === 'contributor') {
+        console.log('🔒 PREPARING CONTRIBUTOR RESTRICTIONS:');
+        
+        // Filter out scopes that are set to activity-level access
+        const finalAllowedScopes = formData.allowedScopes.filter(scope => 
+          scopeSelectionMode[scope] === 'scope'
+        );
+        
+        console.log('- Final allowed scopes:', finalAllowedScopes);
+        console.log('- Final allowed activities:', formData.allowedActivities);
+        
+        finalFormData.allowedScopes = finalAllowedScopes;
+        finalFormData.allowedActivities = formData.allowedActivities;
+        finalFormData.restrictedPages = formData.restrictedPages || [];
+        
+        console.log('📦 FINAL FORM DATA:', finalFormData);
+      } else {
+        console.log(`ℹ️ Role is ${formData.role}, clearing restrictions`);
+        finalFormData.allowedScopes = [];
+        finalFormData.allowedActivities = [];
+        finalFormData.restrictedPages = [];
+      }
+      
+      onSubmit(finalFormData);
     }
   };
 
-  const handleScopeChange = (scope, checked) => {
-    if (checked) {
+  const handleScopeSelectionModeChange = (scope, mode) => {
+    console.log(`🔄 Scope ${scope} mode changed to: ${mode}`);
+    
+    setScopeSelectionMode(prev => ({
+      ...prev,
+      [scope]: mode
+    }));
+  
+    // Auto-expand the scope when "activity" mode is selected
+    if (mode === 'activity') {
+      setExpandedScopes(prev => ({
+        ...prev,
+        [scope]: true
+      }));
+    }
+  
+    if (mode === 'scope') {
+      // Add scope to allowedScopes, remove activities from this scope
       setFormData(prev => ({
         ...prev,
-        allowedScopes: [...prev.allowedScopes, scope]
+        allowedScopes: [...new Set([...prev.allowedScopes, scope])],
+        allowedActivities: prev.allowedActivities.filter(activity => 
+          !activitiesPerScope[scope].includes(activity)
+        )
       }));
-    } else {
+      console.log(`✅ Scope ${scope}: Full access granted`);
+    } else if (mode === 'activity') {
+      // Remove scope from allowedScopes but keep any selected activities
       setFormData(prev => ({
         ...prev,
         allowedScopes: prev.allowedScopes.filter(s => s !== scope)
       }));
+      console.log(`🎯 Scope ${scope}: Activity selection mode enabled`);
+    } else if (mode === 'none') {
+      // Remove scope and all its activities
+      setFormData(prev => ({
+        ...prev,
+        allowedScopes: prev.allowedScopes.filter(s => s !== scope),
+        allowedActivities: prev.allowedActivities.filter(activity => 
+          !activitiesPerScope[scope].includes(activity)
+        )
+      }));
+      console.log(`❌ Scope ${scope}: No access`);
     }
   };
-
-  const handleActivityChange = (activity, checked) => {
+  
+  // Enhanced activity change handler
+  const handleActivityChange = (scope, activity, checked) => {
+    console.log(`🎯 Activity "${activity}" in Scope ${scope}: ${checked ? 'SELECTED' : 'DESELECTED'}`);
+    
     if (checked) {
-      setFormData(prev => ({
-        ...prev,
-        allowedActivities: [...prev.allowedActivities, activity]
-      }));
+      // Add activity and ensure scope is in activity mode
+      setFormData(prev => {
+        const newAllowedActivities = [...new Set([...prev.allowedActivities, activity])];
+        console.log(`✅ Adding activity "${activity}" to scope ${scope}. New activities:`, newAllowedActivities);
+        return {
+          ...prev,
+          allowedActivities: newAllowedActivities
+        };
+      });
+      
+      // Ensure the scope is in activity mode
+      if (scopeSelectionMode[scope] !== 'activity') {
+        console.log(`🔄 Auto-switching Scope ${scope} to activity mode`);
+        setScopeSelectionMode(prev => ({
+          ...prev,
+          [scope]: 'activity'
+        }));
+      }
     } else {
-      setFormData(prev => ({
-        ...prev,
-        allowedActivities: prev.allowedActivities.filter(a => a !== activity)
-      }));
+      // Remove activity
+      setFormData(prev => {
+        const newAllowedActivities = prev.allowedActivities.filter(a => a !== activity);
+        console.log(`❌ Removing activity "${activity}" from scope ${scope}. Remaining activities:`, newAllowedActivities);
+        
+        // Check if no activities left for this scope AFTER the update
+        const remainingActivitiesInScope = newAllowedActivities.filter(a => 
+          activitiesPerScope[scope].includes(a)
+        );
+        
+        console.log(`🔍 Remaining activities in scope ${scope}:`, remainingActivitiesInScope);
+        
+        // Only switch to 'none' mode if no activities are left for this scope
+        if (remainingActivitiesInScope.length === 0) {
+          console.log(`⚠️ No activities left in Scope ${scope}, switching to 'none' mode`);
+          setTimeout(() => {
+            setScopeSelectionMode(prev => ({
+              ...prev,
+              [scope]: 'none'
+            }));
+          }, 0);
+        }
+        
+        return {
+          ...prev,
+          allowedActivities: newAllowedActivities
+        };
+      });
     }
+    
+    // Update the access preview
+    setTimeout(() => {
+      updateAccessPreview();
+    }, 0);
+  };
+  
+  // Enhanced toggle scope expanded function
+  const toggleScopeExpanded = (scope) => {
+    setExpandedScopes(prev => {
+      const newExpanded = {
+        ...prev,
+        [scope]: !prev[scope]
+      };
+      console.log(`📖 Scope ${scope} ${newExpanded[scope] ? 'EXPANDED' : 'COLLAPSED'}`);
+      return newExpanded;
+    });
   };
 
-  const getActivitiesForScope = (scope) => {
-    return rbacOptions.activities[scope] || [];
+  // Bulk activity selection helpers
+  const handleSelectAllActivities = (scope) => {
+    const allActivitiesInScope = activitiesPerScope[scope] || [];
+    const newAllowedActivities = [
+      ...formData.allowedActivities.filter(activity => 
+        !allActivitiesInScope.includes(activity)
+      ),
+      ...allActivitiesInScope
+    ];
+    
+    setFormData(prev => ({
+      ...prev,
+      allowedActivities: newAllowedActivities
+    }));
+
+    // Ensure scope is in activity mode
+    setScopeSelectionMode(prev => ({
+      ...prev,
+      [scope]: 'activity'
+    }));
+    
+    console.log(`✅ Selected all ${allActivitiesInScope.length} activities in Scope ${scope}`);
+  };
+
+  const handleClearAllActivities = (scope) => {
+    const allActivitiesInScope = activitiesPerScope[scope] || [];
+    const newAllowedActivities = formData.allowedActivities.filter(activity => 
+      !allActivitiesInScope.includes(activity)
+    );
+    
+    setFormData(prev => ({
+      ...prev,
+      allowedActivities: newAllowedActivities
+    }));
+
+    // Switch to none mode if no activities left
+    setScopeSelectionMode(prev => ({
+      ...prev,
+      [scope]: 'none'
+    }));
+    
+    console.log(`❌ Cleared all activities in Scope ${scope}`);
+  };
+
+  // Activity search and filtering
+  const getFilteredActivities = (scope) => {
+    const activities = activitiesPerScope[scope] || [];
+    const searchTerm = activitySearchTerm[scope] || '';
+    
+    if (!searchTerm) return activities;
+    
+    return activities.filter(activity => 
+      activity.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  };
+
+  const getScopeAccessStatus = (scope) => {
+    const mode = scopeSelectionMode[scope];
+    if (mode === 'scope') return 'Full Access';
+    if (mode === 'activity') {
+      const count = formData.allowedActivities.filter(a => 
+        activitiesPerScope[scope].includes(a)
+      ).length;
+      return `${count} Activities`;
+    }
+    return 'No Access';
+  };
+
+  const getScopeStatusColor = (scope) => {
+    const mode = scopeSelectionMode[scope];
+    if (mode === 'scope') return 'text-green-600 bg-green-50';
+    if (mode === 'activity') return 'text-blue-600 bg-blue-50';
+    return 'text-gray-600 bg-gray-50';
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[95vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Create New User</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Create New User with Activity-Specific Access Control</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -1063,7 +1414,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -1151,64 +1502,336 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
           </div>
 
-          {/* RBAC Restrictions for Contributors */}
+          {/* Enhanced Activity-Specific RBAC Restrictions for Contributors */}
           {showRestrictions && (
-            <div className="border-t pt-4">
+            <div className="border-t pt-6">
               <div className="flex items-center space-x-2 mb-4">
-                <Lock className="w-5 h-5 text-orange-500" />
-                <h3 className="text-lg font-medium text-gray-900">Access Restrictions</h3>
-                <span className="text-sm text-gray-500">(For Contributors)</span>
+                <Target className="w-5 h-5 text-orange-500" />
+                <h3 className="text-lg font-medium text-gray-900">Activity-Specific Access Control</h3>
+                <span className="text-sm text-gray-500">(Contributor Role)</span>
               </div>
 
-              {/* Scope Restrictions */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Allowed Scopes (leave all checked for full access)
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {rbacOptions.scopes.map(scope => (
-                    <label key={scope.value} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={formData.allowedScopes.includes(scope.value)}
-                        onChange={(e) => handleScopeChange(scope.value, e.target.checked)}
-                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span className="text-sm text-gray-700">{scope.label}</span>
-                    </label>
-                  ))}
-                </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+                  <Info className="w-4 h-4 mr-2" />
+                  Enhanced Access Configuration:
+                </h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• <strong>Full Scope Access:</strong> Grant access to all activities within a scope</li>
+                  <li>• <strong>Activity-Specific Access:</strong> Choose individual activities with advanced filtering</li>
+                  <li>• <strong>Bulk Operations:</strong> Select/deselect all activities in a scope quickly</li>
+                  <li>• <strong>Search & Filter:</strong> Find specific activities using the search functionality</li>
+                  <li>• <strong>No Access:</strong> Completely deny access to a scope</li>
+                </ul>
               </div>
 
-              {/* Activity Restrictions */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Allowed Activities (leave empty for all activities in allowed scopes)
-                </label>
-                <div className="space-y-3">
-                  {formData.allowedScopes.map(scope => (
-                    <div key={scope} className="border rounded-lg p-3">
-                      <h4 className="font-medium text-gray-900 mb-2">Scope {scope} Activities</h4>
-                      <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                        {getActivitiesForScope(scope).map(activity => (
-                          <label key={activity} className="flex items-center space-x-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={formData.allowedActivities.includes(activity)}
-                              onChange={(e) => handleActivityChange(activity, e.target.checked)}
-                              className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                            />
-                            <span className="text-gray-700 truncate" title={activity}>{activity}</span>
-                          </label>
-                        ))}
+              {/* Enhanced Scope-by-Scope Access Control */}
+              <div className="space-y-4">
+                {[1, 2, 3].map(scope => (
+                  <div key={scope} className="border rounded-lg shadow-sm">
+                    <div className="p-4 bg-gradient-to-r from-gray-50 to-white border-b">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md ${
+                              scope === 1 ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' :
+                              scope === 2 ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 
+                              'bg-gradient-to-br from-red-500 to-red-600'
+                            }`}>
+                              {scope}
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-gray-900">Scope {scope}</h4>
+                              <p className="text-sm text-gray-600">
+                                {scope === 1 ? 'Direct emissions from owned/controlled sources' :
+                                 scope === 2 ? 'Indirect emissions from purchased energy' :
+                                 'All other indirect emissions from value chain'}
+                              </p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className="text-xs text-gray-500">
+                                  {activitiesPerScope[scope]?.length || 0} total activities
+                                </span>
+                                {scopeSelectionMode[scope] === 'activity' && (
+                                  <span className="text-xs text-blue-600">
+                                    {formData.allowedActivities.filter(a => 
+                                      activitiesPerScope[scope]?.includes(a)
+                                    ).length} selected
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-3">
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium shadow-sm ${getScopeStatusColor(scope)}`}>
+                            {getScopeAccessStatus(scope)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleScopeExpanded(scope)}
+                            className="text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                          >
+                            {expandedScopes[scope] ? 
+                              <ChevronUp className="w-5 h-5" /> : 
+                              <ChevronDown className="w-5 h-5" />
+                            }
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  ))}
+
+                    {/* Enhanced scope configuration when expanded */}
+                    {expandedScopes[scope] && (
+                      <div className="p-4 bg-white">
+                        {/* Access Level Selection with enhanced UI */}
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Access Level for Scope {scope}
+                          </label>
+                          <div className="grid grid-cols-3 gap-3">
+                            <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                              scopeSelectionMode[scope] === 'scope' 
+                                ? 'border-green-500 bg-green-50 shadow-md' 
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}>
+                              <input
+                                type="radio"
+                                name={`scope-${scope}-mode`}
+                                value="scope"
+                                checked={scopeSelectionMode[scope] === 'scope'}
+                                onChange={() => handleScopeSelectionModeChange(scope, 'scope')}
+                                className="text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <CheckCircle className={`w-6 h-6 ${
+                                scopeSelectionMode[scope] === 'scope' ? 'text-green-600' : 'text-gray-400'
+                              }`} />
+                              <div className="text-center">
+                                <div className="font-medium text-green-700">Full Access</div>
+                                <div className="text-xs text-green-600">All {activitiesPerScope[scope]?.length || 0} activities</div>
+                              </div>
+                            </label>
+
+                            <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                              scopeSelectionMode[scope] === 'activity' 
+                                ? 'border-blue-500 bg-blue-50 shadow-md' 
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}>
+                              <input
+                                type="radio"
+                                name={`scope-${scope}-mode`}
+                                value="activity"
+                                checked={scopeSelectionMode[scope] === 'activity'}
+                                onChange={() => handleScopeSelectionModeChange(scope, 'activity')}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <Target className={`w-6 h-6 ${
+                                scopeSelectionMode[scope] === 'activity' ? 'text-blue-600' : 'text-gray-400'
+                              }`} />
+                              <div className="text-center">
+                                <div className="font-medium text-blue-700">Activity-Specific</div>
+                                <div className="text-xs text-blue-600">Choose individual activities</div>
+                              </div>
+                            </label>
+
+                            <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                              scopeSelectionMode[scope] === 'none' 
+                                ? 'border-gray-500 bg-gray-50 shadow-md' 
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}>
+                              <input
+                                type="radio"
+                                name={`scope-${scope}-mode`}
+                                value="none"
+                                checked={scopeSelectionMode[scope] === 'none'}
+                                onChange={() => handleScopeSelectionModeChange(scope, 'none')}
+                                className="text-gray-600 focus:ring-gray-500"
+                              />
+                              <XCircle className={`w-6 h-6 ${
+                                scopeSelectionMode[scope] === 'none' ? 'text-gray-600' : 'text-gray-400'
+                              }`} />
+                              <div className="text-center">
+                                <div className="font-medium text-gray-700">No Access</div>
+                                <div className="text-xs text-gray-600">Deny all access</div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Enhanced Individual Activity Selection */}
+                        {scopeSelectionMode[scope] === 'activity' && (
+                          <div className="mt-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+                            <div className="flex items-center justify-between mb-4">
+                              <label className="block text-sm font-medium text-blue-900 flex items-center">
+                                <List className="w-4 h-4 mr-2" />
+                                Select Specific Activities in Scope {scope}
+                              </label>
+                              <div className="flex items-center space-x-2">
+                                <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+                                  {formData.allowedActivities.filter(activity => 
+                                    activitiesPerScope[scope]?.includes(activity)
+                                  ).length} of {activitiesPerScope[scope]?.length || 0} selected
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Activity Search */}
+                            <div className="mb-4">
+                              <div className="relative">
+                                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <input
+                                  type="text"
+                                  placeholder="Search activities..."
+                                  value={activitySearchTerm[scope] || ''}
+                                  onChange={(e) => setActivitySearchTerm(prev => ({
+                                    ...prev,
+                                    [scope]: e.target.value
+                                  }))}
+                                  className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Bulk Action Buttons */}
+                            <div className="flex items-center space-x-2 mb-4">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAllActivities(scope)}
+                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Select All</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClearAllActivities(scope)}
+                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                              >
+                                <Minus className="w-3 h-3" />
+                                <span>Clear All</span>
+                              </button>
+                              {activitySearchTerm[scope] && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActivitySearchTerm(prev => ({
+                                    ...prev,
+                                    [scope]: ''
+                                  }))}
+                                  className="flex items-center space-x-1 text-xs px-3 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                                >
+                                  <X className="w-3 h-3" />
+                                  <span>Clear Search</span>
+                                </button>
+                              )}
+                            </div>
+                            
+                            {activitiesPerScope[scope] && activitiesPerScope[scope].length > 0 ? (
+                              <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+                                {getFilteredActivities(scope).map(activity => {
+                                  const isSelected = formData.allowedActivities.includes(activity);
+                                  return (
+                                    <label 
+                                      key={activity} 
+                                      className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all hover:shadow-sm ${
+                                        isSelected 
+                                          ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
+                                          : 'bg-white border-2 border-gray-200 hover:border-blue-200 hover:bg-blue-25'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => handleActivityChange(scope, activity, e.target.checked)}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                                      />
+                                      <div className="flex-1">
+                                        <div className="text-sm font-medium text-gray-900">{activity}</div>
+                                        <div className="text-xs text-gray-600">
+                                          {emissionFactors?.[`scope${scope}`]?.[activity] ? 
+                                            `${Object.keys(emissionFactors[`scope${scope}`][activity]).length} emission sources` :
+                                            'Various emission sources'
+                                          }
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <div className="flex-shrink-0">
+                                          <Check className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                      )}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4 text-gray-500">
+                                <p className="text-sm">No activities available for Scope {scope}</p>
+                              </div>
+                            )}
+
+                            {/* Filtered results info */}
+                            {activitySearchTerm[scope] && (
+                              <div className="mt-3 text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                                Showing {getFilteredActivities(scope).length} of {activitiesPerScope[scope]?.length || 0} activities
+                                {getFilteredActivities(scope).length === 0 && (
+                                  <span className="text-orange-600"> - No matching activities found</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Enhanced status messages for other modes */}
+                        {scopeSelectionMode[scope] === 'scope' && (
+                          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                              <p className="text-sm text-green-800">
+                                <strong>Full Access:</strong> User will have access to all {activitiesPerScope[scope]?.length || 0} activities in Scope {scope}.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {scopeSelectionMode[scope] === 'none' && (
+                          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <XCircle className="w-4 h-4 text-gray-600" />
+                              <p className="text-sm text-gray-700">
+                                <strong>No Access:</strong> User will not be able to access any activities in Scope {scope}.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Enhanced Access Preview */}
+              <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <h4 className="font-medium text-emerald-900 mb-2 flex items-center">
+                  <Eye className="w-4 h-4 mr-2" />
+                  Access Preview Summary
+                </h4>
+                <div className="text-sm text-emerald-800 whitespace-pre-line bg-white p-3 rounded border">
+                  {accessPreview || 'No access configured'}
+                </div>
+                <div className="mt-2 text-xs text-emerald-600">
+                  This preview shows exactly what the user will be able to access
                 </div>
               </div>
+
+              {errors.access && (
+                <p className="text-red-500 text-sm mt-2 flex items-center">
+                  <AlertCircle className="w-4 h-4 mr-1" />
+                  {errors.access}
+                </p>
+              )}
             </div>
           )}
 
+          {/* Submit Buttons */}
           <div className="flex space-x-3 pt-4">
             <button 
               type="submit" 
@@ -1218,12 +1841,12 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
               {loading ? (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Creating...
+                  Creating User...
                 </>
               ) : (
                 <>
                   <UserPlus className="w-4 h-4 mr-2" />
-                  Create User
+                  Create User with Access Control
                 </>
               )}
             </button>
@@ -1238,16 +1861,22 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </div>
         </form>
 
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <strong>STRICT RBAC Permissions:</strong>
+        {/* Enhanced RBAC Information */}
+        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">
+            <Info className="w-4 h-4 mr-2" />
+            Role-Based Access Control (RBAC) + Activity-Specific Restrictions:
           </p>
-          <ul className="text-xs text-blue-700 mt-1 space-y-1">
-            <li><strong>Admin:</strong> Full system access</li>
-            <li><strong>Analyst:</strong> Analytics & Settings only</li>
-            <li><strong>Contributor:</strong> Input & Settings only (can be further restricted)</li>
-            <li><strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)</li>
-          </ul>
+          <div className="grid grid-cols-2 gap-4 text-xs text-blue-700">
+            <div>
+              <strong>Admin:</strong> Full system access (restrictions ignored)<br/>
+              <strong>Analyst:</strong> Analytics & Settings only<br/>
+            </div>
+            <div>
+              <strong>Contributor:</strong> Input & Settings (with optional activity-specific restrictions)<br/>
+              <strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)<br/>
+            </div>
+          </div>
         </div>
       </div>
     </div>

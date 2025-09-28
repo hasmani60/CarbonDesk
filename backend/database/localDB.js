@@ -165,33 +165,73 @@ class LocalDatabase {
   async createUser(userData) {
     return new Promise(async (resolve, reject) => {
       try {
+        console.log('💾 DATABASE: createUser called with data:', JSON.stringify(userData, null, 2));
+        
         const hashedPassword = await bcrypt.hash(userData.password, 12);
+        
+        // Handle restrictions properly
+        let restrictionsString = null;
+        if (userData.restrictions) {
+          if (typeof userData.restrictions === 'string') {
+            restrictionsString = userData.restrictions;
+            console.log('💾 DATABASE: Restrictions already string:', restrictionsString);
+          } else {
+            restrictionsString = JSON.stringify(userData.restrictions);
+            console.log('💾 DATABASE: Converted restrictions to string:', restrictionsString);
+          }
+        } else {
+          console.log('💾 DATABASE: No restrictions provided');
+        }
+        
         const query = `
           INSERT INTO users (name, email, password, role, status, restrictions)
           VALUES (?, ?, ?, ?, ?, ?)
         `;
         
-        this.db.run(query, [
+        const values = [
           userData.name,
           userData.email,
           hashedPassword,
           userData.role || 'contributor',
           userData.status || 'active',
-          userData.restrictions || null
-        ], function(err) {
+          restrictionsString
+        ];
+        
+        console.log('💾 DATABASE: Executing query with values:', {
+          name: values[0],
+          email: values[1],
+          password: '[HIDDEN]',
+          role: values[3],
+          status: values[4],
+          restrictions: values[5]
+        });
+        
+        this.db.run(query, values, function(err) {
           if (err) {
-            console.error('Error creating user:', err);
+            console.error('💾 DATABASE ERROR:', err);
             reject(err);
           } else {
-            console.log(`✅ User created with ID: ${this.lastID}`);
-            resolve({ id: this.lastID, ...userData });
+            const userId = this.lastID;
+            console.log(`💾 DATABASE: User created with ID: ${userId}`);
+            
+            // Return the user object with parsed restrictions
+            const createdUser = {
+              id: userId,
+              ...userData,
+              restrictions: userData.restrictions || null
+            };
+            
+            console.log('💾 DATABASE: Returning user object:', JSON.stringify(createdUser, null, 2));
+            resolve(createdUser);
           }
         });
       } catch (error) {
+        console.error('💾 DATABASE EXCEPTION:', error);
         reject(error);
       }
     });
   }
+  
 
   async findUserByEmail(email) {
     return new Promise((resolve, reject) => {
@@ -215,18 +255,38 @@ class LocalDatabase {
 
   async findUserById(id) {
     return new Promise((resolve, reject) => {
-      const query = 'SELECT * FROM users WHERE id = ? AND status = "active"';
+      const query = 'SELECT * FROM users WHERE id = ? AND status != "deleted"';
+      
+      console.log('💾 DATABASE: Finding user by ID:', id);
+      
       this.db.get(query, [id], (err, row) => {
         if (err) {
+          console.error('💾 DATABASE ERROR in findUserById:', err);
           reject(err);
         } else {
-          if (row && row.restrictions) {
-            try {
-              row.restrictions = JSON.parse(row.restrictions);
-            } catch (e) {
-              row.restrictions = null;
+          if (row) {
+            console.log('💾 DATABASE: Raw user data from DB:', JSON.stringify(row, null, 2));
+            
+            // Parse restrictions if they exist
+            if (row.restrictions) {
+              try {
+                if (typeof row.restrictions === 'string') {
+                  row.restrictions = JSON.parse(row.restrictions);
+                  console.log('💾 DATABASE: Parsed restrictions:', JSON.stringify(row.restrictions, null, 2));
+                }
+              } catch (e) {
+                console.error('💾 DATABASE: Error parsing restrictions:', e);
+                row.restrictions = null;
+              }
+            } else {
+              console.log('💾 DATABASE: No restrictions found for user');
             }
+            
+            console.log('💾 DATABASE: Final user object:', JSON.stringify(row, null, 2));
+          } else {
+            console.log('💾 DATABASE: No user found with ID:', id);
           }
+          
           resolve(row);
         }
       });

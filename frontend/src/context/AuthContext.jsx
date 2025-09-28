@@ -202,12 +202,39 @@ export const AuthProvider = ({ children }) => {
     // Viewers can access all scopes for viewing
     if (user?.role === 'viewer') return true;
     
-    // Contributors with restrictions
+    // Contributors with granular restrictions
     if (user?.role === 'contributor') {
-      if (!user.restrictions || !user.restrictions.allowedScopes) {
-        return true; // No restrictions = full access
+      if (!user.restrictions) {
+        return true; // No restrictions = full access (legacy users)
       }
-      return user.restrictions.allowedScopes.includes(parseInt(scope));
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // Check if scope is explicitly allowed
+      if (allowedScopes && allowedScopes.includes(parseInt(scope))) {
+        return true;
+      }
+      
+      // Check if user has any activities in this scope
+      if (allowedActivities && allowedActivities.length > 0) {
+        // Import emission factors to check which activities belong to this scope
+        // For now, we'll do a simple check - you might want to import emissionFactors here
+        const scopeActivities = {
+          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+          2: ['Electricity Purchased'],
+          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+        };
+        
+        const activitiesInScope = scopeActivities[parseInt(scope)] || [];
+        const hasActivityInScope = allowedActivities.some(activity => 
+          activitiesInScope.includes(activity)
+        );
+        
+        return hasActivityInScope;
+      }
+      
+      // No explicit scope access and no activities in this scope
+      return false;
     }
     
     return false;
@@ -220,14 +247,42 @@ export const AuthProvider = ({ children }) => {
     // Admin and analysts have full access
     if (['admin', 'analyst'].includes(user?.role)) return true;
     
-    // Viewers and contributors with no specific restrictions
+    // Viewers can access all activities for viewing
     if (user?.role === 'viewer') return true;
     
+    // Contributors with granular restrictions
     if (user?.role === 'contributor') {
-      if (!user.restrictions || !user.restrictions.allowedActivities || user.restrictions.allowedActivities.length === 0) {
-        return true; // No activity restrictions = full access to allowed scopes
+      if (!user.restrictions) {
+        return true; // No restrictions = full access (legacy users)
       }
-      return user.restrictions.allowedActivities.includes(activity);
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // If user has specific activity restrictions, check if this activity is allowed
+      if (allowedActivities && allowedActivities.length > 0) {
+        return allowedActivities.includes(activity);
+      }
+      
+      // If no specific activity restrictions, check scope-level access
+      // Find which scope this activity belongs to
+      const scopeActivities = {
+        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+        2: ['Electricity Purchased'],
+        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+      };
+      
+      for (let scope = 1; scope <= 3; scope++) {
+        const activitiesInScope = scopeActivities[scope] || [];
+        if (activitiesInScope.includes(activity)) {
+          // Check if user has access to this scope
+          if (allowedScopes && allowedScopes.includes(scope)) {
+            return true;
+          }
+          break;
+        }
+      }
+      
+      return false;
     }
     
     return false;
@@ -261,8 +316,7 @@ export const AuthProvider = ({ children }) => {
     return true;
   };
 
-  // RBAC: Get user's allowed scopes
-  const getAllowedScopes = () => {
+  const getEffectiveAllowedScopes = () => {
     if (!isAuthenticated) return [];
     
     // Admin and analysts have full access
@@ -273,10 +327,108 @@ export const AuthProvider = ({ children }) => {
     
     // Contributors with restrictions
     if (user?.role === 'contributor') {
-      if (!user.restrictions || !user.restrictions.allowedScopes) {
+      if (!user.restrictions) {
         return [1, 2, 3]; // No restrictions = full access
       }
-      return user.restrictions.allowedScopes;
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      const effectiveScopes = new Set();
+      
+      // Add explicitly allowed scopes
+      if (allowedScopes) {
+        allowedScopes.forEach(scope => effectiveScopes.add(scope));
+      }
+      
+      // Add scopes that have allowed activities
+      if (allowedActivities && allowedActivities.length > 0) {
+        const scopeActivities = {
+          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+          2: ['Electricity Purchased'],
+          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+        };
+        
+        allowedActivities.forEach(activity => {
+          for (let scope = 1; scope <= 3; scope++) {
+            const activitiesInScope = scopeActivities[scope] || [];
+            if (activitiesInScope.includes(activity)) {
+              effectiveScopes.add(scope);
+              break;
+            }
+          }
+        });
+      }
+      
+      return Array.from(effectiveScopes).sort();
+    }
+    
+    return [];
+  };
+
+  // RBAC: Get user's allowed scopes
+  const getAllowedScopes = () => {
+    return getEffectiveAllowedScopes();
+  };
+  
+  // ADD this function to get user's allowed activities for a specific scope:
+  const getAllowedActivitiesForScope = (scope) => {
+    if (!isAuthenticated) return [];
+    
+    // Admin and analysts have full access
+    if (['admin', 'analyst'].includes(user?.role)) {
+      const scopeActivities = {
+        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+        2: ['Electricity Purchased'],
+        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+      };
+      return scopeActivities[scope] || [];
+    }
+    
+    // Viewers can see all activities
+    if (user?.role === 'viewer') {
+      const scopeActivities = {
+        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+        2: ['Electricity Purchased'],
+        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+      };
+      return scopeActivities[scope] || [];
+    }
+    
+    // Contributors with restrictions
+    if (user?.role === 'contributor') {
+      if (!user.restrictions) {
+        const scopeActivities = {
+          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+          2: ['Electricity Purchased'],
+          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+        };
+        return scopeActivities[scope] || []; // No restrictions = full access
+      }
+      
+      const { allowedScopes, allowedActivities } = user.restrictions;
+      
+      // If scope is explicitly allowed, return all activities in that scope
+      if (allowedScopes && allowedScopes.includes(scope)) {
+        const scopeActivities = {
+          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+          2: ['Electricity Purchased'],
+          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+        };
+        return scopeActivities[scope] || [];
+      }
+      
+      // Otherwise, return only allowed activities for this scope
+      if (allowedActivities && allowedActivities.length > 0) {
+        const scopeActivities = {
+          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
+          2: ['Electricity Purchased'],
+          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
+        };
+        
+        const activitiesInScope = scopeActivities[scope] || [];
+        return allowedActivities.filter(activity => activitiesInScope.includes(activity));
+      }
+      
+      return [];
     }
     
     return [];
@@ -401,6 +553,8 @@ export const AuthProvider = ({ children }) => {
     canAccessPage,
     getAllowedScopes,
     getAllowedActivities,
+    getEffectiveAllowedScopes,
+    getAllowedActivitiesForScope,
     
     // Role helpers
     isAdmin,
