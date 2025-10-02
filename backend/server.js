@@ -1,3 +1,4 @@
+// backend/server.js - Fixed Server with Correct Middleware Order
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -23,48 +24,72 @@ const {
   authorizeRoles
 } = require('./middleware/auth');
 
+// Import organisation scoping middleware
+const { 
+  addOrganisationContext, 
+  requireOrganisation 
+} = require('./middleware/organisationScope');
+
+// Import company middleware
+const {
+  authenticateCompanyOperator,
+  canCreateOrganisations,
+  canManageOrganisations,
+  requireSuperOperator,
+  logCompanyActivity
+} = require('./middleware/companyAuth');
+
 const app = express();
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
-// Rate limiting - more lenient for development
+// ============================================
+// RATE LIMITING
+// ============================================
+
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // increased limit for development
-  message: {
-    error: 'Too many requests from this IP, please try again later.'
-  },
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Admin-specific rate limiting
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100, // Admin operations get lower limit
-  message: {
-    error: 'Too many admin requests from this IP, please try again later.'
-  },
+  max: 100,
+  message: { error: 'Too many admin requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Middleware
+const companyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: { error: 'Too many company operations requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ============================================
+// MIDDLEWARE
+// ============================================
+
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false
 }));
 app.use(compression());
 
-// More detailed logging in development
+// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 } else {
   app.use(morgan('combined'));
 }
 
-// CORS configuration - more permissive for development
+// CORS configuration
 app.use(cors({
   origin: [
     'http://localhost:5173',
@@ -78,7 +103,7 @@ app.use(cors({
   optionsSuccessStatus: 200
 }));
 
-// Apply rate limiting
+// Apply general rate limiting
 app.use(limiter);
 
 // Body parsing middleware
@@ -88,14 +113,17 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Health check endpoint - enhanced
+// ============================================
+// HEALTH CHECK ENDPOINT
+// ============================================
+
 app.get('/health', (req, res) => {
   const healthData = {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    version: '1.0.0',
+    version: '2.0.0',
     database: 'Local SQLite Database (Active)',
     port: process.env.PORT || 5001,
     features: {
@@ -105,7 +133,9 @@ app.get('/health', (req, res) => {
       roleBasedAccess: true,
       localDatabase: true,
       rbacSupport: true,
-      strictRBAC: true // NEW: Indicating strict RBAC is enabled
+      strictRBAC: true,
+      multiTenant: true,
+      companyOperations: true
     }
   };
   
@@ -113,14 +143,43 @@ app.get('/health', (req, res) => {
   console.log('Health check requested:', healthData);
 });
 
-// Import controllers
+// ============================================
+// IMPORT CONTROLLERS
+// ============================================
+
 const authController = require('./controllers/authController');
 const userController = require('./controllers/userController');
 const adminController = require('./controllers/adminController');
 const dashboardController = require('./controllers/dashboardController');
 const emissionController = require('./controllers/emissionController');
+const companyController = require('./controllers/companyController');
 
-// Authentication routes (no RBAC restrictions)
+// ============================================
+// COMPANY OPERATIONS ROUTES (HIDDEN)
+// ============================================
+
+const companyAuthRouter = express.Router();
+companyAuthRouter.post('/login', companyController.companyLogin);
+companyAuthRouter.get('/profile', authenticateCompanyOperator, companyController.getCompanyProfile);
+app.use('/api/company/auth', companyLimiter, companyAuthRouter);
+
+const companyDashboardRouter = express.Router();
+companyDashboardRouter.get('/', companyController.getCompanyDashboard);
+app.use('/api/company/dashboard', companyLimiter, authenticateCompanyOperator, companyDashboardRouter);
+
+const companyOrgRouter = express.Router();
+companyOrgRouter.post('/', canCreateOrganisations, logCompanyActivity('org_create', 'Creating new organisation'), companyController.createOrganisation);
+companyOrgRouter.get('/', companyController.getAllOrganisations);
+companyOrgRouter.get('/:id', companyController.getOrganisationById);
+companyOrgRouter.patch('/:id', canManageOrganisations, logCompanyActivity('org_update', 'Updating organisation'), companyController.updateOrganisation);
+companyOrgRouter.delete('/:id', canManageOrganisations, logCompanyActivity('org_deactivate', 'Deactivating organisation'), companyController.deactivateOrganisation);
+companyOrgRouter.get('/:id/stats', companyController.getOrganisationStats);
+app.use('/api/company/organisations', companyLimiter, authenticateCompanyOperator, companyOrgRouter);
+
+// ============================================
+// REGULAR USER AUTHENTICATION ROUTES
+// ============================================
+
 const authRouter = express.Router();
 authRouter.post('/login', authController.login);
 authRouter.post('/register', authenticateToken, requireAdmin, authController.register);
@@ -130,97 +189,124 @@ authRouter.patch('/profile', authenticateToken, authController.updateProfile);
 authRouter.patch('/change-password', authenticateToken, authController.changePassword);
 app.use('/api/auth', authRouter);
 
-// STRICT RBAC: Admin routes (Admin only)
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
 const adminRouter = express.Router();
 adminRouter.get('/dashboard', adminController.getAdminDashboard);
 adminRouter.get('/activities', adminController.getAllActivities);
 adminRouter.get('/user-summary', adminController.getUserActivitySummary);
 app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
 
-// STRICT RBAC: User management routes (Admin only)
+// ============================================
+// USER MANAGEMENT ROUTES (WITH ORG CONTEXT)
+// ============================================
+
 const userRouter = express.Router();
-userRouter.get('/', userController.getUsers);
-userRouter.get('/stats', userController.getUserStats);
+userRouter.get('/', addOrganisationContext, userController.getUsers);
+userRouter.get('/stats', addOrganisationContext, userController.getUserStats);
 userRouter.get('/rbac-options', userController.getRBACOptions);
-userRouter.get('/:id', userController.getUserById);
-userRouter.post('/', requireAdmin, userController.createUser);
-userRouter.patch('/:id/role', requireAdmin, userController.updateUserRole);
-userRouter.patch('/:id/restrictions', requireAdmin, userController.updateUserRestrictions);
-userRouter.patch('/:id/status', requireAdmin, userController.updateUserStatus);
-userRouter.delete('/:id', requireAdmin, userController.deleteUser);
-userRouter.patch('/bulk', requireAdmin, userController.bulkUpdateUsers);
+userRouter.get('/:id', addOrganisationContext, userController.getUserById);
+userRouter.post('/', addOrganisationContext, requireAdmin, userController.createUser);
+userRouter.patch('/:id/role', addOrganisationContext, requireAdmin, userController.updateUserRole);
+userRouter.patch('/:id/restrictions', addOrganisationContext, requireAdmin, userController.updateUserRestrictions);
+userRouter.patch('/:id/status', addOrganisationContext, requireAdmin, userController.updateUserStatus);
+userRouter.delete('/:id', addOrganisationContext, requireAdmin, userController.deleteUser);
+userRouter.patch('/bulk', addOrganisationContext, requireAdmin, userController.bulkUpdateUsers);
 app.use('/api/users', authenticateToken, userRouter);
 
-// STRICT RBAC: Emission routes with role-specific access
+// ============================================
+// EMISSION ROUTES (WITH ORG CONTEXT & RBAC)
+// ============================================
+
 const emissionRouter = express.Router();
 
-// GET routes: Different access per role
 emissionRouter.get('/', 
-  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'), // All roles can view
+  addOrganisationContext,
+  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
+  requireOrganisation,
   emissionController.getEmissions
 );
+
 emissionRouter.get('/categories',
-  authorizeRoles('admin', 'analyst', 'contributor'), // Only roles that can create emissions
+  addOrganisationContext,
+  authorizeRoles('admin', 'analyst', 'contributor'),
+  requireOrganisation,
   emissionController.getEmissionCategories
 );
+
 emissionRouter.get('/stats',
-  authorizeRoles('admin', 'analyst', 'viewer'), // Analytics access
+  addOrganisationContext,
+  authorizeRoles('admin', 'analyst', 'viewer'),
+  requireOrganisation,
   emissionController.getEmissionStats
 );
-emissionRouter.get('/user/allowed-activities',  // NEW ROUTE
+
+emissionRouter.get('/user/allowed-activities',
   authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
   emissionController.getUserAllowedActivities
 );
+
 emissionRouter.get('/:id',
+  addOrganisationContext,
   authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
+  requireOrganisation,
   emissionController.getEmissionById
 );
 
-// POST routes: Only admin and contributors can create
 emissionRouter.post('/', 
-  authorizeRoles('admin', 'contributor'), // Only admin and contributors
-  (req, res, next) => {
-    const { scope, category } = req.body;
-    
-    // Enhanced access check will be done in the controller
-    // Just pass through for now
-    next();
-  },
+  addOrganisationContext,
+  authorizeRoles('admin', 'contributor'),
+  requireOrganisation,
   emissionController.createEmission
 );
 
-// PATCH routes: Admin and contributors can update, analysts can verify
 emissionRouter.patch('/:id',
+  addOrganisationContext,
   authorizeRoles('admin', 'contributor'),
+  requireOrganisation,
   emissionController.updateEmission
 );
 
 emissionRouter.patch('/:id/verify',
-  authorizeRoles('admin', 'analyst'), // Admin and analyst can verify
+  addOrganisationContext,
+  authorizeRoles('admin', 'analyst'),
+  requireOrganisation,
   emissionController.verifyEmission
 );
 
-// DELETE routes: Only admin and contributors
 emissionRouter.delete('/:id',
+  addOrganisationContext,
   authorizeRoles('admin', 'contributor'),
+  requireOrganisation,
   emissionController.deleteEmission
 );
 
 app.use('/api/emissions', authenticateToken, emissionRouter);
 
-// STRICT RBAC: Dashboard routes with specific role access
+// ============================================
+// DASHBOARD ROUTES (WITH ORG CONTEXT & RBAC)
+// ============================================
+
 const dashboardRouter = express.Router();
 dashboardRouter.get('/summary', 
-  authorizeRoles('admin', 'viewer', 'contributor'), // Dashboard access for admin, viewer, contributor
+  addOrganisationContext,
+  authorizeRoles('admin', 'viewer', 'contributor'),
+  requireOrganisation,
   dashboardController.getDashboardSummary
 );
 dashboardRouter.get('/notifications', 
+  addOrganisationContext,
   authorizeRoles('admin', 'viewer', 'contributor'),
   dashboardController.getDashboardNotifications
 );
 app.use('/api/dashboard', authenticateToken, dashboardRouter);
 
-// STRICT RBAC: Analytics routes (Admin, Analyst, Viewer only)
+// ============================================
+// ANALYTICS ROUTES (Admin, Analyst, Viewer)
+// ============================================
+
 const analyticsRouter = express.Router();
 analyticsRouter.get('*', 
   authorizeRoles('admin', 'analyst', 'viewer'),
@@ -234,7 +320,10 @@ analyticsRouter.get('*',
 );
 app.use('/api/analytics', authenticateToken, analyticsRouter);
 
-// STRICT RBAC: Monitor routes (Admin, Viewer only)
+// ============================================
+// MONITOR ROUTES (Admin, Viewer)
+// ============================================
+
 const monitorRouter = express.Router();
 monitorRouter.get('*', 
   authorizeRoles('admin', 'viewer'),
@@ -248,7 +337,10 @@ monitorRouter.get('*',
 );
 app.use('/api/monitor', authenticateToken, monitorRouter);
 
-// STRICT RBAC: Settings routes (All authenticated users)
+// ============================================
+// SETTINGS ROUTES (All authenticated users)
+// ============================================
+
 const settingsRouter = express.Router();
 settingsRouter.get('*', 
   authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
@@ -262,12 +354,65 @@ settingsRouter.get('*',
 );
 app.use('/api/settings', authenticateToken, settingsRouter);
 
-// Access control check endpoints for frontend
+// ============================================
+// UTILITY ENDPOINTS
+// ============================================
+
+// Organisation info endpoint
+app.get('/api/organisation/info', authenticateToken, addOrganisationContext, (req, res) => {
+  if (!req.organisationId) {
+    return res.json({
+      success: true,
+      data: {
+        hasOrganisation: false,
+        message: 'User not assigned to any organisation'
+      }
+    });
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      hasOrganisation: true,
+      organisation: {
+        id: req.organisation.id,
+        name: req.organisation.name,
+        display_name: req.organisation.display_name,
+        industry_type: req.organisation.industry_type,
+        subscription_tier: req.organisation.subscription_tier
+      },
+      settings: req.organisationSettings ? {
+        currency: req.organisationSettings.currency,
+        timezone: req.organisationSettings.timezone
+      } : null
+    }
+  });
+});
+
+// Debug context endpoint
+app.get('/api/debug/context', authenticateToken, addOrganisationContext, (req, res) => {
+  res.json({
+    success: true,
+    debug: {
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+        organisation_id: req.user.organisation_id
+      },
+      context: {
+        organisationId: req.organisationId,
+        hasOrganisation: !!req.organisation,
+        organisationName: req.organisation?.name || null
+      }
+    }
+  });
+});
+
+// Access control endpoints
 app.get('/api/access/scope/:scope', authenticateToken, (req, res) => {
   const scope = req.params.scope;
-  
   try {
-    // Check if user can access this scope
     checkScopeAccess(scope)(req, res, () => {
       res.json({
         success: true,
@@ -290,7 +435,6 @@ app.get('/api/access/scope/:scope', authenticateToken, (req, res) => {
 
 app.get('/api/access/page/:page', authenticateToken, (req, res) => {
   const page = `/${req.params.page}`;
-  
   try {
     checkPageAccess(page)(req, res, () => {
       res.json({
@@ -313,7 +457,7 @@ app.get('/api/access/page/:page', authenticateToken, (req, res) => {
 });
 
 // RBAC info endpoint
-app.get('/api/rbac/info', authenticateToken, (req, res) => {
+app.get('/api/rbac/info', authenticateToken, addOrganisationContext, (req, res) => {
   const { role } = req.user;
   
   const rolePermissions = {
@@ -348,12 +492,17 @@ app.get('/api/rbac/info', authenticateToken, (req, res) => {
     data: {
       userRole: role,
       permissions: rolePermissions[role] || rolePermissions.viewer,
-      restrictions: req.user.restrictions || null
+      restrictions: req.user.restrictions || null,
+      organisation_id: req.organisationId || null,
+      organisation_name: req.organisation?.name || null
     }
   });
 });
 
-// Placeholder routes for other endpoints (with RBAC)
+// ============================================
+// PLACEHOLDER ROUTES
+// ============================================
+
 app.use('/api/vehicles', authenticateToken, (req, res) => {
   res.json({ message: 'Vehicles endpoint placeholder' });
 });
@@ -367,17 +516,17 @@ app.use('/api/organization', authenticateToken, (req, res) => {
 });
 
 app.use('/api/notifications', authenticateToken, (req, res) => {
-  res.json({ 
-    success: true,
-    data: [] 
-  });
+  res.json({ success: true, data: [] });
 });
 
 app.use('/api/export', authenticateToken, authorizeRoles('admin', 'analyst'), (req, res) => {
   res.json({ message: 'Export endpoint placeholder - Admin/Analyst only' });
 });
 
-// Error handling middleware
+// ============================================
+// ERROR HANDLING MIDDLEWARE
+// ============================================
+
 const errorHandlerMiddleware = (err, req, res, next) => {
   console.error('Error:', err);
   
@@ -421,7 +570,10 @@ app.use('*', (req, res) => {
 // Error handling middleware (must be last)
 app.use(errorHandlerMiddleware);
 
-// Database connection (optional MongoDB, but we're using SQLite primarily)
+// ============================================
+// DATABASE CONNECTION & STARTUP
+// ============================================
+
 const connectDB = async () => {
   try {
     if (!process.env.MONGODB_URI) {
@@ -441,7 +593,6 @@ const connectDB = async () => {
   }
 };
 
-// Graceful shutdown
 const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} received, shutting down gracefully`);
   
@@ -469,45 +620,42 @@ const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
   try {
-    // Initialize local database first
     await localDB.init();
-    
-    // Try to connect to MongoDB as secondary database
     await connectDB();
     
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend (Strict RBAC Enforced)`);
+      console.log(`📊 Carbon Accounting Backend v2.0`);
       console.log(`🌐 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API Base: http://localhost:${PORT}/api`);
       console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
-      console.log(`👥 Multi-User: Enabled`);
-      console.log(`🔒 Strict RBAC: Enforced on Frontend & Backend`);
-      console.log(`📋 Admin Monitoring: Enabled`);
-      console.log(`📝 Activity Logging: Enhanced`);
-      console.log(`🗄️  Database: Local SQLite (Primary)`);
-      console.log(`🛡️  Role Restrictions:`);
-      console.log(`     - Admin: All access`);
-      console.log(`     - Analyst: Analytics & Settings only`);
-      console.log(`     - Contributor: Input & Settings only`);
-      console.log(`     - Viewer: Dashboard, Monitor, Analytics & Settings`);
-      console.log(`💚 Status: Ready for connections`);
-      console.log('🚀 ================================');
       console.log('');
-      console.log('📌 Demo Credentials:');
-      console.log('   Admin - Email: demo@example.com, Password: password123');
-      console.log('   Analyst - Email: analyst@example.com, Password: password123');
-      console.log('   Contributor - Email: contributor@example.com, Password: password123');
-      console.log('   Viewer - Email: viewer@example.com, Password: password123');
+      console.log(`✨ FEATURES:`);
+      console.log(`   👥 Multi-User Support: Enabled`);
+      console.log(`   🏢 Multi-Tenant: Enabled (Organisation Scoping)`);
+      console.log(`   🔒 Strict RBAC: Enforced`);
+      console.log(`   📋 Admin Monitoring: Enabled`);
+      console.log(`   📝 Activity Logging: Enhanced`);
+      console.log(`   🗄️  Database: Local SQLite (Primary)`);
+      console.log('');
+      console.log(`🔐 COMPANY OPERATIONS (HIDDEN)`);
+      console.log(`   ⚠️  Internal Use Only`);
+      console.log(`   Base URL: http://localhost:${PORT}/api/company`);
+      console.log('');
+      console.log(`📌 DEFAULT CREDENTIALS:`);
+      console.log(`   🔴 Company: admin@carbontrack-company.com / CompanyAdmin2025!`);
+      console.log(`   🟢 Demo Admin: demo@example.com / password123`);
+      console.log('');
+      console.log(`💚 Status: Ready`);
+      console.log('🚀 ================================');
       console.log('');
     });
 
-    // Handle server errors
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use. Please try a different port.`);
+        console.error(`❌ Port ${PORT} is already in use.`);
         process.exit(1);
       } else {
         console.error('❌ Server error:', error);
@@ -521,7 +669,6 @@ const startServer = async () => {
   }
 };
 
-// Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
   startServer();
 }

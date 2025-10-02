@@ -1,4 +1,4 @@
-// context/AuthContext.jsx - Enhanced with RBAC Support
+// context/AuthContext.jsx - Enhanced with RBAC Support and Organization Context Clearing
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setPermissions(userData.permissions || {});
         setIsAuthenticated(true);
-        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
+        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role, 'Org ID:', userData.organisation_id, 'Restrictions:', userData.restrictions);
       } else {
         // Invalid token
         console.log('Token verification failed');
@@ -67,6 +67,19 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
       console.log('Login attempt with credentials:', { email: credentials.email });
+      
+      // CRITICAL: Clear ALL cached organization data before login
+      console.log('Clearing cached organization data...');
+      const keysToRemove = [
+        'emissions',
+        'dashboardData',
+        'organisationId',
+        'organizationId',
+        'orgData',
+        'cachedEmissions',
+        'cachedDashboard'
+      ];
+      keysToRemove.forEach(key => localStorage.removeItem(key));
       
       const response = await authAPI.login(credentials);
       console.log('Raw login response:', response);
@@ -97,12 +110,21 @@ export const AuthProvider = ({ children }) => {
       // Store token
       localStorage.setItem('token', token);
       
+      // CRITICAL: Log the organization_id from login response
+      console.log('=================================');
+      console.log('USER LOGIN ORGANIZATION CONTEXT:');
+      console.log('User ID:', userData.id);
+      console.log('User Email:', userData.email);
+      console.log('User Role:', userData.role);
+      console.log('Organisation ID:', userData.organisation_id);
+      console.log('=================================');
+      
       // Set user state
       setUser(userData);
       setPermissions(userData.permissions || {});
       setIsAuthenticated(true);
       
-      console.log('Login successful for:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
+      console.log('Login successful for:', userData.email, 'Role:', userData.role, 'Org ID:', userData.organisation_id, 'Restrictions:', userData.restrictions);
       toast.success(`Welcome back, ${userData.name}!`);
       
       return { success: true, user: userData };
@@ -138,6 +160,19 @@ export const AuthProvider = ({ children }) => {
     } finally {
       // Clear local state
       localStorage.removeItem('token');
+      
+      // ALSO CLEAR organization cached data on logout
+      const keysToRemove = [
+        'emissions',
+        'dashboardData',
+        'organisationId',
+        'organizationId',
+        'orgData',
+        'cachedEmissions',
+        'cachedDashboard'
+      ];
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
       setUser(null);
       setIsAuthenticated(false);
       setPermissions({});

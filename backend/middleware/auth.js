@@ -53,6 +53,7 @@ const authenticateToken = async (req, res, next) => {
       email: user.email,
       role: user.role,
       status: user.status,
+      organisation_id: user.organisation_id, // CRITICAL: Added this line
       restrictions: user.restrictions || null
     };
     

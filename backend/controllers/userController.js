@@ -1,91 +1,82 @@
-// controllers/userController.js - Updated with Local DB and Enhanced RBAC
-const bcrypt = require('bcryptjs');
+// backend/controllers/userController.js
+// Complete user controller with organisation scoping
+
 const localDB = require('../database/localDB');
-const { emissionFactors } = require('../data/emissionFactors'); // Import emission factors for activity selection
+const { scopeQuery } = require('../middleware/organisationScope');
 
-// Helper function to log admin activity
-const logAdminActivity = async (adminId, action, resourceType, resourceId, details, req) => {
-  try {
-    await localDB.logActivity({
-      userId: adminId,
-      action: `admin_${action}`,
-      resourceType,
-      resourceId,
-      details,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-  } catch (error) {
-    console.error('Failed to log admin activity:', error);
-  }
-};
-
-// @desc    Get all users
+// @desc    Get all users (scoped to organisation)
 // @route   GET /api/users
-// @access  Private (Admin only)
+// @access  Private (Admin, Analyst)
 const getUsers = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 10,
-      role,
-      status,
-      search
-    } = req.query;
-
-    const filters = {};
-    if (role && role !== 'all') filters.role = role;
-    if (status && status !== 'all') filters.status = status;
-    if (search) filters.search = search;
-    if (limit !== 'all') filters.limit = parseInt(limit);
-
+    console.log('👥 Getting users for org:', req.organisationId, 'by:', req.user.email);
+    
+    // Build filters
+    const filters = {
+      role: req.query.role,
+      status: req.query.status,
+      search: req.query.search,
+      limit: req.query.limit ? parseInt(req.query.limit) : undefined
+    };
+    
+    // ADD ORGANISATION FILTER (Critical!)
+    if (req.organisationId) {
+      filters.organisation_id = req.organisationId;
+      console.log('🔒 Filtering users by organisation:', req.organisationId);
+    } else {
+      console.warn('⚠️  No organisation filter - user may see all users!');
+    }
+    
+    // Get users from database
     const users = await localDB.getAllUsers(filters);
-
-    // Calculate statistics for each user
-    const usersWithStats = users.map(user => ({
-      ...user,
-      statistics: {
-        emissionCount: 0, // Would need to calculate from emissions
-        recentActivityCount: 0, // Would need to calculate from activities
-        joinedDaysAgo: Math.floor((new Date() - new Date(user.created_at)) / (1000 * 60 * 60 * 24))
-      }
+    
+    // Remove sensitive data (password already excluded by getAllUsers)
+    const sanitizedUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      organisation_id: user.organisation_id,
+      restrictions: user.restrictions,
+      created_at: user.created_at,
+      last_login: user.last_login
     }));
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_all_users',
-      'user',
-      null,
-      `Viewed ${users.length} users`,
-      req
-    );
-
+    
+    console.log(`✅ Found ${sanitizedUsers.length} users in organisation: ${req.organisation?.name}`);
+    
     res.json({
       success: true,
-      data: usersWithStats,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(users.length / parseInt(limit)),
-        totalItems: users.length,
-        itemsPerPage: parseInt(limit)
+      data: sanitizedUsers,
+      total: sanitizedUsers.length,
+      organisation: req.organisation?.name || 'N/A',
+      filters: {
+        role: filters.role,
+        status: filters.status,
+        search: filters.search
       }
     });
+    
   } catch (error) {
-    console.error('Get users error:', error);
+    console.error('❌ Get users error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to fetch users'
     });
   }
 };
 
-// @desc    Get user by ID with detailed info
+// @desc    Get user by ID
 // @route   GET /api/users/:id
-// @access  Private (Admin only)
+// @access  Private
 const getUserById = async (req, res) => {
   try {
-    const user = await localDB.findUserById(req.params.id);
+    const { id } = req.params;
+    
+    console.log('🔍 Getting user:', id, 'for org:', req.organisationId);
+    
+    // Get user
+    const user = await localDB.findUserById(id);
     
     if (!user) {
       return res.status(404).json({
@@ -93,69 +84,52 @@ const getUserById = async (req, res) => {
         message: 'User not found'
       });
     }
-
-    // Get user's recent activities
-    const recentActivities = await localDB.getUserActivities(user.id, 10);
-
-    const userWithStats = {
-      ...user,
-      statistics: {
-        recentActivities,
-        totalActivities: recentActivities.length,
-        totalEmissionRecords: 0 // Would calculate from emissions
-      }
+    
+    // Check if user belongs to same organisation
+    if (user.organisation_id !== req.organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this user'
+      });
+    }
+    
+    // Remove sensitive data
+    const sanitizedUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      organisation_id: user.organisation_id,
+      restrictions: user.restrictions,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      last_login: user.last_login
     };
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_user_detail',
-      'user',
-      user.id,
-      `Viewed detailed profile of user: ${user.name}`,
-      req
-    );
-
+    
     res.json({
       success: true,
-      data: userWithStats
+      data: sanitizedUser
     });
+    
   } catch (error) {
-    console.error('Get user by ID error:', error);
+    console.error('❌ Get user by ID error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to fetch user'
     });
   }
 };
 
-// @desc    Create new user (Admin only) - ENHANCED WITH RBAC
+// @desc    Create new user (admin only, scoped to organisation)
 // @route   POST /api/users
 // @access  Private (Admin only)
 const createUser = async (req, res) => {
   try {
-    console.log('📝 CREATE USER REQUEST BODY:', JSON.stringify(req.body, null, 2));
+    console.log('➕ Creating user for org:', req.organisationId, 'by admin:', req.user.email);
     
-    const { 
-      name, 
-      email, 
-      password, 
-      role = 'contributor', 
-      status = 'active',
-      // Enhanced RBAC restrictions
-      allowedScopes = [],
-      allowedActivities = [],
-      restrictedPages = []
-    } = req.body;
-
-    console.log('📊 EXTRACTED VALUES:');
-    console.log('- Name:', name);
-    console.log('- Email:', email);
-    console.log('- Role:', role);
-    console.log('- Allowed Scopes:', allowedScopes);
-    console.log('- Allowed Activities:', allowedActivities);
-    console.log('- Restricted Pages:', restrictedPages);
-
+    const { name, email, password, role, restrictions } = req.body;
+    
     // Validate required fields
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -163,163 +137,92 @@ const createUser = async (req, res) => {
         message: 'Name, email, and password are required'
       });
     }
-
+    
     // Validate email format
-    const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid email address'
+        message: 'Invalid email format'
       });
     }
-
-    // Validate password strength
+    
+    // Validate password length
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
         message: 'Password must be at least 6 characters long'
       });
     }
-
+    
     // Validate role
     const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
-    if (!validRoles.includes(role)) {
+    if (role && !validRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid role specified. Must be one of: ${validRoles.join(', ')}`
+        message: `Invalid role. Must be one of: ${validRoles.join(', ')}`
       });
     }
-
-    // Check if user already exists
-    const existingUser = await localDB.findUserByEmail(email.toLowerCase());
+    
+    // Check if email already exists
+    const existingUser = await localDB.findUserByEmail(email);
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
       });
     }
-
-    // ENHANCED: Build restrictions object (even for non-contributors for debugging)
-    let restrictions = null;
     
-    // For contributors, always create restrictions object
-    if (role === 'contributor') {
-      console.log('🔒 BUILDING RESTRICTIONS FOR CONTRIBUTOR:');
-      
-      // Ensure we have arrays
-      const finalAllowedScopes = Array.isArray(allowedScopes) ? allowedScopes : [];
-      const finalAllowedActivities = Array.isArray(allowedActivities) ? allowedActivities : [];
-      const finalRestrictedPages = Array.isArray(restrictedPages) ? restrictedPages : [];
-      
-      console.log('- Final Allowed Scopes:', finalAllowedScopes);
-      console.log('- Final Allowed Activities:', finalAllowedActivities);
-      console.log('- Final Restricted Pages:', finalRestrictedPages);
-
-      // Build restrictions object
-      restrictions = {
-        allowedScopes: finalAllowedScopes,
-        allowedActivities: finalAllowedActivities,
-        restrictedPages: finalRestrictedPages,
-        createdAt: new Date().toISOString(),
-        createdBy: req.user.id,
-        version: '2.0'
-      };
-
-      console.log('📦 FINAL RESTRICTIONS OBJECT:', JSON.stringify(restrictions, null, 2));
-
-      // Validate that contributor has some access
-      const hasAnyAccess = finalAllowedScopes.length > 0 || finalAllowedActivities.length > 0;
-      
-      if (!hasAnyAccess) {
-        console.log('❌ VALIDATION FAILED: No access granted');
-        return res.status(400).json({
-          success: false,
-          message: 'Contributor must have access to at least one scope or activity'
-        });
-      }
-    } else {
-      console.log(`ℹ️  Role is ${role}, no restrictions needed`);
-    }
-
-    // Create user data object
+    // Prepare user data
     const userData = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
-      role,
-      status,
-      restrictions: restrictions
+      role: role || 'contributor',
+      status: 'active',
+      restrictions: restrictions || null,
+      organisation_id: req.organisationId // CRITICAL: Add organisation
     };
-
-    console.log('👤 USER DATA TO BE CREATED:', {
-      ...userData,
-      password: '[HIDDEN]',
-      restrictions: userData.restrictions
-    });
-
+    
+    console.log('📝 Creating user with organisation:', userData.organisation_id);
+    
     // Create user
-    const user = await localDB.createUser(userData);
-    console.log('✅ USER CREATED SUCCESSFULLY:', user.id);
-
-    // Verify the user was created with restrictions
-    const verifyUser = await localDB.findUserById(user.id);
-    console.log('🔍 VERIFICATION - User from DB:', {
-      id: verifyUser.id,
-      name: verifyUser.name,
-      email: verifyUser.email,
-      role: verifyUser.role,
-      restrictions: verifyUser.restrictions
+    const newUser = await localDB.createUser(userData);
+    
+    // Log activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'user_created',
+      resourceType: 'user',
+      resourceId: newUser.id,
+      details: `Created user: ${newUser.name} (${newUser.email}) with role: ${newUser.role}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
     });
-
-    // Log this admin activity with enhanced details
-    await logAdminActivity(
-      req.user.id,
-      'created_user_with_granular_access',
-      'user',
-      user.id,
-      `Created new user: ${user.name} (${user.email}) with role: ${user.role}` +
-      (restrictions ? 
-        ` | Scopes: [${restrictions.allowedScopes.join(', ')}] | Activities: ${restrictions.allowedActivities.length}` : 
-        ' | No restrictions'
-      ),
-      req
-    );
-
-    // Return user without password
-    const userResponse = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      restrictions: user.restrictions,
-      createdAt: new Date(),
-      statistics: {
-        emissionCount: 0,
-        recentActivityCount: 1,
-        joinedDaysAgo: 0
-      }
+    
+    // Remove password from response
+    const sanitizedUser = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      role: newUser.role,
+      status: newUser.status,
+      organisation_id: newUser.organisation_id,
+      restrictions: newUser.restrictions,
+      created_at: newUser.created_at
     };
-
-    // Generate success message with access summary
-    let successMessage = `User created successfully with role: ${role}`;
-    if (restrictions && restrictions.allowedScopes.length > 0) {
-      successMessage += ` | Scope access: ${restrictions.allowedScopes.join(', ')}`;
-    }
-    if (restrictions && restrictions.allowedActivities.length > 0) {
-      successMessage += ` | Activity restrictions: ${restrictions.allowedActivities.length} specific activities`;
-    }
-
-    console.log('🎉 SUCCESS MESSAGE:', successMessage);
-
+    
+    console.log(`✅ User created: ${newUser.email} for organisation: ${req.organisation?.name}`);
+    
     res.status(201).json({
       success: true,
-      data: userResponse,
-      message: successMessage
+      data: sanitizedUser,
+      message: 'User created successfully'
     });
+    
   } catch (error) {
-    console.error('❌ CREATE USER ERROR:', error);
-    res.status(400).json({
+    console.error('❌ Create user error:', error);
+    res.status(500).json({
       success: false,
       message: error.message || 'Failed to create user'
     });
@@ -331,17 +234,22 @@ const createUser = async (req, res) => {
 // @access  Private (Admin only)
 const updateUserRole = async (req, res) => {
   try {
+    const { id } = req.params;
     const { role } = req.body;
     
+    console.log('✏️ Updating user role:', id, 'to:', role, 'by admin:', req.user.email);
+    
+    // Validate role
     const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid role specified. Must be one of: ${validRoles.join(', ')}`
+        message: `Invalid role. Must be one of: ${validRoles.join(', ')}`
       });
     }
-
-    const user = await localDB.findUserById(req.params.id);
+    
+    // Get user to check organisation
+    const user = await localDB.findUserById(id);
     
     if (!user) {
       return res.status(404).json({
@@ -349,55 +257,77 @@ const updateUserRole = async (req, res) => {
         message: 'User not found'
       });
     }
-
-    // Prevent user from changing their own role
-    if (user.id.toString() === req.user.id.toString()) {
+    
+    // Check if user belongs to same organisation
+    if (user.organisation_id !== req.organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update users in your organisation'
+      });
+    }
+    
+    // Prevent admin from changing their own role
+    if (parseInt(id) === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'You cannot change your own role'
       });
     }
-
-    const oldRole = user.role;
     
-    // Update user role
-    await localDB.updateUser(user.id, { role });
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'updated_user_role',
-      'user',
-      user.id,
-      `Changed user role: ${user.name} from ${oldRole} to ${role}`,
-      req
-    );
-
+    // Update role
+    await localDB.updateUser(id, { role });
+    
     // Get updated user
-    const updatedUser = await localDB.findUserById(user.id);
-
+    const updatedUser = await localDB.findUserById(id);
+    
+    // Log activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'user_role_updated',
+      resourceType: 'user',
+      resourceId: id,
+      details: `Updated user ${user.email} role from ${user.role} to ${role}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    console.log(`✅ User role updated: ${user.email} -> ${role}`);
+    
     res.json({
       success: true,
-      data: updatedUser,
-      message: `User role updated to ${role}`
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        status: updatedUser.status,
+        organisation_id: updatedUser.organisation_id,
+        restrictions: updatedUser.restrictions
+      },
+      message: 'User role updated successfully'
     });
+    
   } catch (error) {
-    console.error('Update user role error:', error);
-    res.status(400).json({
+    console.error('❌ Update user role error:', error);
+    res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to update user role'
     });
   }
 };
 
-// @desc    Update user restrictions (for contributors)
+// @desc    Update user restrictions
 // @route   PATCH /api/users/:id/restrictions
 // @access  Private (Admin only)
 const updateUserRestrictions = async (req, res) => {
   try {
-    const { allowedScopes, allowedActivities, restrictedPages } = req.body;
+    const { id } = req.params;
+    const { restrictions } = req.body;
     
-    const user = await localDB.findUserById(req.params.id);
+    console.log('✏️ Updating user restrictions:', id, 'by admin:', req.user.email);
+    
+    // Get user to check organisation
+    const user = await localDB.findUserById(id);
     
     if (!user) {
       return res.status(404).json({
@@ -405,101 +335,59 @@ const updateUserRestrictions = async (req, res) => {
         message: 'User not found'
       });
     }
-
-    if (user.role !== 'contributor') {
-      return res.status(400).json({
-        success: false,
-        message: 'Enhanced restrictions can only be applied to contributors'
-      });
-    }
-
-    // Validate the new restrictions format
-    const validScopes = [1, 2, 3];
-    if (allowedScopes && allowedScopes.length > 0) {
-      const invalidScopes = allowedScopes.filter(scope => !validScopes.includes(scope));
-      if (invalidScopes.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid scopes: ${invalidScopes.join(', ')}`
-        });
-      }
-    }
-
-    // Validate activities against available emission factors
-    const availableActivities = {
-      1: Object.keys(emissionFactors.scope1 || {}),
-      2: Object.keys(emissionFactors.scope2 || {}),
-      3: Object.keys(emissionFactors.scope3 || {})
-    };
-
-    if (allowedActivities && allowedActivities.length > 0) {
-      const allValidActivities = [
-        ...availableActivities[1],
-        ...availableActivities[2],
-        ...availableActivities[3]
-      ];
-      
-      const invalidActivities = allowedActivities.filter(activity => 
-        !allValidActivities.includes(activity)
-      );
-      
-      if (invalidActivities.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid activities: ${invalidActivities.join(', ')}`
-        });
-      }
-    }
-
-    // Build enhanced restrictions
-    const restrictions = {
-      allowedScopes: allowedScopes || [],
-      allowedActivities: allowedActivities || [],
-      restrictedPages: restrictedPages || [],
-      updatedAt: new Date(),
-      updatedBy: req.user.id,
-      version: '2.0'
-    };
-
-    // Ensure user has some access
-    const hasAnyAccess = restrictions.allowedScopes.length > 0 || 
-                        restrictions.allowedActivities.length > 0;
     
-    if (!hasAnyAccess) {
-      return res.status(400).json({
+    // Check if user belongs to same organisation
+    if (user.organisation_id !== req.organisationId) {
+      return res.status(403).json({
         success: false,
-        message: 'User must have access to at least one scope or activity'
+        message: 'You can only update users in your organisation'
       });
     }
-
-    // Update user restrictions
-    await localDB.updateUser(user.id, { restrictions });
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'updated_user_restrictions_granular',
-      'user',
-      user.id,
-      `Updated granular restrictions for contributor: ${user.name} | ` +
-      `Scopes: [${restrictions.allowedScopes.join(', ')}] | ` +
-      `Activities: ${restrictions.allowedActivities.length}`,
-      req
-    );
-
+    
+    // Validate restrictions format
+    if (restrictions && typeof restrictions !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Restrictions must be an object'
+      });
+    }
+    
+    // Update restrictions
+    await localDB.updateUser(id, { restrictions });
+    
     // Get updated user
-    const updatedUser = await localDB.findUserById(user.id);
-
+    const updatedUser = await localDB.findUserById(id);
+    
+    // Log activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'user_restrictions_updated',
+      resourceType: 'user',
+      resourceId: id,
+      details: `Updated restrictions for user ${user.email}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    console.log(`✅ User restrictions updated: ${user.email}`);
+    
     res.json({
       success: true,
-      data: updatedUser,
-      message: 'Enhanced user restrictions updated successfully'
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        restrictions: updatedUser.restrictions
+      },
+      message: 'User restrictions updated successfully'
     });
+    
   } catch (error) {
-    console.error('Update user restrictions error:', error);
-    res.status(400).json({
+    console.error('❌ Update user restrictions error:', error);
+    res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to update user restrictions'
     });
   }
 };
@@ -509,17 +397,22 @@ const updateUserRestrictions = async (req, res) => {
 // @access  Private (Admin only)
 const updateUserStatus = async (req, res) => {
   try {
+    const { id } = req.params;
     const { status } = req.body;
     
+    console.log('✏️ Updating user status:', id, 'to:', status, 'by admin:', req.user.email);
+    
+    // Validate status
     const validStatuses = ['active', 'inactive', 'suspended'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid status specified. Must be one of: ${validStatuses.join(', ')}`
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
       });
     }
-
-    const user = await localDB.findUserById(req.params.id);
+    
+    // Get user to check organisation
+    const user = await localDB.findUserById(id);
     
     if (!user) {
       return res.status(404).json({
@@ -527,43 +420,59 @@ const updateUserStatus = async (req, res) => {
         message: 'User not found'
       });
     }
-
-    // Prevent user from changing their own status
-    if (user.id.toString() === req.user.id.toString()) {
-      return res.status(400).json({
+    
+    // Check if user belongs to same organisation
+    if (user.organisation_id !== req.organisationId) {
+      return res.status(403).json({
         success: false,
-        message: 'You cannot change your own status'
+        message: 'You can only update users in your organisation'
       });
     }
-
-    const oldStatus = user.status;
     
-    // Update user status
-    await localDB.updateUser(user.id, { status });
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'updated_user_status',
-      'user',
-      user.id,
-      `Changed user status: ${user.name} from ${oldStatus} to ${status}`,
-      req
-    );
-
+    // Prevent admin from deactivating themselves
+    if (parseInt(id) === req.user.id && status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot deactivate your own account'
+      });
+    }
+    
+    // Update status
+    await localDB.updateUser(id, { status });
+    
     // Get updated user
-    const updatedUser = await localDB.findUserById(user.id);
-
+    const updatedUser = await localDB.findUserById(id);
+    
+    // Log activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'user_status_updated',
+      resourceType: 'user',
+      resourceId: id,
+      details: `Updated user ${user.email} status from ${user.status} to ${status}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    console.log(`✅ User status updated: ${user.email} -> ${status}`);
+    
     res.json({
       success: true,
-      data: updatedUser,
-      message: `User status updated to ${status}`
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        status: updatedUser.status
+      },
+      message: 'User status updated successfully'
     });
+    
   } catch (error) {
-    console.error('Update user status error:', error);
-    res.status(400).json({
+    console.error('❌ Update user status error:', error);
+    res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to update user status'
     });
   }
 };
@@ -573,7 +482,12 @@ const updateUserStatus = async (req, res) => {
 // @access  Private (Admin only)
 const deleteUser = async (req, res) => {
   try {
-    const user = await localDB.findUserById(req.params.id);
+    const { id } = req.params;
+    
+    console.log('🗑️ Deleting user:', id, 'by admin:', req.user.email);
+    
+    // Get user to check organisation
+    const user = await localDB.findUserById(id);
     
     if (!user) {
       return res.status(404).json({
@@ -581,125 +495,165 @@ const deleteUser = async (req, res) => {
         message: 'User not found'
       });
     }
-
+    
+    // Check if user belongs to same organisation
+    if (user.organisation_id !== req.organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete users in your organisation'
+      });
+    }
+    
     // Prevent admin from deleting themselves
-    if (user.id.toString() === req.user.id.toString()) {
+    if (parseInt(id) === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'You cannot delete your own account'
       });
     }
-
-    // Soft delete the user
-    await localDB.deleteUser(user.id);
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'deleted_user',
-      'user',
-      user.id,
-      `Deleted user: ${user.name} (${user.email})`,
-      req
-    );
-
+    
+    // Soft delete (set status to inactive)
+    await localDB.deleteUser(id);
+    
+    // Log activity
+    await localDB.logActivity({
+      userId: req.user.id,
+      action: 'user_deleted',
+      resourceType: 'user',
+      resourceId: id,
+      details: `Deleted user: ${user.email}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    console.log(`✅ User deleted: ${user.email}`);
+    
     res.json({
       success: true,
-      message: 'User deleted successfully',
-      data: {
-        deletedUser: user.name,
-        originalEmail: user.email
-      }
+      message: 'User deleted successfully'
     });
+    
   } catch (error) {
-    console.error('Delete user error:', error);
+    console.error('❌ Delete user error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to delete user'
     });
   }
 };
 
-// @desc    Get user statistics
+// @desc    Get user statistics (scoped to organisation)
 // @route   GET /api/users/stats
-// @access  Private (Admin only)
+// @access  Private (Admin, Analyst)
 const getUserStats = async (req, res) => {
   try {
-    const stats = await localDB.getUserStats();
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_user_stats',
-      'user',
-      null,
-      'Viewed user statistics',
-      req
-    );
-
+    console.log('📊 Getting user stats for org:', req.organisationId);
+    
+    // Get stats scoped to organisation
+    const stats = await new Promise((resolve, reject) => {
+      localDB.db.get(
+        `SELECT 
+          COUNT(*) as totalUsers,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeUsers,
+          SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactiveUsers,
+          SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as adminUsers,
+          SUM(CASE WHEN role = 'analyst' THEN 1 ELSE 0 END) as analystUsers,
+          SUM(CASE WHEN role = 'contributor' THEN 1 ELSE 0 END) as contributorUsers,
+          SUM(CASE WHEN role = 'viewer' THEN 1 ELSE 0 END) as viewerUsers
+        FROM users
+        WHERE organisation_id = ?`,
+        [req.organisationId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+    
     res.json({
       success: true,
-      data: {
-        overview: {
-          totalUsers: stats.totalUsers || 0,
-          activeUsers: stats.activeUsers || 0,
-          inactiveUsers: stats.inactiveUsers || 0,
-          suspendedUsers: 0, // Would need to add this to query
-          adminUsers: stats.adminUsers || 0,
-          analystUsers: stats.analystUsers || 0,
-          contributorUsers: stats.contributorUsers || 0,
-          viewerUsers: stats.viewerUsers || 0
-        },
-        registrationTrends: [] // Would need to implement date-based grouping
-      }
+      data: stats,
+      organisation: req.organisation?.name || 'N/A'
     });
+    
   } catch (error) {
-    console.error('Get user stats error:', error);
+    console.error('❌ Get user stats error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to fetch user statistics'
     });
   }
 };
 
-// @desc    Get available scopes and activities for RBAC setup
+// @desc    Get RBAC options (roles and restrictions)
 // @route   GET /api/users/rbac-options
-// @access  Private (Admin only)
+// @access  Private (Admin)
 const getRBACOptions = async (req, res) => {
   try {
     const rbacOptions = {
-      scopes: [
-        { value: 1, label: 'Scope 1 - Direct Emissions' },
-        { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
-        { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
-      ],
-      activities: {
-        1: Object.keys(emissionFactors.scope1 || {}),
-        2: Object.keys(emissionFactors.scope2 || {}),
-        3: Object.keys(emissionFactors.scope3 || {})
-      },
-      activityDetails: {
-        1: emissionFactors.scope1 || {},
-        2: emissionFactors.scope2 || {},
-        3: emissionFactors.scope3 || {}
-      },
       roles: [
-        { value: 'admin', label: 'Administrator', description: 'Full system access' },
-        { value: 'analyst', label: 'Analyst', description: 'Analytics & Settings access only' },
-        { value: 'contributor', label: 'Contributor', description: 'Input & Settings access (with optional restrictions)' },
-        { value: 'viewer', label: 'Viewer', description: 'Dashboard, Monitor, Analytics & Settings (read-only)' }
+        {
+          value: 'admin',
+          label: 'Administrator',
+          description: 'Full access to all features and data within the organisation',
+          permissions: ['manage_users', 'manage_emissions', 'view_analytics', 'manage_settings']
+        },
+        {
+          value: 'analyst',
+          label: 'Analyst',
+          description: 'Analytics and verification capabilities',
+          permissions: ['view_analytics', 'verify_emissions', 'view_reports']
+        },
+        {
+          value: 'contributor',
+          label: 'Contributor',
+          description: 'Data entry and management',
+          permissions: ['create_emissions', 'edit_own_emissions', 'view_own_data']
+        },
+        {
+          value: 'viewer',
+          label: 'Viewer',
+          description: 'Read-only access to data and analytics',
+          permissions: ['view_data', 'view_analytics']
+        }
+      ],
+      scopes: [
+        { value: 1, label: 'Scope 1', description: 'Direct emissions' },
+        { value: 2, label: 'Scope 2', description: 'Indirect emissions from purchased energy' },
+        { value: 3, label: 'Scope 3', description: 'Indirect emissions from value chain' }
+      ],
+      restrictionTypes: [
+        {
+          key: 'allowedScopes',
+          label: 'Allowed Scopes',
+          description: 'Restrict which emission scopes the user can access',
+          type: 'array'
+        },
+        {
+          key: 'allowedActivities',
+          label: 'Allowed Activities',
+          description: 'Restrict which activities the user can work with',
+          type: 'array'
+        },
+        {
+          key: 'restrictedPages',
+          label: 'Restricted Pages',
+          description: 'Pages the user cannot access',
+          type: 'array'
+        }
       ]
     };
-
+    
     res.json({
       success: true,
       data: rbacOptions
     });
+    
   } catch (error) {
-    console.error('Get RBAC options error:', error);
+    console.error('❌ Get RBAC options error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to fetch RBAC options'
     });
   }
 };
@@ -710,66 +664,84 @@ const getRBACOptions = async (req, res) => {
 const bulkUpdateUsers = async (req, res) => {
   try {
     const { userIds, updates } = req.body;
-
+    
+    console.log('📦 Bulk updating users:', userIds, 'by admin:', req.user.email);
+    
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'User IDs array is required'
+        message: 'userIds array is required'
       });
     }
-
-    if (!updates || Object.keys(updates).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Updates object is required'
-      });
-    }
-
-    // Validate updates
-    const allowedFields = ['role', 'status', 'restrictions'];
-    const updateFields = Object.keys(updates);
-    const invalidFields = updateFields.filter(field => !allowedFields.includes(field));
     
-    if (invalidFields.length > 0) {
+    if (!updates || typeof updates !== 'object') {
       return res.status(400).json({
         success: false,
-        message: `Invalid fields: ${invalidFields.join(', ')}`
+        message: 'updates object is required'
       });
     }
-
-    let modifiedCount = 0;
+    
+    const results = {
+      success: [],
+      failed: []
+    };
+    
+    // Update each user
     for (const userId of userIds) {
       try {
+        // Get user to check organisation
+        const user = await localDB.findUserById(userId);
+        
+        if (!user) {
+          results.failed.push({ userId, reason: 'User not found' });
+          continue;
+        }
+        
+        // Check if user belongs to same organisation
+        if (user.organisation_id !== req.organisationId) {
+          results.failed.push({ userId, reason: 'Not in your organisation' });
+          continue;
+        }
+        
+        // Don't allow updating own account in bulk
+        if (parseInt(userId) === req.user.id) {
+          results.failed.push({ userId, reason: 'Cannot update own account' });
+          continue;
+        }
+        
+        // Update user
         await localDB.updateUser(userId, updates);
-        modifiedCount++;
+        results.success.push(userId);
+        
+        // Log activity
+        await localDB.logActivity({
+          userId: req.user.id,
+          action: 'user_bulk_updated',
+          resourceType: 'user',
+          resourceId: userId,
+          details: `Bulk updated user ${user.email}`,
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent')
+        });
+        
       } catch (error) {
-        console.error(`Failed to update user ${userId}:`, error);
+        results.failed.push({ userId, reason: error.message });
       }
     }
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'bulk_updated_users',
-      'user',
-      null,
-      `Bulk updated ${modifiedCount} users with: ${JSON.stringify(updates)}`,
-      req
-    );
-
+    
+    console.log(`✅ Bulk update complete: ${results.success.length} success, ${results.failed.length} failed`);
+    
     res.json({
       success: true,
-      data: {
-        matched: userIds.length,
-        modified: modifiedCount
-      },
-      message: `Successfully updated ${modifiedCount} users`
+      data: results,
+      message: `Updated ${results.success.length} of ${userIds.length} users`
     });
+    
   } catch (error) {
-    console.error('Bulk update users error:', error);
+    console.error('❌ Bulk update error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to bulk update users'
     });
   }
 };
@@ -779,10 +751,10 @@ module.exports = {
   getUserById,
   createUser,
   updateUserRole,
-  updateUserRestrictions, // NEW: For managing contributor restrictions
+  updateUserRestrictions,
   updateUserStatus,
   deleteUser,
   getUserStats,
-  getRBACOptions, // NEW: For getting RBAC dropdown options
+  getRBACOptions,
   bulkUpdateUsers
 };

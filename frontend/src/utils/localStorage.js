@@ -1,20 +1,85 @@
-// Enhanced localStorage.js with improved data handling, accurate counting, and real-time updates
+// Enhanced localStorage.js with Organisation Filtering + All Features
 const EMISSIONS_KEY = 'carbon_accounting_emissions';
 const STATS_KEY = 'carbon_accounting_stats';
+
+// Helper function to decode JWT and extract organisation_id
+const getOrganisationIdFromToken = () => {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.warn('⚠️ No authentication token found');
+      return null;
+    }
+    
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload));
+    
+    const orgId = decoded.organisation_id || decoded.organizationId;
+    console.log('🏢 Extracted organisation_id from token:', orgId);
+    
+    return orgId;
+  } catch (error) {
+    console.error('❌ Error decoding token:', error);
+    return null;
+  }
+};
+
+// Helper function to get current user info
+const getCurrentUser = () => {
+  try {
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return null;
+    return JSON.parse(userStr);
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+    return null;
+  }
+};
+
+// Clean up legacy emissions without organisation_id
+const cleanupLegacyEmissions = () => {
+  try {
+    const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+    const validEmissions = allEmissions.filter(e => e.organisation_id);
+    
+    if (validEmissions.length !== allEmissions.length) {
+      console.log(`🧹 Cleaned up ${allEmissions.length - validEmissions.length} legacy emissions without organisation_id`);
+      localStorage.setItem(EMISSIONS_KEY, JSON.stringify(validEmissions));
+    }
+  } catch (error) {
+    console.error('Error cleaning up legacy emissions:', error);
+  }
+};
+
+// Initialize on load
+cleanupLegacyEmissions();
 
 // Emit custom events for real-time updates
 const emitDataChange = (eventType, data) => {
   window.dispatchEvent(new CustomEvent(eventType, { detail: data }));
 };
 
-// Get all emissions from localStorage with error handling
+// Get all emissions from localStorage with organisation filtering
 export const getEmissions = () => {
   try {
-    const emissions = localStorage.getItem(EMISSIONS_KEY);
-    const parsedEmissions = emissions ? JSON.parse(emissions) : [];
+    const organisationId = getOrganisationIdFromToken();
+    
+    if (!organisationId) {
+      console.warn('⚠️ No organisation_id available - returning empty array');
+      return [];
+    }
+    
+    const allEmissions = localStorage.getItem(EMISSIONS_KEY);
+    const parsedEmissions = allEmissions ? JSON.parse(allEmissions) : [];
+    
+    // CRITICAL: Filter by organisation_id
+    const orgEmissions = parsedEmissions.filter(e => e.organisation_id === organisationId);
+    
+    console.log(`🔍 Filtered emissions: ${orgEmissions.length} of ${parsedEmissions.length} total`);
+    console.log(`🏢 Current organisation: ${organisationId}`);
     
     // Ensure all emissions have required fields
-    return parsedEmissions.map(emission => ({
+    return orgEmissions.map(emission => ({
       ...emission,
       calculatedEmissions: emission.calculatedEmissions || (emission.amount * (emission.factor || 1)),
       totalEmissions: emission.totalEmissions || emission.calculatedEmissions || (emission.amount * (emission.factor || 1)),
@@ -23,25 +88,37 @@ export const getEmissions = () => {
       updatedAt: emission.updatedAt || emission.createdAt || new Date().toISOString()
     }));
   } catch (error) {
-    console.error('Error reading emissions from localStorage:', error);
+    console.error('❌ Error reading emissions from localStorage:', error);
     return [];
   }
 };
 
-// Save emission to localStorage with enhanced validation and real-time updates
+// Save emission to localStorage with organisation_id
 export const saveEmission = (emission) => {
   try {
+    const organisationId = getOrganisationIdFromToken();
+    const user = getCurrentUser();
+    
+    if (!organisationId) {
+      throw new Error('No organisation_id found. Please log in again.');
+    }
+    
     // Validate required fields
     if (!emission.scope || !emission.amount) {
       throw new Error('Emission must have scope and amount');
     }
 
-    const emissions = getEmissions();
+    // Get ALL emissions (not filtered)
+    const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
     const timestamp = new Date().toISOString();
     
     const newEmission = {
       id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
       ...emission,
+      organisation_id: organisationId, // CRITICAL: Add organisation_id
+      organisation_name: user?.organisation?.name || 'Unknown Organisation',
+      user: user?.id || 'unknown',
+      userName: user?.name || 'Unknown User',
       amount: parseFloat(emission.amount),
       scope: parseInt(emission.scope),
       calculatedEmissions: emission.calculatedEmissions || (parseFloat(emission.amount) * (emission.factor || 1)),
@@ -51,90 +128,126 @@ export const saveEmission = (emission) => {
       status: emission.status || 'active'
     };
 
-    emissions.push(newEmission);
-    localStorage.setItem(EMISSIONS_KEY, JSON.stringify(emissions));
+    allEmissions.push(newEmission);
+    localStorage.setItem(EMISSIONS_KEY, JSON.stringify(allEmissions));
+    
+    console.log('✅ Emission saved with organisation_id:', organisationId);
+    console.log('📊 Emission data:', newEmission);
     
     // Update cached stats
     updateCachedStats();
     
     // Emit real-time update events
-    emitDataChange('emission-saved', { emission: newEmission, total: emissions.length });
-    emitDataChange('emissions-updated', { emissions, count: emissions.length });
+    emitDataChange('emission-saved', { emission: newEmission, total: allEmissions.length });
+    emitDataChange('emission-added', { emission: newEmission });
+    emitDataChange('emissions-updated', { emissions: getEmissions(), count: getEmissions().length });
     
     return newEmission;
   } catch (error) {
-    console.error('Error saving emission to localStorage:', error);
+    console.error('❌ Error saving emission to localStorage:', error);
     throw error;
   }
 };
 
-// Update emission in localStorage
+// Update emission in localStorage with organisation check
 export const updateEmission = (id, updatedEmission) => {
   try {
-    const emissions = getEmissions();
-    const index = emissions.findIndex(e => e.id === id);
-    
-    if (index !== -1) {
-      const timestamp = new Date().toISOString();
-      emissions[index] = {
-        ...emissions[index],
-        ...updatedEmission,
-        amount: updatedEmission.amount ? parseFloat(updatedEmission.amount) : emissions[index].amount,
-        scope: updatedEmission.scope ? parseInt(updatedEmission.scope) : emissions[index].scope,
-        calculatedEmissions: updatedEmission.calculatedEmissions || 
-          (parseFloat(updatedEmission.amount || emissions[index].amount) * (updatedEmission.factor || emissions[index].factor || 1)),
-        updatedAt: timestamp
-      };
-      
-      // Recalculate totalEmissions
-      emissions[index].totalEmissions = emissions[index].calculatedEmissions;
-      
-      localStorage.setItem(EMISSIONS_KEY, JSON.stringify(emissions));
-      updateCachedStats();
-      
-      emitDataChange('emission-updated', { emission: emissions[index], total: emissions.length });
-      emitDataChange('emissions-updated', { emissions, count: emissions.length });
-      
-      return emissions[index];
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) {
+      throw new Error('No organisation_id found');
     }
-    throw new Error('Emission not found');
+    
+    const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+    const index = allEmissions.findIndex(e => 
+      e.id === id && e.organisation_id === organisationId // Ensure same org
+    );
+    
+    if (index === -1) {
+      throw new Error('Emission not found or access denied');
+    }
+    
+    const timestamp = new Date().toISOString();
+    allEmissions[index] = {
+      ...allEmissions[index],
+      ...updatedEmission,
+      organisation_id: organisationId, // Preserve organisation_id
+      amount: updatedEmission.amount ? parseFloat(updatedEmission.amount) : allEmissions[index].amount,
+      scope: updatedEmission.scope ? parseInt(updatedEmission.scope) : allEmissions[index].scope,
+      calculatedEmissions: updatedEmission.calculatedEmissions || 
+        (parseFloat(updatedEmission.amount || allEmissions[index].amount) * (updatedEmission.factor || allEmissions[index].factor || 1)),
+      updatedAt: timestamp
+    };
+    
+    // Recalculate totalEmissions
+    allEmissions[index].totalEmissions = allEmissions[index].calculatedEmissions;
+    
+    localStorage.setItem(EMISSIONS_KEY, JSON.stringify(allEmissions));
+    updateCachedStats();
+    
+    console.log('✅ Emission updated:', id);
+    
+    emitDataChange('emission-updated', { emission: allEmissions[index], total: getEmissions().length });
+    emitDataChange('emissions-updated', { emissions: getEmissions(), count: getEmissions().length });
+    
+    return allEmissions[index];
   } catch (error) {
-    console.error('Error updating emission in localStorage:', error);
+    console.error('❌ Error updating emission in localStorage:', error);
     throw error;
   }
 };
 
-// Delete emission from localStorage
+// Delete emission from localStorage with organisation check
 export const deleteEmission = (id) => {
   try {
-    const emissions = getEmissions();
-    const filteredEmissions = emissions.filter(e => e.id !== id);
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) {
+      throw new Error('No organisation_id found');
+    }
+    
+    const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+    
+    // Only delete if it belongs to current organisation
+    const filteredEmissions = allEmissions.filter(e => 
+      !(e.id === id && e.organisation_id === organisationId)
+    );
+    
+    if (filteredEmissions.length === allEmissions.length) {
+      throw new Error('Emission not found or access denied');
+    }
     
     localStorage.setItem(EMISSIONS_KEY, JSON.stringify(filteredEmissions));
     updateCachedStats();
     
-    emitDataChange('emission-deleted', { deletedId: id, total: filteredEmissions.length });
-    emitDataChange('emissions-updated', { emissions: filteredEmissions, count: filteredEmissions.length });
+    console.log('✅ Emission deleted:', id);
+    
+    emitDataChange('emission-deleted', { deletedId: id, total: getEmissions().length });
+    emitDataChange('emissions-updated', { emissions: getEmissions(), count: getEmissions().length });
     
     return true;
   } catch (error) {
-    console.error('Error deleting emission from localStorage:', error);
+    console.error('❌ Error deleting emission from localStorage:', error);
     throw error;
   }
 };
 
-// Get emissions by scope with accurate counting
+// Get emissions by scope (organisation-filtered)
 export const getEmissionsByScope = (scope) => {
-  const emissions = getEmissions();
+  const emissions = getEmissions(); // Already filtered by organisation
   return emissions.filter(e => e.scope === parseInt(scope));
 };
 
-// Update cached statistics for better performance
+// Update cached statistics for better performance (organisation-specific)
 const updateCachedStats = () => {
   try {
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) return;
+    
     const stats = calculateEmissionsStats();
-    localStorage.setItem(STATS_KEY, JSON.stringify({
+    const cacheKey = `${STATS_KEY}_${organisationId}`;
+    
+    localStorage.setItem(cacheKey, JSON.stringify({
       stats,
+      organisation_id: organisationId,
       lastUpdated: new Date().toISOString()
     }));
   } catch (error) {
@@ -142,9 +255,9 @@ const updateCachedStats = () => {
   }
 };
 
-// Calculate emissions statistics with enhanced accuracy
+// Calculate emissions statistics (uses organisation-filtered data)
 const calculateEmissionsStats = () => {
-  const emissions = getEmissions();
+  const emissions = getEmissions(); // Already filtered by organisation
   
   const stats = {
     scope1: { total: 0, count: 0, activities: {}, entries: 0 },
@@ -162,18 +275,16 @@ const calculateEmissionsStats = () => {
     const scopeKey = `scope${emission.scope}`;
     const calculatedEmissions = emission.calculatedEmissions || emission.totalEmissions || (emission.amount * (emission.factor || 1));
     
-    // Ensure we have a valid scope
     if (!stats[scopeKey]) {
       console.warn(`Invalid scope: ${emission.scope} for emission ${emission.id}`);
       return;
     }
     
-    // Update scope totals
     stats[scopeKey].total += calculatedEmissions;
     stats[scopeKey].count += 1;
     stats[scopeKey].entries += 1;
     
-    // Create activity key with fallback options
+    // Create activity key
     let activityKey;
     if (emission.category && emission.activityType) {
       activityKey = `${emission.category} - ${emission.activityType}`;
@@ -189,7 +300,6 @@ const calculateEmissionsStats = () => {
       activityKey = 'Unknown Activity';
     }
     
-    // Update activity breakdown
     if (!stats[scopeKey].activities[activityKey]) {
       stats[scopeKey].activities[activityKey] = {
         total: 0,
@@ -207,11 +317,9 @@ const calculateEmissionsStats = () => {
     stats[scopeKey].activities[activityKey].averageEmission = 
       stats[scopeKey].activities[activityKey].total / stats[scopeKey].activities[activityKey].count;
     
-    // Update overall stats
     stats.overall.totalEmissions += calculatedEmissions;
   });
 
-  // Calculate overall average
   stats.overall.averageEmission = emissions.length > 0 
     ? stats.overall.totalEmissions / emissions.length 
     : 0;
@@ -219,11 +327,28 @@ const calculateEmissionsStats = () => {
   return stats;
 };
 
-// Get emissions statistics with caching for better performance
+// Get emissions statistics (organisation-specific with caching)
 export const getEmissionsStats = () => {
   try {
-    // Check if we have cached stats that are recent (less than 1 minute old)
-    const cachedData = localStorage.getItem(STATS_KEY);
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) {
+      console.warn('⚠️ No organisation_id - returning empty stats');
+      return {
+        scope1: { total: 0, count: 0, activities: {}, entries: 0 },
+        scope2: { total: 0, count: 0, activities: {}, entries: 0 },
+        scope3: { total: 0, count: 0, activities: {}, entries: 0 },
+        overall: {
+          totalEmissions: 0,
+          totalEntries: 0,
+          averageEmission: 0,
+          lastUpdated: new Date().toISOString()
+        }
+      };
+    }
+    
+    const cacheKey = `${STATS_KEY}_${organisationId}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    
     if (cachedData) {
       const { stats, lastUpdated } = JSON.parse(cachedData);
       const cacheAge = new Date() - new Date(lastUpdated);
@@ -232,13 +357,19 @@ export const getEmissionsStats = () => {
       }
     }
     
-    // Calculate fresh stats
     const stats = calculateEmissionsStats();
     updateCachedStats();
+    
+    console.log('📈 Stats calculated:', {
+      scope1: stats.scope1.count,
+      scope2: stats.scope2.count,
+      scope3: stats.scope3.count,
+      total: stats.overall.totalEntries
+    });
+    
     return stats;
   } catch (error) {
-    console.error('Error getting emissions stats:', error);
-    // Return empty stats structure
+    console.error('❌ Error getting emissions stats:', error);
     return {
       scope1: { total: 0, count: 0, activities: {}, entries: 0 },
       scope2: { total: 0, count: 0, activities: {}, entries: 0 },
@@ -253,7 +384,7 @@ export const getEmissionsStats = () => {
   }
 };
 
-// Get top emission types by scope with enhanced data
+// Get top emission types by scope
 export const getTopEmissionsByScope = (scope, limit = 3) => {
   const stats = getEmissionsStats();
   const scopeKey = `scope${scope}`;
@@ -273,9 +404,9 @@ export const getTopEmissionsByScope = (scope, limit = 3) => {
   return activities;
 };
 
-// Get emissions by date range with performance optimization
+// Get emissions by date range
 export const getEmissionsByDateRange = (startDate, endDate) => {
-  const emissions = getEmissions();
+  const emissions = getEmissions(); // Already filtered by organisation
   const start = new Date(startDate);
   const end = new Date(endDate);
   
@@ -285,12 +416,11 @@ export const getEmissionsByDateRange = (startDate, endDate) => {
   });
 };
 
-// Get monthly emissions summary with enhanced data structure
+// Get monthly emissions summary
 export const getMonthlyEmissions = (year = new Date().getFullYear()) => {
-  const emissions = getEmissions();
+  const emissions = getEmissions(); // Already filtered by organisation
   const monthlyData = {};
   
-  // Initialize all months
   for (let i = 0; i < 12; i++) {
     const monthName = new Date(year, i, 1).toLocaleDateString('en-US', { month: 'short' });
     monthlyData[i] = {
@@ -312,7 +442,7 @@ export const getMonthlyEmissions = (year = new Date().getFullYear()) => {
   emissions.forEach(emission => {
     const date = new Date(emission.startDate || emission.accountingPeriod?.start || emission.createdAt);
     if (date.getFullYear() === year) {
-      const monthKey = date.getMonth(); // 0-11
+      const monthKey = date.getMonth();
       
       const scopeKey = `scope${emission.scope}`;
       const countKey = `count${emission.scope}`;
@@ -323,7 +453,6 @@ export const getMonthlyEmissions = (year = new Date().getFullYear()) => {
       monthlyData[monthKey].total += emissionValue;
       monthlyData[monthKey].totalCount += 1;
       
-      // Track activities by month
       const activityName = emission.category || emission.activityType || 'Unknown';
       if (!monthlyData[monthKey].activities[activityName]) {
         monthlyData[monthKey].activities[activityName] = 0;
@@ -338,7 +467,9 @@ export const getMonthlyEmissions = (year = new Date().getFullYear()) => {
 // Get total emissions across all scopes
 export const getTotalEmissions = () => {
   const stats = getEmissionsStats();
-  return stats.scope1.total + stats.scope2.total + stats.scope3.total;
+  const total = stats.scope1.total + stats.scope2.total + stats.scope3.total;
+  console.log(`💰 Total emissions: ${total.toFixed(2)} CO₂e from ${stats.overall.totalEntries} records`);
+  return total;
 };
 
 // Get total entries count
@@ -353,19 +484,19 @@ export const getEntryCountByScope = (scope) => {
   return emissions.filter(e => e.scope === parseInt(scope)).length;
 };
 
-// Get emissions count by status with real counts
+// Get emissions count by status
 export const getEmissionsByStatus = (status) => {
   const emissions = getEmissions();
   return emissions.filter(e => e.status === status);
 };
 
-// Search emissions by query with enhanced search capabilities
+// Search emissions by query
 export const searchEmissions = (query, filters = {}) => {
   if (!query || query.trim() === '') {
     return applyFiltersToEmissions(getEmissions(), filters);
   }
   
-  const emissions = getEmissions();
+  const emissions = getEmissions(); // Already filtered by organisation
   const searchTerm = query.toLowerCase();
   
   let filteredEmissions = emissions.filter(emission => 
@@ -437,12 +568,16 @@ const applyFiltersToEmissions = (emissions, filters) => {
   return filteredEmissions;
 };
 
-// Export all emissions data for backup/analysis
+// Export all emissions data (organisation-specific)
 export const exportEmissionsData = () => {
+  const organisationId = getOrganisationIdFromToken();
+  const user = getCurrentUser();
   const emissions = getEmissions();
   const stats = getEmissionsStats();
   
   return {
+    organisation_id: organisationId,
+    organisation_name: user?.organisation?.name || 'Unknown',
     emissions,
     statistics: stats,
     summary: {
@@ -458,19 +593,36 @@ export const exportEmissionsData = () => {
   };
 };
 
-// Import emissions data (for data migration or restore)
+// Import emissions data (organisation-aware)
 export const importEmissionsData = (data) => {
   try {
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) {
+      throw new Error('No organisation_id found');
+    }
+    
     if (data.emissions && Array.isArray(data.emissions)) {
-      localStorage.setItem(EMISSIONS_KEY, JSON.stringify(data.emissions));
+      // Get existing emissions from all organisations
+      const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+      
+      // Add organisation_id to imported emissions if not present
+      const importedEmissions = data.emissions.map(e => ({
+        ...e,
+        organisation_id: e.organisation_id || organisationId
+      }));
+      
+      // Merge with existing
+      const mergedEmissions = [...allEmissions, ...importedEmissions];
+      
+      localStorage.setItem(EMISSIONS_KEY, JSON.stringify(mergedEmissions));
       updateCachedStats();
       
       emitDataChange('emissions-imported', { 
-        count: data.emissions.length, 
+        count: importedEmissions.length, 
         importedAt: new Date().toISOString() 
       });
       
-      return { success: true, count: data.emissions.length };
+      return { success: true, count: importedEmissions.length };
     } else {
       throw new Error('Invalid data format');
     }
@@ -480,18 +632,35 @@ export const importEmissionsData = (data) => {
   }
 };
 
-// Clear all emissions with backup option
+// Clear all emissions for current organisation only
 export const clearAllEmissions = (createBackup = true) => {
   try {
-    if (createBackup) {
-      const backupData = exportEmissionsData();
-      localStorage.setItem('carbon_accounting_backup', JSON.stringify(backupData));
+    const organisationId = getOrganisationIdFromToken();
+    if (!organisationId) {
+      throw new Error('No organisation_id found');
     }
     
-    localStorage.removeItem(EMISSIONS_KEY);
-    localStorage.removeItem(STATS_KEY);
+    if (createBackup) {
+      const backupData = exportEmissionsData();
+      localStorage.setItem(`carbon_accounting_backup_${organisationId}`, JSON.stringify(backupData));
+    }
+    
+    // Get all emissions
+    const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+    
+    // Keep only emissions from OTHER organisations
+    const otherOrgEmissions = allEmissions.filter(e => e.organisation_id !== organisationId);
+    
+    localStorage.setItem(EMISSIONS_KEY, JSON.stringify(otherOrgEmissions));
+    
+    // Clear stats cache for this org
+    const cacheKey = `${STATS_KEY}_${organisationId}`;
+    localStorage.removeItem(cacheKey);
+    
+    console.log(`🗑️ Cleared emissions for organisation: ${organisationId}`);
     
     emitDataChange('emissions-cleared', { 
+      organisation_id: organisationId,
       clearedAt: new Date().toISOString(),
       backup: createBackup 
     });
@@ -503,14 +672,16 @@ export const clearAllEmissions = (createBackup = true) => {
   }
 };
 
-// Get data health check
+// Get data health check (organisation-specific)
 export const getDataHealthCheck = () => {
   try {
     const emissions = getEmissions();
     const stats = getEmissionsStats();
+    const organisationId = getOrganisationIdFromToken();
     
     const health = {
       status: 'healthy',
+      organisation_id: organisationId,
       issues: [],
       summary: {
         totalEntries: emissions.length,
@@ -519,11 +690,15 @@ export const getDataHealthCheck = () => {
       }
     };
     
-    // Check for common data issues
     emissions.forEach((emission, index) => {
       if (!emission.id) {
         health.issues.push(`Emission at index ${index} missing ID`);
         health.status = 'warning';
+      }
+      
+      if (!emission.organisation_id) {
+        health.issues.push(`Emission ${emission.id || index} missing organisation_id`);
+        health.status = 'error';
       }
       
       if (!emission.scope || ![1, 2, 3].includes(emission.scope)) {
@@ -556,3 +731,36 @@ export const getDataHealthCheck = () => {
     };
   }
 };
+
+// Debug function to check organisation filtering
+export const debugOrganisationData = () => {
+  const organisationId = getOrganisationIdFromToken();
+  const allEmissions = JSON.parse(localStorage.getItem(EMISSIONS_KEY) || '[]');
+  const orgEmissions = getEmissions();
+  
+  console.log('🔍 ORGANISATION DEBUG INFO:');
+  console.log('Current organisation_id:', organisationId);
+  console.log('Total emissions in storage:', allEmissions.length);
+  console.log('Emissions for current org:', orgEmissions.length);
+  console.log('Organisation breakdown:', 
+    allEmissions.reduce((acc, e) => {
+      acc[e.organisation_id || 'no-org'] = (acc[e.organisation_id || 'no-org'] || 0) + 1;
+      return acc;
+    }, {})
+  );
+  
+  return {
+    currentOrg: organisationId,
+    totalEmissions: allEmissions.length,
+    orgEmissions: orgEmissions.length,
+    breakdown: allEmissions.reduce((acc, e) => {
+      acc[e.organisation_id || 'no-org'] = (acc[e.organisation_id || 'no-org'] || 0) + 1;
+      return acc;
+    }, {})
+  };
+};
+
+// Export debug function to window for console access
+if (typeof window !== 'undefined') {
+  window.debugOrganisationData = debugOrganisationData;
+}

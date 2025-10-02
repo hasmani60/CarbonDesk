@@ -1,4 +1,4 @@
-// Updated Monitor.jsx with real-time data and proper emission tracking
+// Monitor.jsx - Organization-Filtered with Real Data Only
 import { useState, useEffect } from 'react';
 import { 
   Search, 
@@ -10,14 +10,14 @@ import {
   Eye,
   User,
   Clock,
-  TrendingUp
+  TrendingUp,
+  Database,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
-import { monitorAPI, exportAPI } from '../../services/api';
 import { getEmissions, getEmissionsStats } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
-import AddTaskModal from '../../components/AddTaskModal/AddTaskModal';
 import Pagination from '../../components/Pagination/Pagination';
 import toast from 'react-hot-toast';
 
@@ -33,7 +33,6 @@ const Monitor = () => {
     status: 'all',
     user: 'all'
   });
-  const [showAddTask, setShowAddTask] = useState(false);
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -51,10 +50,7 @@ const Monitor = () => {
     logPageView('Monitor');
     loadActivities();
     
-    // Listen for real-time updates when emissions are added
     window.addEventListener('emission-added', handleEmissionAdded);
-    
-    // Set up periodic refresh every 30 seconds
     const refreshInterval = setInterval(loadActivities, 30000);
     
     return () => {
@@ -68,8 +64,8 @@ const Monitor = () => {
   }, [pagination.currentPage, filters, searchQuery]);
 
   const handleEmissionAdded = (event) => {
-    console.log('New emission added:', event.detail);
-    loadActivities(); // Refresh the activities list
+    console.log('🔄 New emission added, refreshing monitor');
+    loadActivities();
     toast.success('Monitor updated with new emission!');
   };
 
@@ -77,9 +73,13 @@ const Monitor = () => {
     try {
       setLoading(true);
       
-      // Get real emissions data from localStorage
+      console.log('📊 Loading activities for organisation:', user?.organisation_id);
+      
+      // Get organisation-filtered emissions
       const allEmissions = getEmissions();
       const stats = getEmissionsStats();
+      
+      console.log(`✅ Loaded ${allEmissions.length} emissions for current organisation`);
       
       // Update emission stats
       setEmissionStats({
@@ -89,7 +89,7 @@ const Monitor = () => {
         scope3: stats.scope3.total
       });
       
-      // Convert emissions to activity format for display
+      // Convert emissions to activity format
       let processedActivities = allEmissions.map(emission => ({
         _id: emission.id,
         user: {
@@ -110,7 +110,8 @@ const Monitor = () => {
         description: emission.description,
         startDate: emission.startDate,
         endDate: emission.endDate,
-        emissionFactor: emission.factor || 1.0
+        emissionFactor: emission.factor || 1.0,
+        organisation_id: emission.organisation_id
       }));
 
       // Apply filters
@@ -146,11 +147,10 @@ const Monitor = () => {
       
       setActivities(currentPageActivities);
       
-      // Log monitoring activity
       logActivity('viewed_monitor', 'monitor', null, `Viewed ${currentPageActivities.length} emission activities`);
       
     } catch (error) {
-      console.error('Error loading activities:', error);
+      console.error('❌ Error loading activities:', error);
       toast.error('Failed to load activities');
     } finally {
       setLoading(false);
@@ -170,18 +170,15 @@ const Monitor = () => {
 
   const applyFilters = (activities) => {
     return activities.filter(activity => {
-      // Scope filter
       if (filters.scope !== 'all') {
         const scopeNumber = activity.scope.replace('Scope ', '');
         if (scopeNumber !== filters.scope) return false;
       }
       
-      // Status filter
       if (filters.status !== 'all' && activity.status !== filters.status) {
         return false;
       }
       
-      // Date range filter
       if (filters.dateRange !== 'all') {
         const activityDate = new Date(activity.createdAt);
         const now = new Date();
@@ -210,7 +207,6 @@ const Monitor = () => {
 
   const handleExport = async (format = 'csv') => {
     try {
-      // Create export data
       const exportData = activities.map(activity => ({
         'User Name': activity.user.name,
         'Scope': activity.scope,
@@ -223,10 +219,10 @@ const Monitor = () => {
         'Location': activity.location || '',
         'Status': activity.status,
         'Created At': new Date(activity.createdAt).toLocaleString(),
-        'Description': activity.description || ''
+        'Description': activity.description || '',
+        'Organisation': user?.organisation?.name || 'N/A'
       }));
       
-      // Convert to CSV
       const csvContent = convertToCSV(exportData);
       const blob = new Blob([csvContent], { type: 'text/csv' });
       
@@ -264,16 +260,6 @@ const Monitor = () => {
     return csvRows.join('\n');
   };
 
-  const handleAddTask = async (taskData) => {
-    try {
-      toast.success('Task functionality coming soon!');
-      setShowAddTask(false);
-    } catch (error) {
-      console.error('Task creation error:', error);
-      toast.error('Failed to add task');
-    }
-  };
-
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, currentPage: 1 }));
@@ -307,9 +293,43 @@ const Monitor = () => {
     }
   };
 
+  // Show empty state if no data
+  if (!loading && pagination.totalItems === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader 
+          title="Monitor - Real-time Activity Tracking"
+          breadcrumb={[
+            { label: 'App', href: '/' },
+            { label: 'Monitor' }
+          ]}
+        />
+        
+        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
+          <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">No Activities Found</h2>
+          <p className="text-gray-600 mb-2">
+            No emission activities available for your organisation.
+          </p>
+          {user?.organisation?.name && (
+            <p className="text-sm text-gray-500 mb-6">
+              Organisation: <strong>{user.organisation.name}</strong>
+            </p>
+          )}
+          <button
+            onClick={() => window.location.href = '/input'}
+            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 inline-flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Your First Emission</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <PageHeader 
         title="Monitor - Real-time Activity Tracking"
         breadcrumb={[
@@ -318,6 +338,11 @@ const Monitor = () => {
         ]}
         action={
           <div className="flex items-center space-x-2">
+            {user?.organisation?.name && (
+              <span className="text-sm text-gray-600">
+                {user.organisation.name}
+              </span>
+            )}
             <span className="text-sm text-gray-600">Auto-refresh: ON</span>
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
           </div>
@@ -384,7 +409,6 @@ const Monitor = () => {
       {/* Controls Section */}
       <div className="bg-white rounded-lg shadow-sm border p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Search */}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
@@ -396,7 +420,6 @@ const Monitor = () => {
             />
           </div>
 
-          {/* Filters */}
           <div className="flex items-center space-x-3">
             <select
               value={filters.scope}
@@ -432,7 +455,6 @@ const Monitor = () => {
             </select>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center space-x-3">
             <button
               onClick={loadActivities}
@@ -467,12 +489,6 @@ const Monitor = () => {
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
-          </div>
-        ) : activities.length === 0 ? (
-          <div className="text-center py-12">
-            <Eye className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 mb-2">No activities found</p>
-            <p className="text-sm text-gray-500">Try adjusting your filters or add some emissions data</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -566,14 +582,6 @@ const Monitor = () => {
           </div>
         )}
       </div>
-
-      {/* Add Task Modal */}
-      {showAddTask && (
-        <AddTaskModal
-          onSubmit={handleAddTask}
-          onClose={() => setShowAddTask(false)}
-        />
-      )}
     </div>
   );
 };

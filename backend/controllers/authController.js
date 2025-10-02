@@ -1,14 +1,22 @@
-// controllers/authController.js - Updated to use Local Database
+// controllers/authController.js - Fixed to ensure clean organisation context
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const localDB = require('../database/localDB');
 
 // Generate JWT Token with role information and restrictions
 const generateToken = (user) => {
+  console.log('🔑 Generating token for user:', {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    organisation_id: user.organisation_id
+  });
+  
   return jwt.sign(
     { 
       id: user.id,
       role: user.role,
+      organisation_id: user.organisation_id, // CRITICAL: Include in token
       restrictions: user.restrictions
     }, 
     process.env.JWT_SECRET || 'your-secret-key',
@@ -88,6 +96,7 @@ const register = async (req, res) => {
           role: user.role,
           status: user.status,
           restrictions: user.restrictions,
+          organisation_id: user.organisation_id,
           lastLogin: new Date()
         }
       }
@@ -128,6 +137,13 @@ const login = async (req, res) => {
       });
     }
 
+    console.log('User found:', {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      organisation_id: user.organisation_id
+    });
+
     // Check if account is active
     if (user.status !== 'active') {
       return res.status(403).json({
@@ -161,8 +177,9 @@ const login = async (req, res) => {
 
     const token = generateToken(user);
 
-    console.log('Login successful for:', email);
+    console.log('Login successful for:', email, 'Organisation:', user.organisation_id);
 
+    // CRITICAL: Return complete user data with organisation context
     return res.json({
       success: true,
       data: {
@@ -174,9 +191,13 @@ const login = async (req, res) => {
           role: user.role,
           status: user.status,
           restrictions: user.restrictions,
+          organisation_id: user.organisation_id, // CRITICAL
           lastLogin: new Date()
         }
-      }
+      },
+      message: user.organisation_id 
+        ? `Welcome back! Logged into organisation ID: ${user.organisation_id}` 
+        : 'Welcome back! Please contact admin to assign you to an organisation.'
     });
 
   } catch (error) {
@@ -203,6 +224,8 @@ const verifyToken = async (req, res) => {
       });
     }
 
+    console.log('Token verified for user:', user.email, 'Org:', user.organisation_id);
+
     return res.json({
       success: true,
       data: {
@@ -212,6 +235,7 @@ const verifyToken = async (req, res) => {
         role: user.role,
         status: user.status,
         restrictions: user.restrictions,
+        organisation_id: user.organisation_id, // CRITICAL
         lastLogin: user.last_login
       }
     });
@@ -289,7 +313,8 @@ const updateProfile = async (req, res) => {
         email: updatedUser.email,
         role: updatedUser.role,
         status: updatedUser.status,
-        restrictions: updatedUser.restrictions
+        restrictions: updatedUser.restrictions,
+        organisation_id: updatedUser.organisation_id
       }
     });
   } catch (error) {

@@ -1,15 +1,12 @@
-// pages/Admin/UserManagement.jsx - Enhanced with Activity-Specific Restrictions
+// pages/Admin/UserManagement.jsx - Complete Working Version
 import { useState, useEffect } from 'react';
 import { 
   Users, 
   Search, 
-  Filter, 
   UserPlus,
   Edit3,
   Trash2,
-  CheckCircle,
   XCircle,
-  Clock,
   Crown,
   Shield,
   Eye,
@@ -20,26 +17,23 @@ import {
   Settings,
   Lock,
   Activity,
-  Calendar,
-  MousePointer,
   Database,
   AlertCircle,
   TrendingUp,
   ExternalLink,
-  Filter as FilterIcon,
-  ChevronDown,
-  ChevronUp,
   Info,
   Plus,
   Minus,
   Target,
   List,
   Check,
-  X
+  X,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
-import { adminAPI, usersAPI } from '../../services/api';
+import { adminAPI } from '../../services/api';
 import { emissionFactors } from '../../data/emissionFactors';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
@@ -70,17 +64,6 @@ const UserManagement = () => {
     itemsPerPage: 10
   });
 
-  // Helper function to count activities by scope
-  const getActivityCountByScope = (restrictions, scope) => {
-    if (!restrictions || !restrictions.allowedActivities) return 0;
-    
-    const activitiesInScope = Object.keys(emissionFactors[`scope${scope}`] || {});
-    return restrictions.allowedActivities.filter(activity => 
-      activitiesInScope.includes(activity)
-    ).length;
-  };
-
-  // Helper function to display restrictions in user table
   const getRestrictionsDisplay = (userItem) => {
     if (!userItem.restrictions) {
       return <span className="text-gray-500">None</span>;
@@ -89,7 +72,6 @@ const UserManagement = () => {
     const { allowedScopes, allowedActivities } = userItem.restrictions;
     const restrictions = [];
 
-    // Check scope restrictions
     if (allowedScopes && allowedScopes.length < 3) {
       restrictions.push(
         <div key="scopes" className="flex items-center space-x-1">
@@ -101,9 +83,7 @@ const UserManagement = () => {
       );
     }
 
-    // Check activity restrictions
     if (allowedActivities && allowedActivities.length > 0) {
-      // Count activities per scope
       const activityCountByScope = {};
       allowedActivities.forEach(activity => {
         for (let scope = 1; scope <= 3; scope++) {
@@ -148,7 +128,6 @@ const UserManagement = () => {
     }
   }, [searchQuery, filters, pagination.currentPage]);
 
-  // Real-time activity updates
   useEffect(() => {
     const handleActivityUpdate = (event) => {
       console.log('New activity logged:', event.detail);
@@ -174,7 +153,6 @@ const UserManagement = () => {
       if (response.success !== false) {
         const usersData = response.data || response || [];
         
-        // Enhance users with activity data
         const enhancedUsers = await Promise.all(usersData.map(async (userItem) => {
           const userActivities = getRecentActivities(5, { userId: userItem._id });
           return {
@@ -199,9 +177,7 @@ const UserManagement = () => {
     } catch (error) {
       console.error('Error loading users:', error);
       toast.error('Failed to load users');
-      
-      // Fallback to demo data with activity
-      setUsers(getDemoUsersWithActivity());
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -215,44 +191,39 @@ const UserManagement = () => {
       console.error('Error loading user stats:', error);
       setUserStats({
         overview: {
-          totalUsers: 4,
-          activeUsers: 4,
+          totalUsers: 0,
+          activeUsers: 0,
           inactiveUsers: 0,
           suspendedUsers: 0,
-          adminUsers: 1,
-          analystUsers: 1,
-          contributorUsers: 1,
-          viewerUsers: 1
+          adminUsers: 0,
+          analystUsers: 0,
+          contributorUsers: 0,
+          viewerUsers: 0
         }
       });
     }
   };
 
-  const loadRBACOptions = async () => {
-    try {
-      const options = await usersAPI.getRBACOptions();
-      setRBACOptions(options.data || options);
-    } catch (error) {
-      console.error('Error loading RBAC options:', error);
-      setRBACOptions({
-        scopes: [
-          { value: 1, label: 'Scope 1 - Direct Emissions' },
-          { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
-          { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
-        ],
-        activities: {
-          1: Object.keys(emissionFactors.scope1 || {}),
-          2: Object.keys(emissionFactors.scope2 || {}),
-          3: Object.keys(emissionFactors.scope3 || {})
-        },
-        roles: [
-          { value: 'admin', label: 'Administrator', description: 'Full system access' },
-          { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
-          { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
-          { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
-        ]
-      });
-    }
+  const loadRBACOptions = () => {
+    // RBAC options are static configuration - no API needed
+    setRBACOptions({
+      scopes: [
+        { value: 1, label: 'Scope 1 - Direct Emissions' },
+        { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
+        { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
+      ],
+      activities: {
+        1: Object.keys(emissionFactors.scope1 || {}),
+        2: Object.keys(emissionFactors.scope2 || {}),
+        3: Object.keys(emissionFactors.scope3 || {})
+      },
+      roles: [
+        { value: 'admin', label: 'Administrator', description: 'Full system access' },
+        { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
+        { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
+        { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
+      ]
+    });
   };
 
   const loadActivitySummary = () => {
@@ -261,15 +232,21 @@ const UserManagement = () => {
       setActivitySummary(summary);
     } catch (error) {
       console.error('Error loading activity summary:', error);
+      setActivitySummary({
+        totalActivities: 0,
+        recentActivities: 0,
+        criticalActivities: 0
+      });
     }
   };
 
   const loadRecentActivities = () => {
     try {
-      const activities = getRecentActivities(20, {}); // Get recent 20 activities
+      const activities = getRecentActivities(20, {});
       setRecentActivities(activities);
     } catch (error) {
       console.error('Error loading recent activities:', error);
+      setRecentActivities([]);
     }
   };
 
@@ -284,10 +261,6 @@ const UserManagement = () => {
     try {
       setLoading(true);
       
-      console.log('📤 FRONTEND: Sending user creation request');
-      console.log('📊 Original userData:', userData);
-      
-      // Prepare the final data to send
       const dataToSend = {
         name: userData.name,
         email: userData.email,
@@ -299,10 +272,7 @@ const UserManagement = () => {
         restrictedPages: userData.restrictedPages || []
       };
       
-      console.log('📦 FRONTEND: Final data to send:', dataToSend);
-      
       const response = await adminAPI.createUser(dataToSend);
-      console.log('✅ FRONTEND: Response received:', response);
       
       if (response.success !== false) {
         toast.success(`User created successfully: ${userData.name}`);
@@ -314,7 +284,7 @@ const UserManagement = () => {
         throw new Error(response.message || 'Unknown error');
       }
     } catch (error) {
-      console.error('❌ FRONTEND: Create user error:', error);
+      console.error('Create user error:', error);
       const message = error.response?.data?.message || error.message || 'Failed to create user';
       toast.error(message);
     } finally {
@@ -410,93 +380,6 @@ const UserManagement = () => {
     
     return csvRows.join('\n');
   };
-
-  const getDemoUsersWithActivity = () => [
-    {
-      _id: 'demo_admin',
-      name: 'Demo Admin',
-      email: 'demo@example.com',
-      role: 'admin',
-      status: 'active',
-      createdAt: new Date(),
-      lastLogin: new Date(),
-      restrictions: null,
-      statistics: { 
-        emissionCount: 15, 
-        recentActivityCount: 5,
-        totalActivities: 25,
-        lastActivity: new Date(),
-        recentActivities: [
-          { action: 'admin_created_user', timestamp: new Date(), details: 'Created new user: John Doe' },
-          { action: 'viewed_admin_dashboard', timestamp: new Date(Date.now() - 3600000), details: 'Accessed admin dashboard' }
-        ]
-      }
-    },
-    {
-      _id: 'demo_analyst',
-      name: 'Demo Analyst',
-      email: 'analyst@example.com',
-      role: 'analyst',
-      status: 'active',
-      createdAt: new Date(),
-      lastLogin: new Date(),
-      restrictions: null,
-      statistics: { 
-        emissionCount: 10, 
-        recentActivityCount: 3,
-        totalActivities: 18,
-        lastActivity: new Date(Date.now() - 1800000),
-        recentActivities: [
-          { action: 'verified_emission', timestamp: new Date(Date.now() - 1800000), details: 'Verified emission record' },
-          { action: 'viewed_analytics', timestamp: new Date(Date.now() - 3600000), details: 'Viewed analytics page' }
-        ]
-      }
-    },
-    {
-      _id: 'demo_contributor',
-      name: 'Demo Contributor',
-      email: 'contributor@example.com',
-      role: 'contributor',
-      status: 'active',
-      createdAt: new Date(),
-      lastLogin: new Date(),
-      restrictions: {
-        allowedScopes: [1, 2],
-        allowedActivities: ['Fuel from Generator'],
-        restrictedPages: []
-      },
-      statistics: { 
-        emissionCount: 5, 
-        recentActivityCount: 2,
-        totalActivities: 12,
-        lastActivity: new Date(Date.now() - 7200000),
-        recentActivities: [
-          { action: 'created_emission', timestamp: new Date(Date.now() - 7200000), details: 'Created emission: Fuel from Generator' },
-          { action: 'viewed_input', timestamp: new Date(Date.now() - 10800000), details: 'Accessed input page' }
-        ]
-      }
-    },
-    {
-      _id: 'demo_viewer',
-      name: 'Demo Viewer',
-      email: 'viewer@example.com',
-      role: 'viewer',
-      status: 'active',
-      createdAt: new Date(),
-      lastLogin: new Date(),
-      restrictions: null,
-      statistics: { 
-        emissionCount: 0, 
-        recentActivityCount: 1,
-        totalActivities: 8,
-        lastActivity: new Date(Date.now() - 14400000),
-        recentActivities: [
-          { action: 'viewed_dashboard', timestamp: new Date(Date.now() - 14400000), details: 'Viewed dashboard' },
-          { action: 'viewed_monitor', timestamp: new Date(Date.now() - 18000000), details: 'Accessed monitor page' }
-        ]
-      }
-    }
-  ];
 
   const getRoleBadgeColor = (role) => {
     const colors = {
@@ -602,7 +485,9 @@ const UserManagement = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900">{userStats?.overview.totalUsers || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {userStats?.overview?.totalUsers || 0}
+              </p>
             </div>
           </div>
         </div>
@@ -614,7 +499,9 @@ const UserManagement = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Activities</p>
-              <p className="text-2xl font-bold text-gray-900">{activitySummary?.totalActivities || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {activitySummary?.totalActivities || 0}
+              </p>
             </div>
           </div>
         </div>
@@ -626,7 +513,9 @@ const UserManagement = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Recent (24h)</p>
-              <p className="text-2xl font-bold text-gray-900">{activitySummary?.recentActivities || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {activitySummary?.recentActivities || 0}
+              </p>
             </div>
           </div>
         </div>
@@ -638,7 +527,9 @@ const UserManagement = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Critical Activities</p>
-              <p className="text-2xl font-bold text-gray-900">{activitySummary?.criticalActivities || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {activitySummary?.criticalActivities || 0}
+              </p>
             </div>
           </div>
         </div>
@@ -766,7 +657,7 @@ const UserManagement = () => {
           <div className="text-center py-12">
             <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No users found</p>
-            <p className="text-sm text-gray-500">Try adjusting your search criteria</p>
+            <p className="text-sm text-gray-500">Try adjusting your search criteria or add a new user</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1034,7 +925,7 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
   );
 };
 
-// Enhanced Create User Modal with Activity-Specific Restrictions
+// Create User Modal Component (with full RBAC functionality)
 const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -1042,25 +933,23 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     password: '',
     role: 'contributor',
     status: 'active',
-    allowedScopes: [1, 2, 3], // Default: all scopes
-    allowedActivities: [], // Default: all activities (empty means no restrictions)
+    allowedScopes: [1, 2, 3],
+    allowedActivities: [],
     restrictedPages: []
   });
   const [errors, setErrors] = useState({});
   const [showRestrictions, setShowRestrictions] = useState(false);
-  const [scopeSelectionMode, setScopeSelectionMode] = useState({}); // 'scope' or 'activity' per scope
+  const [scopeSelectionMode, setScopeSelectionMode] = useState({});
   const [expandedScopes, setExpandedScopes] = useState({ 1: false, 2: false, 3: false });
   const [accessPreview, setAccessPreview] = useState('');
   const [activitySearchTerm, setActivitySearchTerm] = useState({});
 
-  // Available activities per scope from emission factors
   const activitiesPerScope = {
     1: Object.keys(emissionFactors.scope1 || {}),
     2: Object.keys(emissionFactors.scope2 || {}),
     3: Object.keys(emissionFactors.scope3 || {})
   };
 
-  // Separate useEffect for role changes only
   useEffect(() => {
     setShowRestrictions(formData.role === 'contributor');
     
@@ -1074,28 +963,21 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
       setScopeSelectionMode({});
       setExpandedScopes({ 1: false, 2: false, 3: false });
     } else {
-      // Only initialize scope selection mode when role changes to contributor
-      // Don't reset if already a contributor (to preserve user selections)
       setScopeSelectionMode(prev => {
-        // If already has some scope selection mode, don't reset
         if (Object.keys(prev).length > 0) {
           return prev;
         }
         
-        // Initialize scope selection mode for new contributors
         const initialMode = {};
         [1, 2, 3].forEach(scope => {
-          // Default to 'none' for new contributors
           initialMode[scope] = 'none';
         });
         
-        console.log('🔧 Initialized scope selection mode for new contributor:', initialMode);
         return initialMode;
       });
     }
-  }, [formData.role]); // Only depend on role changes
+  }, [formData.role]);
 
-  // Separate useEffect for updating access preview
   useEffect(() => {
     updateAccessPreview();
   }, [formData.allowedScopes, formData.allowedActivities, scopeSelectionMode]);
@@ -1110,16 +992,13 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     const scopesWithAccess = [];
     const activitiesWithAccess = [];
 
-    // Check scope-level access
     formData.allowedScopes.forEach(scope => {
       if (scopeSelectionMode[scope] === 'scope') {
         scopesWithAccess.push(`Scope ${scope} (all activities)`);
       }
     });
 
-    // Check activity-level access
     formData.allowedActivities.forEach(activity => {
-      // Find which scope this activity belongs to
       for (let scope = 1; scope <= 3; scope++) {
         if (activitiesPerScope[scope].includes(activity)) {
           activitiesWithAccess.push(`${activity} (Scope ${scope})`);
@@ -1159,7 +1038,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
       newErrors.password = 'Password must be at least 6 characters';
     }
 
-    // Validate access restrictions for contributors
     if (formData.role === 'contributor') {
       const hasAnyAccess = formData.allowedScopes.length > 0 || formData.allowedActivities.length > 0;
       if (!hasAnyAccess) {
@@ -1174,31 +1052,18 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    console.log('📝 FORM SUBMIT: Raw form data:', formData);
-    console.log('📝 FORM SUBMIT: Scope selection mode:', scopeSelectionMode);
-    
     if (validateForm()) {
-      // Prepare final restrictions object
       const finalFormData = { ...formData };
       
       if (formData.role === 'contributor') {
-        console.log('🔒 PREPARING CONTRIBUTOR RESTRICTIONS:');
-        
-        // Filter out scopes that are set to activity-level access
         const finalAllowedScopes = formData.allowedScopes.filter(scope => 
           scopeSelectionMode[scope] === 'scope'
         );
         
-        console.log('- Final allowed scopes:', finalAllowedScopes);
-        console.log('- Final allowed activities:', formData.allowedActivities);
-        
         finalFormData.allowedScopes = finalAllowedScopes;
         finalFormData.allowedActivities = formData.allowedActivities;
         finalFormData.restrictedPages = formData.restrictedPages || [];
-        
-        console.log('📦 FINAL FORM DATA:', finalFormData);
       } else {
-        console.log(`ℹ️ Role is ${formData.role}, clearing restrictions`);
         finalFormData.allowedScopes = [];
         finalFormData.allowedActivities = [];
         finalFormData.restrictedPages = [];
@@ -1209,14 +1074,11 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   };
 
   const handleScopeSelectionModeChange = (scope, mode) => {
-    console.log(`🔄 Scope ${scope} mode changed to: ${mode}`);
-    
     setScopeSelectionMode(prev => ({
       ...prev,
       [scope]: mode
     }));
   
-    // Auto-expand the scope when "activity" mode is selected
     if (mode === 'activity') {
       setExpandedScopes(prev => ({
         ...prev,
@@ -1225,7 +1087,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     }
   
     if (mode === 'scope') {
-      // Add scope to allowedScopes, remove activities from this scope
       setFormData(prev => ({
         ...prev,
         allowedScopes: [...new Set([...prev.allowedScopes, scope])],
@@ -1233,16 +1094,12 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           !activitiesPerScope[scope].includes(activity)
         )
       }));
-      console.log(`✅ Scope ${scope}: Full access granted`);
     } else if (mode === 'activity') {
-      // Remove scope from allowedScopes but keep any selected activities
       setFormData(prev => ({
         ...prev,
         allowedScopes: prev.allowedScopes.filter(s => s !== scope)
       }));
-      console.log(`🎯 Scope ${scope}: Activity selection mode enabled`);
     } else if (mode === 'none') {
-      // Remove scope and all its activities
       setFormData(prev => ({
         ...prev,
         allowedScopes: prev.allowedScopes.filter(s => s !== scope),
@@ -1250,49 +1107,34 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           !activitiesPerScope[scope].includes(activity)
         )
       }));
-      console.log(`❌ Scope ${scope}: No access`);
     }
   };
   
-  // Enhanced activity change handler
   const handleActivityChange = (scope, activity, checked) => {
-    console.log(`🎯 Activity "${activity}" in Scope ${scope}: ${checked ? 'SELECTED' : 'DESELECTED'}`);
-    
     if (checked) {
-      // Add activity and ensure scope is in activity mode
       setFormData(prev => {
         const newAllowedActivities = [...new Set([...prev.allowedActivities, activity])];
-        console.log(`✅ Adding activity "${activity}" to scope ${scope}. New activities:`, newAllowedActivities);
         return {
           ...prev,
           allowedActivities: newAllowedActivities
         };
       });
       
-      // Ensure the scope is in activity mode
       if (scopeSelectionMode[scope] !== 'activity') {
-        console.log(`🔄 Auto-switching Scope ${scope} to activity mode`);
         setScopeSelectionMode(prev => ({
           ...prev,
           [scope]: 'activity'
         }));
       }
     } else {
-      // Remove activity
       setFormData(prev => {
         const newAllowedActivities = prev.allowedActivities.filter(a => a !== activity);
-        console.log(`❌ Removing activity "${activity}" from scope ${scope}. Remaining activities:`, newAllowedActivities);
         
-        // Check if no activities left for this scope AFTER the update
         const remainingActivitiesInScope = newAllowedActivities.filter(a => 
           activitiesPerScope[scope].includes(a)
         );
         
-        console.log(`🔍 Remaining activities in scope ${scope}:`, remainingActivitiesInScope);
-        
-        // Only switch to 'none' mode if no activities are left for this scope
         if (remainingActivitiesInScope.length === 0) {
-          console.log(`⚠️ No activities left in Scope ${scope}, switching to 'none' mode`);
           setTimeout(() => {
             setScopeSelectionMode(prev => ({
               ...prev,
@@ -1308,25 +1150,18 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
       });
     }
     
-    // Update the access preview
     setTimeout(() => {
       updateAccessPreview();
     }, 0);
   };
   
-  // Enhanced toggle scope expanded function
   const toggleScopeExpanded = (scope) => {
-    setExpandedScopes(prev => {
-      const newExpanded = {
-        ...prev,
-        [scope]: !prev[scope]
-      };
-      console.log(`📖 Scope ${scope} ${newExpanded[scope] ? 'EXPANDED' : 'COLLAPSED'}`);
-      return newExpanded;
-    });
+    setExpandedScopes(prev => ({
+      ...prev,
+      [scope]: !prev[scope]
+    }));
   };
 
-  // Bulk activity selection helpers
   const handleSelectAllActivities = (scope) => {
     const allActivitiesInScope = activitiesPerScope[scope] || [];
     const newAllowedActivities = [
@@ -1341,13 +1176,10 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
       allowedActivities: newAllowedActivities
     }));
 
-    // Ensure scope is in activity mode
     setScopeSelectionMode(prev => ({
       ...prev,
       [scope]: 'activity'
     }));
-    
-    console.log(`✅ Selected all ${allActivitiesInScope.length} activities in Scope ${scope}`);
   };
 
   const handleClearAllActivities = (scope) => {
@@ -1361,16 +1193,12 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
       allowedActivities: newAllowedActivities
     }));
 
-    // Switch to none mode if no activities left
     setScopeSelectionMode(prev => ({
       ...prev,
       [scope]: 'none'
     }));
-    
-    console.log(`❌ Cleared all activities in Scope ${scope}`);
   };
 
-  // Activity search and filtering
   const getFilteredActivities = (scope) => {
     const activities = activitiesPerScope[scope] || [];
     const searchTerm = activitySearchTerm[scope] || '';
@@ -1502,7 +1330,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
           </div>
 
-          {/* Enhanced Activity-Specific RBAC Restrictions for Contributors */}
+          {/* RBAC Restrictions for Contributors */}
           {showRestrictions && (
             <div className="border-t pt-6">
               <div className="flex items-center space-x-2 mb-4">
@@ -1519,13 +1347,11 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 <ul className="text-sm text-blue-800 space-y-1">
                   <li>• <strong>Full Scope Access:</strong> Grant access to all activities within a scope</li>
                   <li>• <strong>Activity-Specific Access:</strong> Choose individual activities with advanced filtering</li>
-                  <li>• <strong>Bulk Operations:</strong> Select/deselect all activities in a scope quickly</li>
-                  <li>• <strong>Search & Filter:</strong> Find specific activities using the search functionality</li>
                   <li>• <strong>No Access:</strong> Completely deny access to a scope</li>
                 </ul>
               </div>
 
-              {/* Enhanced Scope-by-Scope Access Control */}
+              {/* Scope-by-Scope Access Control */}
               <div className="space-y-4">
                 {[1, 2, 3].map(scope => (
                   <div key={scope} className="border rounded-lg shadow-sm">
@@ -1581,10 +1407,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                       </div>
                     </div>
 
-                    {/* Enhanced scope configuration when expanded */}
                     {expandedScopes[scope] && (
                       <div className="p-4 bg-white">
-                        {/* Access Level Selection with enhanced UI */}
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-3">
                             Access Level for Scope {scope}
@@ -1600,28 +1424,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                 name={`scope-${scope}-mode`}
                                 value="scope"
                                 checked={scopeSelectionMode[scope] === 'scope'}
-                                onChange={() => handleScopeSelectionModeChange(scope, 'scope')}
-                                className="text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <CheckCircle className={`w-6 h-6 ${
-                                scopeSelectionMode[scope] === 'scope' ? 'text-green-600' : 'text-gray-400'
-                              }`} />
-                              <div className="text-center">
-                                <div className="font-medium text-green-700">Full Access</div>
-                                <div className="text-xs text-green-600">All {activitiesPerScope[scope]?.length || 0} activities</div>
-                              </div>
-                            </label>
-
-                            <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                              scopeSelectionMode[scope] === 'activity' 
-                                ? 'border-blue-500 bg-blue-50 shadow-md' 
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                            }`}>
-                              <input
-                                type="radio"
-                                name={`scope-${scope}-mode`}
-                                value="activity"
-                                checked={scopeSelectionMode[scope] === 'activity'}
                                 onChange={() => handleScopeSelectionModeChange(scope, 'activity')}
                                 className="text-blue-600 focus:ring-blue-500"
                               />
@@ -1658,7 +1460,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           </div>
                         </div>
 
-                        {/* Enhanced Individual Activity Selection */}
+                        {/* Individual Activity Selection */}
                         {scopeSelectionMode[scope] === 'activity' && (
                           <div className="mt-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
                             <div className="flex items-center justify-between mb-4">
@@ -1780,11 +1582,11 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           </div>
                         )}
 
-                        {/* Enhanced status messages for other modes */}
+                        {/* Status messages for other modes */}
                         {scopeSelectionMode[scope] === 'scope' && (
                           <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                             <div className="flex items-center space-x-2">
-                              <CheckCircle className="w-4 h-4 text-green-600" />
+                              <Check className="w-4 h-4 text-green-600" />
                               <p className="text-sm text-green-800">
                                 <strong>Full Access:</strong> User will have access to all {activitiesPerScope[scope]?.length || 0} activities in Scope {scope}.
                               </p>
@@ -1808,7 +1610,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 ))}
               </div>
 
-              {/* Enhanced Access Preview */}
+              {/* Access Preview */}
               <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
                 <h4 className="font-medium text-emerald-900 mb-2 flex items-center">
                   <Eye className="w-4 h-4 mr-2" />
@@ -1861,7 +1663,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </div>
         </form>
 
-        {/* Enhanced RBAC Information */}
+        {/* RBAC Information */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">
             <Info className="w-4 h-4 mr-2" />

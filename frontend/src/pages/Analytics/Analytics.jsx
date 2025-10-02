@@ -1,4 +1,4 @@
-// Updated Analytics.jsx with automatic refresh and real-time data updates
+// Analytics.jsx - Organization-Filtered with Real Data Only
 import { useState, useEffect } from 'react';
 import { 
   LineChart, 
@@ -13,28 +13,23 @@ import {
   Bar,
   PieChart,
   Pie,
-  Cell,
-  AreaChart,
-  Area
+  Cell
 } from 'recharts';
 import { 
   TrendingUp, 
-  TrendingDown, 
-  Calendar, 
-  Filter,
   Download,
-  Eye,
-  Lock,
   RefreshCw,
-  Database
+  Database,
+  AlertCircle
 } from 'lucide-react';
 import { useActivity } from '../../context/ActivityContext';
-import { analyticsAPI } from '../../services/api';
 import { getEmissions, getEmissionsStats } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 
 const Analytics = () => {
+  const { user } = useAuth();
   const { logPageView, logActivity } = useActivity();
   const [analyticsData, setAnalyticsData] = useState({
     trends: [],
@@ -75,17 +70,15 @@ const Analytics = () => {
     logPageView('Analytics');
     loadAnalyticsData();
     
-    // Listen for real-time updates when emissions are added
     const handleEmissionAdded = () => {
       if (autoRefresh) {
-        setTimeout(loadAnalyticsData, 500); // Small delay to ensure localStorage is updated
+        setTimeout(loadAnalyticsData, 500);
         toast.success('Analytics updated with new data!');
       }
     };
     
     window.addEventListener('emission-added', handleEmissionAdded);
     
-    // Set up periodic refresh every 2 minutes if auto-refresh is enabled
     let refreshInterval;
     if (autoRefresh) {
       refreshInterval = setInterval(loadAnalyticsData, 2 * 60 * 1000);
@@ -105,20 +98,22 @@ const Analytics = () => {
     try {
       setLoading(true);
       
-      // Get real emissions data from localStorage
+      console.log('📊 Loading analytics for organisation:', user?.organisation_id);
+      
+      // Get organisation-filtered emissions
       const allEmissions = getEmissions();
       const stats = getEmissionsStats();
       
-      // Process emissions for analytics
+      console.log(`✅ Loaded ${allEmissions.length} emissions for analytics`);
+      
       const processedData = processEmissionsForAnalytics(allEmissions, stats);
       setAnalyticsData(processedData);
       setLastUpdate(new Date());
       
-      // Log analytics access
       logActivity('viewed_analytics', 'analytics', null, `Viewed analytics with ${allEmissions.length} total emissions`);
       
     } catch (error) {
-      console.error('Error loading analytics data:', error);
+      console.error('❌ Error loading analytics data:', error);
       toast.error('Failed to load analytics data');
     } finally {
       setLoading(false);
@@ -126,23 +121,16 @@ const Analytics = () => {
   };
 
   const processEmissionsForAnalytics = (emissions, stats) => {
-    // Apply date range filter
     const filteredEmissions = applyDateRangeFilter(emissions);
-    
-    // Create trends data by month
     const monthlyTrends = createMonthlyTrends(filteredEmissions);
-    
-    // Create scope distributions (top 3 categories per scope)
     const scopeDistributions = createScopeDistributions(stats);
     
-    // Calculate total emissions per scope
     const totalEmissions = {
       scope1: stats.scope1.total,
       scope2: stats.scope2.total,
       scope3: stats.scope3.total
     };
     
-    // Calculate entry counts per scope
     const entryCounts = {
       scope1: emissions.filter(e => e.scope === 1).length,
       scope2: emissions.filter(e => e.scope === 2).length,
@@ -150,7 +138,6 @@ const Analytics = () => {
       total: emissions.length
     };
     
-    // Create scope comparison data
     const scopeComparison = createScopeComparison(filteredEmissions);
 
     return {
@@ -227,7 +214,7 @@ const Analytics = () => {
     
     return Object.values(monthlyData)
       .sort((a, b) => a.month.localeCompare(b.month))
-      .slice(-12); // Last 12 months
+      .slice(-12);
   };
 
   const createScopeDistributions = (stats) => {
@@ -237,7 +224,6 @@ const Analytics = () => {
       const activities = stats[scopeKey].activities;
       const total = stats[scopeKey].total;
       
-      // Get top 5 activities for this scope (increased from 3)
       const sortedActivities = Object.entries(activities)
         .map(([name, data]) => ({
           name: name.length > 30 ? name.substring(0, 30) + '...' : name,
@@ -292,6 +278,8 @@ const Analytics = () => {
   const handleExportData = () => {
     try {
       const exportData = {
+        organisation: user?.organisation?.name || 'Unknown',
+        organisation_id: user?.organisation_id,
         summary: {
           totalEmissions: analyticsData.totalEmissions.scope1 + analyticsData.totalEmissions.scope2 + analyticsData.totalEmissions.scope3,
           totalEntries: analyticsData.entryCounts.total,
@@ -368,7 +356,6 @@ const Analytics = () => {
   };
 
   const renderScopePieChart = (scopeKey, title) => {
-    const scopeNumber = scopeKey.slice(-1);
     const data = analyticsData.scopeDistributions[scopeKey];
     const total = analyticsData.totalEmissions[scopeKey];
     const entryCount = analyticsData.entryCounts[scopeKey];
@@ -395,9 +382,6 @@ const Analytics = () => {
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           <div className="text-right">
             <div className="text-sm text-gray-600">{entryCount} entries</div>
-            <div className="flex items-center space-x-2">
-              <Eye className="w-4 h-4 text-gray-400" />
-            </div>
           </div>
         </div>
         <div className="h-64 relative">
@@ -419,7 +403,6 @@ const Analytics = () => {
               <Tooltip content={<PieTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          {/* Total in center */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <div className="text-xl font-bold text-gray-900">
@@ -431,7 +414,6 @@ const Analytics = () => {
           </div>
         </div>
         
-        {/* Legend */}
         <div className="mt-4 space-y-2">
           {data.map((entry, index) => (
             <div key={index} className="flex items-center justify-between text-sm">
@@ -466,9 +448,42 @@ const Analytics = () => {
     );
   }
 
+  // Show empty state if no data
+  if (analyticsData.entryCounts.total === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader 
+          title="Analytics"
+          breadcrumb={[
+            { label: 'App', href: '/' },
+            { label: 'Analytics' }
+          ]}
+        />
+        
+        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
+          <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">No Analytics Data</h2>
+          <p className="text-gray-600 mb-2">
+            Your organisation doesn't have enough data to generate analytics.
+          </p>
+          {user?.organisation?.name && (
+            <p className="text-sm text-gray-500 mb-6">
+              Organisation: <strong>{user.organisation.name}</strong>
+            </p>
+          )}
+          <button
+            onClick={() => window.location.href = '/input'}
+            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            Add Emissions Data
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <PageHeader 
         title="Analytics"
         breadcrumb={[
@@ -477,6 +492,11 @@ const Analytics = () => {
         ]}
         action={
           <div className="flex items-center space-x-3">
+            {user?.organisation?.name && (
+              <span className="text-sm text-gray-600">
+                {user.organisation.name}
+              </span>
+            )}
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
               <span className="text-sm text-gray-600">
@@ -630,9 +650,6 @@ const Analytics = () => {
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Emission Trends</h3>
-            <div className="flex items-center space-x-2">
-              <Eye className="w-4 h-4 text-gray-400" />
-            </div>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -672,9 +689,6 @@ const Analytics = () => {
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Monthly Scope Comparison</h3>
-            <div className="flex items-center space-x-2">
-              <Eye className="w-4 h-4 text-gray-400" />
-            </div>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">

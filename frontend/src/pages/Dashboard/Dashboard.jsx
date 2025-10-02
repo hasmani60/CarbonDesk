@@ -1,7 +1,7 @@
-// Updated Dashboard.jsx with fixed entry counts and real-time updates
+// Dashboard.jsx - Organization-Filtered Dashboard with Real Data Only
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye, Database } from 'lucide-react';
+import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye, Database, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
@@ -23,14 +23,15 @@ const Dashboard = () => {
   });
   const [adminData, setAdminData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
   const [userActivityStats, setUserActivityStats] = React.useState(null);
   const [lastUpdate, setLastUpdate] = React.useState(new Date());
 
   // Colors for each scope's pie chart
   const COLORS = {
-    scope1: ['#065f46', '#047857', '#059669'], // Different shades of emerald
-    scope2: ['#1e40af', '#1d4ed8', '#2563eb'], // Different shades of blue
-    scope3: ['#7c2d12', '#dc2626', '#ef4444']  // Different shades of red
+    scope1: ['#065f46', '#047857', '#059669'],
+    scope2: ['#1e40af', '#1d4ed8', '#2563eb'],
+    scope3: ['#7c2d12', '#dc2626', '#ef4444']
   };
 
   React.useEffect(() => {
@@ -40,7 +41,7 @@ const Dashboard = () => {
     
     // Listen for real-time updates when emissions are added
     const handleEmissionAdded = () => {
-      setTimeout(fetchDashboardData, 500); // Small delay to ensure localStorage is updated
+      setTimeout(fetchDashboardData, 500);
     };
     
     window.addEventListener('emission-added', handleEmissionAdded);
@@ -66,102 +67,56 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Load user's emission data
+      console.log('🔄 Fetching dashboard data for organisation:', user?.organisation_id);
+      
+      // Load user's emission data (already filtered by organisation)
       const allEmissions = getEmissions();
       const stats = getEmissionsStats();
+      
+      if (allEmissions.length === 0) {
+        console.log('⚠️ No emissions found for current organisation');
+      }
+      
       const processedData = processDashboardData(stats, allEmissions);
       setDashboardData(processedData);
       setLastUpdate(new Date());
 
-      // Load admin data if user is admin (with error handling)
+      // Load admin data if user is admin
       if (isAdmin(user?.role)) {
         try {
           const adminDashboard = await adminAPI.getDashboard();
           setAdminData(adminDashboard);
+          console.log('✅ Admin dashboard data loaded');
         } catch (error) {
-          console.warn('Admin dashboard data unavailable:', error.message);
-          // Create fallback admin data from emissions
-          const fallbackAdminData = createFallbackAdminData(allEmissions, stats);
-          setAdminData(fallbackAdminData);
+          console.warn('⚠️ Admin dashboard API unavailable:', error.message);
+          // NO FALLBACK - just show what we have from emissions
+          setAdminData(null);
         }
       }
       
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('❌ Error fetching dashboard data:', error);
+      setError('Failed to load dashboard data. Please try refreshing.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const createFallbackAdminData = (emissions, stats) => {
-    // Create admin data from available emission data
-    const uniqueUsers = new Set(emissions.map(e => e.user)).size;
-    const recentEmissions = emissions.filter(e => {
-      const emissionDate = new Date(e.createdAt);
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      return emissionDate >= yesterday;
-    });
-
-    return {
-      userStats: {
-        total: Math.max(uniqueUsers, 1),
-        active: Math.max(uniqueUsers, 1),
-        inactive: 0,
-        newToday: recentEmissions.length,
-        newThisWeek: emissions.filter(e => {
-          const emissionDate = new Date(e.createdAt);
-          const weekAgo = new Date();
-          weekAgo.setDate(weekAgo.getDate() - 7);
-          return emissionDate >= weekAgo;
-        }).length
-      },
-      activityStats: {
-        total: emissions.length,
-        today: recentEmissions.length,
-        thisWeek: emissions.filter(e => {
-          const emissionDate = new Date(e.createdAt);
-          const weekAgo = new Date();
-          weekAgo.setDate(weekAgo.getDate() - 7);
-          return emissionDate >= weekAgo;
-        }).length,
-        thisMonth: emissions.length
-      },
-      emissionStats: {
-        total: emissions.length,
-        pending: emissions.filter(e => e.status === 'pending').length,
-        verified: emissions.filter(e => e.status === 'verified' || e.status === 'active').length,
-        rejected: emissions.filter(e => e.status === 'rejected').length,
-        thisWeek: emissions.filter(e => {
-          const emissionDate = new Date(e.createdAt);
-          const weekAgo = new Date();
-          weekAgo.setDate(weekAgo.getDate() - 7);
-          return emissionDate >= weekAgo;
-        }).length
-      },
-      topUsers: [
-        {
-          user: {
-            id: user?.id || 'current_user',
-            name: user?.name || 'Current User',
-            email: user?.email || 'user@example.com',
-            role: user?.role || 'contributor'
-          },
-          activityCount: emissions.length
-        }
-      ],
-      criticalActivities: [],
-      securityAlerts: []
-    };
   };
 
   const processDashboardData = (stats, emissions) => {
     const totalEmissions = stats.scope1.total + stats.scope2.total + stats.scope3.total;
     const totalEntries = emissions.length;
     
+    console.log('📊 Processing dashboard data:', {
+      totalEntries,
+      totalEmissions: totalEmissions.toFixed(2),
+      scope1Count: emissions.filter(e => e.scope === 1).length,
+      scope2Count: emissions.filter(e => e.scope === 2).length,
+      scope3Count: emissions.filter(e => e.scope === 3).length
+    });
+    
     const processScope = (scopeData, scopeTotal, scopeNumber) => {
-      // Count entries for this scope
       const scopeEntries = emissions.filter(e => e.scope === scopeNumber).length;
       
       const topCategories = Object.entries(scopeData.activities)
@@ -190,7 +145,7 @@ const Dashboard = () => {
         total: scopeTotal,
         percentage: totalEmissions > 0 ? (scopeTotal / totalEmissions) * 100 : 0,
         topCategories,
-        count: scopeEntries // Add entry count for each scope
+        count: scopeEntries
       };
     };
 
@@ -252,7 +207,6 @@ const Dashboard = () => {
     }
   };
 
-  // Helper functions moved inside component
   const getRoleDescription = (role) => {
     const descriptions = {
       admin: "Full system access with user management and monitoring capabilities.",
@@ -290,6 +244,56 @@ const Dashboard = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Dashboard</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={fetchDashboardData}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state if no data
+  if (dashboardData.totalEntries === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader 
+          title="Dashboard"
+          breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
+        />
+        
+        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
+          <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">No Data Available</h2>
+          <p className="text-gray-600 mb-6">
+            Your organisation doesn't have any emission data yet.
+            {user?.organisation?.name && (
+              <span className="block mt-2 text-sm">
+                Organisation: <strong>{user.organisation.name}</strong>
+              </span>
+            )}
+          </p>
+          <button
+            onClick={() => window.location.href = '/input'}
+            className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 inline-flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Your First Emission</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Welcome Header with Role-based Content */}
@@ -303,6 +307,11 @@ const Dashboard = () => {
             <p className="text-gray-600 mb-2">
               {getRoleDescription(user?.role)}
             </p>
+            {user?.organisation?.name && (
+              <p className="text-sm text-emerald-700 font-medium mb-2">
+                Organisation: {user.organisation.name}
+              </p>
+            )}
             <div className="flex items-center space-x-4 text-sm text-gray-600">
               <span className="flex items-center space-x-1">
                 <Database className="w-4 h-4" />
@@ -323,7 +332,6 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="hidden md:flex items-center space-x-4">
-            {/* Role Badge */}
             <div className={`px-3 py-1 rounded-full text-sm font-medium ${getRoleBadgeColor(user?.role)}`}>
               {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
             </div>
@@ -370,7 +378,7 @@ const Dashboard = () => {
         }
       />
 
-      {/* Admin Summary (Admin Only) */}
+      {/* Admin Summary (Admin Only) - Only show if data available */}
       {isAdmin(user?.role) && adminData && (
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between mb-4">
