@@ -307,18 +307,16 @@ app.use('/api/dashboard', authenticateToken, dashboardRouter);
 // ANALYTICS ROUTES (Admin, Analyst, Viewer)
 // ============================================
 
-const analyticsRouter = express.Router();
-analyticsRouter.get('*', 
-  authorizeRoles('admin', 'analyst', 'viewer'),
-  (req, res) => {
-    res.json({ 
-      message: 'Analytics endpoint placeholder', 
-      userRole: req.user.role,
-      hasAccess: true
-    });
-  }
+const analysisRouter = require('./routes/analytics');
+
+// Analysis endpoints - uses SAME middleware pattern as your existing routes
+app.use('/api/analysis', 
+  authenticateToken,              // Your existing auth middleware
+  addOrganisationContext,         // Your existing org context middleware
+  requireOrganisation,            // Your existing org requirement middleware
+  authorizeRoles('admin', 'analyst', 'viewer'),  // Your existing RBAC middleware
+  analysisRouter
 );
-app.use('/api/analytics', authenticateToken, analyticsRouter);
 
 // ============================================
 // MONITOR ROUTES (Admin, Viewer)

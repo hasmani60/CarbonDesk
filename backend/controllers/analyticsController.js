@@ -1,91 +1,51 @@
-// controllers/analyticsController.js
-const { Emission } = require('../models');
+// backend/controllers/analyticsController.js - COMPLETE REPLACEMENT
+// Uses existing organization filtering pattern from your codebase
 
-// @desc    Get emission trends
-// @route   GET /api/analytics/trends
-// @access  Private
-const getEmissionTrends = async (req, res) => {
+const advancedAnalyticsService = require('../services/advancedAnalyticsService');
+
+// @desc    Get emissions trajectory analysis
+// @route   GET /api/analysis/emissions-trajectory
+// @access  Private (Admin, Analyst, Viewer)
+const getEmissionsTrajectory = async (req, res) => {
   try {
-    const { 
-      scope, 
-      dateRange = '12months', 
-      startDate, 
-      endDate 
-    } = req.query;
-
-    let matchStage = { status: 'verified' };
-
-    // Apply scope filter
-    if (scope && scope !== 'all') {
-      matchStage.scope = parseInt(scope);
+    console.log('📈 Trajectory analysis requested by:', req.user?.email, 'Org:', req.organisationId);
+    
+    const { startDate, endDate, targetScenario = '1.5C' } = req.query;
+    
+    // Match existing validation pattern
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'startDate and endDate are required'
+      });
     }
-
-    // Apply date filter
-    let dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    } else {
-      const now = new Date();
-      switch (dateRange) {
-        case '7days':
-          dateFilter.$gte = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case '30days':
-          dateFilter.$gte = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
-        case '3months':
-          dateFilter.$gte = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-          break;
-        case '6months':
-          dateFilter.$gte = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-          break;
-        default: // 12months
-          dateFilter.$gte = new Date(now.getFullYear(), 0, 1);
-      }
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
     }
-
-    matchStage['accountingPeriod.start'] = dateFilter;
-
-    const trends = await Emission.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$accountingPeriod.start' },
-            month: { $month: '$accountingPeriod.start' },
-            scope: '$scope'
-          },
-          totalEmissions: { $sum: '$totalEmissions' },
-          count: { $sum: 1 }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            year: '$_id.year',
-            month: '$_id.month'
-          },
-          scopes: {
-            $push: {
-              scope: '$_id.scope',
-              totalEmissions: '$totalEmissions',
-              count: '$count'
-            }
-          },
-          totalEmissions: { $sum: '$totalEmissions' }
-        }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
-    ]);
-
+    
+    const result = await advancedAnalyticsService.calculateEmissionsTrajectory({
+      startDate,
+      endDate,
+      organisationId,
+      targetScenario
+    });
+    
+    console.log(`✅ Trajectory calculated for org: ${req.organisation?.name}, periods: ${result.historical.length}`);
+    
     res.json({
       success: true,
-      data: trends
+      data: result,
+      organisation: req.organisation?.name || 'N/A'
     });
   } catch (error) {
+    console.error('❌ Emissions trajectory error:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -93,55 +53,216 @@ const getEmissionTrends = async (req, res) => {
   }
 };
 
-// @desc    Get scope comparison
-// @route   GET /api/analytics/scope-comparison
-// @access  Private
-const getScopeComparison = async (req, res) => {
+// @desc    Get emissions velocity and acceleration
+// @route   GET /api/analysis/emissions-velocity
+// @access  Private (Admin, Analyst, Viewer)
+const getEmissionsVelocity = async (req, res) => {
   try {
-    const { dateRange = 'currentYear' } = req.query;
+    console.log('⚡ Velocity analysis requested by:', req.user?.email, 'Org:', req.organisationId);
     
-    const now = new Date();
-    let startDate, endDate;
-
-    switch (dateRange) {
-      case 'currentYear':
-        startDate = new Date(now.getFullYear(), 0, 1);
-        endDate = new Date(now.getFullYear(), 11, 31);
-        break;
-      case 'lastYear':
-        startDate = new Date(now.getFullYear() - 1, 0, 1);
-        endDate = new Date(now.getFullYear() - 1, 11, 31);
-        break;
-      default:
-        startDate = new Date(now.getFullYear(), 0, 1);
-        endDate = new Date(now.getFullYear(), 11, 31);
+    const { startDate, endDate } = req.query;
+    
+    // Match existing validation pattern
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'startDate and endDate are required'
+      });
     }
-
-    const comparison = await Emission.aggregate([
-      {
-        $match: {
-          'accountingPeriod.start': { $gte: startDate, $lte: endDate },
-          status: 'verified'
-        }
-      },
-      {
-        $group: {
-          _id: '$scope',
-          totalEmissions: { $sum: '$totalEmissions' },
-          avgEmissions: { $avg: '$totalEmissions' },
-          count: { $sum: 1 },
-          maxEmission: { $max: '$totalEmissions' },
-          minEmission: { $min: '$totalEmissions' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
-
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
+    }
+    
+    const result = await advancedAnalyticsService.calculateEmissionsVelocity({
+      startDate,
+      endDate,
+      organisationId
+    });
+    
+    console.log(`✅ Velocity calculated for org: ${req.organisation?.name}, periods: ${result.periods.length}`);
+    
     res.json({
       success: true,
-      data: comparison
+      data: result,
+      organisation: req.organisation?.name || 'N/A'
     });
   } catch (error) {
+    console.error('❌ Emissions velocity error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get MACC analysis
+// @route   GET /api/analysis/macc
+// @access  Private (Admin, Analyst, Viewer)
+const getMACCAnalysis = async (req, res) => {
+  try {
+    console.log('💰 MACC analysis requested by:', req.user?.email, 'Org:', req.organisationId);
+    
+    const { scope, category } = req.query;
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
+    }
+    
+    const result = await advancedAnalyticsService.calculateMACCAnalysis({
+      organisationId,
+      scope: scope ? parseInt(scope) : null,
+      category
+    });
+    
+    console.log(`✅ MACC calculated for org: ${req.organisation?.name}, opportunities: ${result.opportunities.length}`);
+    
+    res.json({
+      success: true,
+      data: result,
+      organisation: req.organisation?.name || 'N/A'
+    });
+  } catch (error) {
+    console.error('❌ MACC analysis error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get MACC opportunities
+// @route   GET /api/analysis/macc/opportunities
+// @access  Private (Admin, Analyst)
+const getMACCOpportunities = async (req, res) => {
+  try {
+    console.log('📋 MACC opportunities requested by:', req.user?.email, 'Org:', req.organisationId);
+    
+    const { scope, category } = req.query;
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
+    }
+    
+    const opportunities = await advancedAnalyticsService.getMACCOpportunities(
+      organisationId,
+      scope ? parseInt(scope) : null,
+      category
+    );
+    
+    console.log(`✅ Found ${opportunities.length} MACC opportunities for org: ${req.organisation?.name}`);
+    
+    res.json({
+      success: true,
+      data: opportunities,
+      total: opportunities.length,
+      organisation: req.organisation?.name || 'N/A'
+    });
+  } catch (error) {
+    console.error('❌ Get MACC opportunities error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Save MACC opportunity
+// @route   POST /api/analysis/macc/opportunities
+// @access  Private (Admin, Analyst)
+const saveMACCOpportunity = async (req, res) => {
+  try {
+    console.log('➕ Creating MACC opportunity by:', req.user?.email, 'Org:', req.organisationId);
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
+    }
+    
+    // Add organisation data (same pattern as emissionController.js createEmission)
+    const data = {
+      ...req.body,
+      organisationId
+    };
+    
+    const result = await advancedAnalyticsService.saveMACCOpportunity(data);
+    
+    console.log(`✅ MACC opportunity created: ${result.name} for org: ${req.organisation?.name}`);
+    
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: 'MACC opportunity saved successfully',
+      organisation: req.organisation?.name || 'N/A'
+    });
+  } catch (error) {
+    console.error('❌ Save MACC opportunity error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Delete MACC opportunity
+// @route   DELETE /api/analysis/macc/opportunities/:id
+// @access  Private (Admin, Analyst)
+const deleteMACCOpportunity = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('🗑️ Deleting MACC opportunity:', id, 'by:', req.user?.email, 'Org:', req.organisationId);
+    
+    // Use organisationId from middleware (same as emissionController.js)
+    const organisationId = req.organisationId;
+    
+    if (!organisationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organisation membership required'
+      });
+    }
+    
+    const result = await advancedAnalyticsService.deleteMACCOpportunity(id, organisationId);
+    
+    if (!result.deleted) {
+      return res.status(404).json({
+        success: false,
+        message: 'MACC opportunity not found or you do not have access to it'
+      });
+    }
+    
+    console.log(`✅ MACC opportunity deleted: ${id} from org: ${req.organisation?.name}`);
+    
+    res.json({
+      success: true,
+      message: 'MACC opportunity deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ Delete MACC opportunity error:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -150,6 +271,10 @@ const getScopeComparison = async (req, res) => {
 };
 
 module.exports = {
-  getEmissionTrends,
-  getScopeComparison
+  getEmissionsTrajectory,
+  getEmissionsVelocity,
+  getMACCAnalysis,
+  getMACCOpportunities,
+  saveMACCOpportunity,
+  deleteMACCOpportunity
 };

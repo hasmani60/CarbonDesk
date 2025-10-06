@@ -1,27 +1,25 @@
-// ===== backend/routes/analytics.js =====
+// backend/routes/analytics.js - COMPLETE REPLACEMENT
 const express = require('express');
 const router = express.Router();
+const { 
+  getEmissionsTrajectory,
+  getEmissionsVelocity,
+  getMACCAnalysis,
+  getMACCOpportunities,
+  saveMACCOpportunity,
+  deleteMACCOpportunity
+} = require('../controllers/analyticsController');
 
-// Placeholder analytics routes
-router.get('/trends', (req, res) => {
-  res.json({ 
-    success: true, 
-    data: [] 
-  });
-});
+// Trajectory analysis
+router.get('/emissions-trajectory', getEmissionsTrajectory);
 
-router.get('/scope-comparison', (req, res) => {
-  res.json({ 
-    success: true, 
-    data: [] 
-  });
-});
+// Velocity & acceleration analysis
+router.get('/emissions-velocity', getEmissionsVelocity);
 
-router.get('/by-category', (req, res) => {
-  res.json({ 
-    success: true, 
-    data: [] 
-  });
-});
+// MACC analysis
+router.get('/macc', getMACCAnalysis);
+router.get('/macc/opportunities', getMACCOpportunities);
+router.post('/macc/opportunities', saveMACCOpportunity);
+router.delete('/macc/opportunities/:id', deleteMACCOpportunity);
 
 module.exports = router;

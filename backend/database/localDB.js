@@ -293,6 +293,81 @@ class LocalDatabase {
     });
   }
 
+  async createMACCTable() {
+    return new Promise((resolve, reject) => {
+      console.log('📊 Creating MACC opportunities table...');
+  
+      const createMACCTable = `
+        CREATE TABLE IF NOT EXISTS macc_opportunities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          organisation_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          scope INTEGER,
+          cost_per_tCO2e REAL NOT NULL,
+          reduction_potential REAL NOT NULL,
+          payback_period REAL,
+          implementation_status TEXT DEFAULT 'proposed',
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          
+          FOREIGN KEY (organisation_id) REFERENCES organisations(id) ON DELETE CASCADE
+        )
+      `;
+  
+      const createIndexes = [
+        'CREATE INDEX IF NOT EXISTS idx_macc_org ON macc_opportunities(organisation_id)',
+        'CREATE INDEX IF NOT EXISTS idx_macc_cost ON macc_opportunities(cost_per_tCO2e)',
+        'CREATE INDEX IF NOT EXISTS idx_macc_scope ON macc_opportunities(scope)'
+      ];
+  
+      this.db.serialize(() => {
+        this.db.run(createMACCTable, (err) => {
+          if (err && !err.message.includes('already exists')) {
+            console.error('Error creating MACC table:', err);
+            reject(err);
+            return;
+          }
+        });
+  
+        // Create indexes
+        createIndexes.forEach((indexQuery) => {
+          this.db.run(indexQuery, (err) => {
+            if (err && !err.message.includes('already exists')) {
+              console.error('Error creating MACC index:', err);
+            }
+          });
+        });
+  
+        console.log('✅ MACC opportunities table created successfully');
+        resolve();
+      });
+    });
+  }
+  
+  // ALSO UPDATE THE init() METHOD - Add this line after createEmissionsTable():
+  
+  async init() {
+    return new Promise((resolve, reject) => {
+      this.db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+          console.error('Error opening database:', err);
+          reject(err);
+        } else {
+          console.log('✅ Local SQLite database connected');
+          this.createTables()
+            .then(() => this.createMultiTenantTables())
+            .then(() => this.createEmissionsTable())
+            .then(() => this.createMACCTable())  // ← ADD THIS LINE
+            .then(resolve)
+            .catch(reject);
+        }
+      });
+    });
+  }
+
+  
   async seedDefaultUsers() {
     return new Promise(async (resolve, reject) => {
       try {

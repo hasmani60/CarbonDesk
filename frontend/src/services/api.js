@@ -1,4 +1,4 @@
-// services/api.js - Updated API service without audit logs
+// services/api.js - Updated API service with Advanced Analytics
 import axios from 'axios';
 
 // Base API configuration
@@ -31,7 +31,6 @@ apiClient.interceptors.response.use(
   (response) => {
     console.log('API Response:', response.status, response.data);
     
-    // For successful responses, return the appropriate data
     if (response.data?.success !== false) {
       return response.data?.data ? response.data.data : response.data;
     } else {
@@ -41,7 +40,6 @@ apiClient.interceptors.response.use(
   (error) => {
     console.error('API Error:', error.response?.status, error.response?.data || error.message);
     
-    // Handle network errors gracefully
     if (!error.response) {
       console.error('Network error - backend may not be running');
       return Promise.reject({
@@ -51,7 +49,6 @@ apiClient.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      // Only redirect if we're not already on the login page
       if (!window.location.pathname.includes('/login')) {
         console.log('401 error - removing token and redirecting to login');
         localStorage.removeItem('token');
@@ -59,7 +56,6 @@ apiClient.interceptors.response.use(
       }
     }
     
-    // Handle 403 errors (access denied)
     if (error.response?.status === 403) {
       return Promise.reject({
         message: error.response.data?.message || 'Access denied. Insufficient permissions.',
@@ -81,27 +77,18 @@ export const authAPI = {
   changePassword: (passwordData) => apiClient.patch('/auth/change-password', passwordData)
 };
 
-// Admin API (Admin only endpoints) - UPDATED: Removed audit logs
+// Admin API
 export const adminAPI = {
-  // Dashboard & Overview
   getDashboard: () => apiClient.get('/admin/dashboard'),
   getSystemStats: () => apiClient.get('/admin/system-stats'),
-  
-  // User Activity Monitoring (NO MORE AUDIT LOGS)
   getAllActivities: (params) => apiClient.get('/admin/activities', { params }),
   getUserSummary: (params) => apiClient.get('/admin/user-summary', { params }),
-  
-  // REMOVED: getAuditLogs function completely
-  
-  // Export Functions
   exportActivities: (format, filters) => apiClient.get('/admin/export-activities', { 
     params: { format, ...filters },
     responseType: 'blob'
   }),
-  
-  // User Management (through users API with admin privileges)
   getAllUsers: (params) => apiClient.get('/users', { params }),
-  createUser: (userData) => apiClient.post('/users', userData), // MAIN ADD USER FUNCTIONALITY
+  createUser: (userData) => apiClient.post('/users', userData),
   updateUserRole: (userId, role) => apiClient.patch(`/users/${userId}/role`, { role }),
   updateUserStatus: (userId, status) => apiClient.patch(`/users/${userId}/status`, { status }),
   deleteUser: (userId) => apiClient.delete(`/users/${userId}`),
@@ -117,7 +104,7 @@ export const dashboardAPI = {
   getRecentActivity: () => apiClient.get('/dashboard/recent-activity')
 };
 
-// Emissions API - Enhanced with user filtering
+// Emissions API
 export const emissionsAPI = {
   getAll: (params) => apiClient.get('/emissions', { params }),
   getById: (id) => apiClient.get(`/emissions/${id}`),
@@ -133,28 +120,270 @@ export const emissionsAPI = {
     params: userId ? { userId } : {} 
   }),
   bulkCreate: (emissionsArray) => apiClient.post('/emissions/bulk', { emissions: emissionsArray }),
-  
-  // User-specific endpoints
   getMyEmissions: (params) => apiClient.get('/emissions', { params }),
   getMyStats: () => apiClient.get('/emissions/stats')
 };
 
-// Analytics API - Enhanced with user filtering
+// Analytics API - ENHANCED WITH NEW ENDPOINTS
 export const analyticsAPI = {
+  // Existing endpoints
   getTrends: (params) => apiClient.get('/analytics/trends', { params }),
   getScopeComparison: (params) => apiClient.get('/analytics/scope-comparison', { params }),
   getEmissionsByCategory: (params) => apiClient.get('/analytics/by-category', { params }),
   getMonthlyData: (params) => apiClient.get('/analytics/monthly', { params }),
   getYearlyData: (params) => apiClient.get('/analytics/yearly', { params }),
   getTopEmitters: (params) => apiClient.get('/analytics/top-emitters', { params }),
-  
-  // User-specific analytics
   getUserAnalytics: (userId, params) => apiClient.get('/analytics/user', { 
     params: { userId, ...params } 
-  })
+  }),
+
+  // ===== NEW: SCOPE MIGRATION ANALYSIS =====
+  /**
+   * Get scope migration analysis data
+   * @param {Object} params - Query parameters
+   * @param {string} params.startDate - Start date (ISO format)
+   * @param {string} params.endDate - End date (ISO format)
+   * @param {string} params.timeGranularity - 'month' | 'quarter' | 'year'
+   * @returns {Promise} Scope migration data with insights
+   */
+  getScopeMigration: (params = {}) => {
+    const defaultParams = {
+      timeGranularity: 'quarter',
+      ...params
+    };
+    return apiClient.get('/analytics/scope-migration', { params: defaultParams });
+  },
+
+  /**
+   * Get burden shifting detection analysis
+   * @param {Object} params - Query parameters
+   * @returns {Promise} Burden shifting insights
+   */
+  getBurdenShifting: (params = {}) => {
+    return apiClient.get('/analytics/burden-shifting', { params });
+  },
+
+  /**
+   * Get emission flow matrix between scopes
+   * @param {Object} params - Query parameters
+   * @returns {Promise} Flow matrix data for Sankey diagram
+   */
+  getEmissionFlows: (params = {}) => {
+    return apiClient.get('/analytics/emission-flows', { params });
+  },
+
+  // ===== NEW: HOTSPOT PARETO ANALYSIS =====
+  /**
+   * Get Pareto analysis data with drill-down capability
+   * @param {Object} params - Query parameters
+   * @param {number|string} params.scope - 1 | 2 | 3 | 'all'
+   * @param {string} params.drilldownLevel - 'scope' | 'category' | 'activity' | 'asset'
+   * @param {string} params.parentId - Parent ID for drill-down (optional)
+   * @param {Object} params.dateRange - { start, end }
+   * @returns {Promise} Pareto analysis data
+   */
+  getHotspotPareto: (params = {}) => {
+    const defaultParams = {
+      scope: 'all',
+      drilldownLevel: 'scope',
+      ...params
+    };
+    return apiClient.get('/analytics/hotspot-pareto', { params: defaultParams });
+  },
+
+  /**
+   * Get children items for Pareto drill-down
+   * @param {string} parentId - Parent item identifier
+   * @param {Object} params - Additional query parameters
+   * @returns {Promise} Child items for drill-down
+   */
+  getParetoChildren: (parentId, params = {}) => {
+    return apiClient.get(`/analytics/hotspot-pareto/${parentId}/children`, { params });
+  },
+
+  /**
+   * Get concentration risk metrics
+   * @param {Object} params - Query parameters
+   * @returns {Promise} Concentration risk analysis
+   */
+  getConcentrationRisk: (params = {}) => {
+    return apiClient.get('/analytics/concentration-risk', { params });
+  },
+
+  /**
+   * Get reduction potential analysis
+   * @param {Object} params - Query parameters
+   * @param {number} params.reductionPercentage - Target reduction % (default 50)
+   * @returns {Promise} Reduction potential metrics
+   */
+  getReductionPotential: (params = {}) => {
+    const defaultParams = {
+      reductionPercentage: 50,
+      ...params
+    };
+    return apiClient.get('/analytics/reduction-potential', { params: defaultParams });
+  },
+
+  // ===== NEW: EMISSIONS TRAJECTORY ANALYSIS =====
+  /**
+   * Get emissions trajectory analysis vs science-based targets
+   * @param {Object} params - Query parameters
+   * @param {string} params.startDate - Start date
+   * @param {string} params.endDate - End date
+   * @param {string} params.targetScenario - '1.5C' | '2C' | '2C_low'
+   * @param {number} params.baselineYear - Baseline year for targets
+   * @returns {Promise} Trajectory analysis with alignment metrics
+   */
+  getEmissionsTrajectory: (params = {}) => {
+    const defaultParams = {
+      targetScenario: '1.5C',
+      ...params
+    };
+    return apiClient.get('/analytics/emissions-trajectory', { params: defaultParams });
+  },
+
+  /**
+   * Get trajectory alignment status
+   * @param {Object} params - Query parameters
+   * @returns {Promise} Alignment metrics and recommendations
+   */
+  getTrajectoryAlignment: (params = {}) => {
+    return apiClient.get('/analytics/trajectory-alignment', { params });
+  },
+
+  // ===== NEW: VELOCITY & ACCELERATION ANALYSIS =====
+  /**
+   * Get emissions velocity and acceleration metrics
+   * @param {Object} params - Query parameters
+   * @param {string} params.startDate - Start date
+   * @param {string} params.endDate - End date
+   * @param {string} params.granularity - 'month' | 'quarter' | 'year'
+   * @returns {Promise} Velocity and acceleration data with inflection points
+   */
+  getEmissionsVelocity: (params = {}) => {
+    const defaultParams = {
+      granularity: 'quarter',
+      ...params
+    };
+    return apiClient.get('/analytics/emissions-velocity', { params: defaultParams });
+  },
+
+  /**
+   * Get inflection points (trend reversals)
+   * @param {Object} params - Query parameters
+   * @returns {Promise} Detected inflection points with context
+   */
+  getInflectionPoints: (params = {}) => {
+    return apiClient.get('/analytics/inflection-points', { params });
+  },
+
+  // ===== NEW: MACC ANALYSIS =====
+  /**
+   * Get Marginal Abatement Cost Curve analysis
+   * @param {Object} params - Query parameters
+   * @param {number} params.scope - Filter by scope (optional)
+   * @param {string} params.category - Filter by category (optional)
+   * @returns {Promise} MACC analysis with cost-effectiveness ranking
+   */
+  getMACCAnalysis: (params = {}) => {
+    return apiClient.get('/analytics/macc', { params });
+  },
+
+  /**
+   * Create or update MACC opportunity
+   * @param {Object} opportunityData - MACC opportunity data
+   * @returns {Promise} Created/updated opportunity
+   */
+  saveMACCOpportunity: (opportunityData) => {
+    return apiClient.post('/analytics/macc/opportunities', opportunityData);
+  },
+
+  /**
+   * Get MACC opportunities
+   * @param {Object} params - Query parameters
+   * @returns {Promise} List of MACC opportunities
+   */
+  getMACCOpportunities: (params = {}) => {
+    return apiClient.get('/analytics/macc/opportunities', { params });
+  },
+
+  /**
+   * Delete MACC opportunity
+   * @param {number} opportunityId - Opportunity ID
+   * @returns {Promise} Deletion confirmation
+   */
+  deleteMACCOpportunity: (opportunityId) => {
+    return apiClient.delete(`/analytics/macc/opportunities/${opportunityId}`);
+  },
+
+  // ===== EXPORT FUNCTIONS FOR ADVANCED ANALYTICS =====
+  /**
+   * Export scope migration analysis
+   * @param {string} format - 'csv' | 'json' | 'pdf'
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Blob>} File blob
+   */
+  exportScopeMigration: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/scope-migration/export', {
+      params: { format, ...filters },
+      responseType: 'blob'
+    });
+  },
+
+  /**
+   * Export Pareto analysis
+   * @param {string} format - 'csv' | 'json' | 'pdf'
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Blob>} File blob
+   */
+  exportParetoAnalysis: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/hotspot-pareto/export', {
+      params: { format, ...filters },
+      responseType: 'blob'
+    });
+  },
+
+  /**
+   * Export trajectory analysis
+   * @param {string} format - 'csv' | 'json' | 'pdf'
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Blob>} File blob
+   */
+  exportTrajectoryAnalysis: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/emissions-trajectory/export', {
+      params: { format, ...filters },
+      responseType: 'blob'
+    });
+  },
+
+  /**
+   * Export velocity analysis
+   * @param {string} format - 'csv' | 'json' | 'pdf'
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Blob>} File blob
+   */
+  exportVelocityAnalysis: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/emissions-velocity/export', {
+      params: { format, ...filters },
+      responseType: 'blob'
+    });
+  },
+
+  /**
+   * Export MACC analysis
+   * @param {string} format - 'csv' | 'json' | 'pdf'
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Blob>} File blob
+   */
+  exportMACCAnalysis: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/macc/export', {
+      params: { format, ...filters },
+      responseType: 'blob'
+    });
+  }
 };
 
-// Monitor API - Enhanced with user activity tracking
+// Monitor API
 export const monitorAPI = {
   getActivities: (params) => apiClient.get('/monitor/activities', { params }),
   createTask: (taskData) => apiClient.post('/monitor/tasks', taskData),
@@ -162,26 +391,22 @@ export const monitorAPI = {
   deleteTask: (id) => apiClient.delete(`/monitor/tasks/${id}`),
   getTasks: (params) => apiClient.get('/monitor/tasks', { params }),
   assignActivity: (assignmentData) => apiClient.post('/monitor/assign', assignmentData),
-  
-  // Task management
   getMyTasks: (params) => apiClient.get('/monitor/tasks', { params: { ...params, assignedToMe: true } }),
   getTaskById: (id) => apiClient.get(`/monitor/tasks/${id}`),
   updateTaskStatus: (id, status) => apiClient.patch(`/monitor/tasks/${id}`, { status })
 };
 
-// Users API - Enhanced for role-based access
+// Users API
 export const usersAPI = {
   getAll: (params) => apiClient.get('/users', { params }),
   getById: (id) => apiClient.get(`/users/${id}`),
-  create: (userData) => apiClient.post('/users', userData), // ADD USER FUNCTIONALITY
+  create: (userData) => apiClient.post('/users', userData),
   update: (id, userData) => apiClient.patch(`/users/${id}`, userData),
   delete: (id) => apiClient.delete(`/users/${id}`),
   updateRole: (id, role) => apiClient.patch(`/users/${id}/role`, { role }),
   updateStatus: (id, status) => apiClient.patch(`/users/${id}/status`, { status }),
   getCurrentUser: () => apiClient.get('/users/me'),
   getStats: () => apiClient.get('/users/stats'),
-  
-  // Profile management
   getProfile: () => apiClient.get('/auth/verify'),
   updateProfile: (profileData) => apiClient.patch('/auth/profile', profileData),
   changePassword: (passwordData) => apiClient.patch('/auth/change-password', passwordData)
@@ -195,8 +420,6 @@ export const vehiclesAPI = {
   update: (id, vehicleData) => apiClient.patch(`/vehicles/${id}`, vehicleData),
   delete: (id) => apiClient.delete(`/vehicles/${id}`),
   getByType: (type) => apiClient.get(`/vehicles/type/${type}`),
-  
-  // User-specific vehicles
   getMyVehicles: (params) => apiClient.get('/vehicles', { params: { ...params, owner: 'me' } })
 };
 
@@ -217,7 +440,7 @@ export const organizationAPI = {
   updateSettings: (settingsData) => apiClient.patch('/organization/settings', settingsData)
 };
 
-// Notifications API - Enhanced with user targeting
+// Notifications API
 export const notificationAPI = {
   getAll: (params) => apiClient.get('/notifications', { params }),
   getById: (id) => apiClient.get(`/notifications/${id}`),
@@ -225,13 +448,11 @@ export const notificationAPI = {
   markAsRead: (id) => apiClient.patch(`/notifications/${id}/read`),
   markAllAsRead: () => apiClient.patch('/notifications/mark-all-read'),
   delete: (id) => apiClient.delete(`/notifications/${id}`),
-  
-  // User-specific notifications
   getMyNotifications: (params) => apiClient.get('/notifications', { params }),
   getUnreadCount: () => apiClient.get('/notifications/unread-count')
 };
 
-// Export API - Enhanced with role-based filtering
+// Export API
 export const exportAPI = {
   exportActivities: (format, filters) => apiClient.get('/export/activities', { 
     params: { format, ...filters },
@@ -251,27 +472,25 @@ export const exportAPI = {
   })
 };
 
-// Activity Logging API (for frontend activity tracking)
+// Activity Logging API
 export const activityAPI = {
   logActivity: (activityData) => apiClient.post('/activity/log', activityData),
   getUserActivities: (userId, params) => apiClient.get(`/activity/user/${userId}`, { params }),
   getRecentActivities: (params) => apiClient.get('/activity/recent', { params })
 };
 
-// ENHANCED RBAC Utility functions
+// RBAC Utility functions
 export const hasRole = (userRole, requiredRoles) => {
   if (!userRole || !requiredRoles) return false;
   const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
   return roles.includes(userRole);
 };
 
-// Role checking functions
 export const isAdmin = (userRole) => hasRole(userRole, 'admin');
 export const isAnalyst = (userRole) => hasRole(userRole, ['admin', 'analyst']);
 export const isContributor = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor']);
 export const isViewer = (userRole) => hasRole(userRole, ['admin', 'analyst', 'contributor', 'viewer']);
 
-// Specific permission functions
 export const canManageUsers = (userRole) => isAdmin(userRole);
 export const canCreateUsers = (userRole) => isAdmin(userRole);
 export const canViewAllUsers = (userRole) => hasRole(userRole, ['admin', 'analyst']);
