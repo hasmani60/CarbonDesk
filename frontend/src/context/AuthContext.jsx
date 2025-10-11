@@ -1,6 +1,7 @@
-// context/AuthContext.jsx - Enhanced with RBAC Support and Organization Context Clearing
+// context/AuthContext.jsx - Fixed to properly detect scopes from allowedActivities
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
+import { emissionFactors } from '../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext({});
@@ -43,7 +44,7 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         setPermissions(userData.permissions || {});
         setIsAuthenticated(true);
-        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role, 'Org ID:', userData.organisation_id, 'Restrictions:', userData.restrictions);
+        console.log('Auth initialized for user:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
       } else {
         // Invalid token
         console.log('Token verification failed');
@@ -87,13 +88,10 @@ export const AuthProvider = ({ children }) => {
       // Handle different response formats
       let loginData;
       if (response && response.data) {
-        // Standard format: { success: true, data: { token, user } }
         loginData = response.data;
       } else if (response && response.token && response.user) {
-        // Direct format: { token, user }
         loginData = response;
       } else if (response) {
-        // Response is the data itself
         loginData = response;
       } else {
         throw new Error('Invalid response format');
@@ -110,28 +108,18 @@ export const AuthProvider = ({ children }) => {
       // Store token
       localStorage.setItem('token', token);
       
-      // CRITICAL: Log the organization_id from login response
-      console.log('=================================');
-      console.log('USER LOGIN ORGANIZATION CONTEXT:');
-      console.log('User ID:', userData.id);
-      console.log('User Email:', userData.email);
-      console.log('User Role:', userData.role);
-      console.log('Organisation ID:', userData.organisation_id);
-      console.log('=================================');
-      
       // Set user state
       setUser(userData);
       setPermissions(userData.permissions || {});
       setIsAuthenticated(true);
       
-      console.log('Login successful for:', userData.email, 'Role:', userData.role, 'Org ID:', userData.organisation_id, 'Restrictions:', userData.restrictions);
+      console.log('Login successful for:', userData.email, 'Role:', userData.role, 'Restrictions:', userData.restrictions);
       toast.success(`Welcome back, ${userData.name}!`);
       
       return { success: true, user: userData };
     } catch (error) {
       console.error('Login error in AuthContext:', error);
       
-      // Extract error message
       let message = 'Login failed';
       
       if (error.response?.data?.message) {
@@ -152,16 +140,12 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      // Call logout endpoint
       await authAPI.logout();
     } catch (error) {
       console.error('Logout API call failed:', error);
-      // Continue with logout even if API call fails
     } finally {
-      // Clear local state
       localStorage.removeItem('token');
       
-      // ALSO CLEAR organization cached data on logout
       const keysToRemove = [
         'emissions',
         'dashboardData',
@@ -220,11 +204,22 @@ export const AuthProvider = ({ children }) => {
   const canAccess = (resource, action = 'read') => {
     if (!isAuthenticated) return false;
     
-    // Admin has access to everything
     if (user?.role === 'admin') return true;
     
     const permissionKey = `${resource}_${action}`;
     return hasPermission(permissionKey);
+  };
+
+  // CRITICAL FIX: Helper to get which scope an activity belongs to
+  const getScopeForActivity = (activityName) => {
+    for (let scope = 1; scope <= 3; scope++) {
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      if (scopeData && Object.keys(scopeData).includes(activityName)) {
+        return scope;
+      }
+    }
+    return null;
   };
 
   // RBAC: Check if user can access specific scope
@@ -237,7 +232,7 @@ export const AuthProvider = ({ children }) => {
     // Viewers can access all scopes for viewing
     if (user?.role === 'viewer') return true;
     
-    // Contributors with granular restrictions
+    // Contributors with restrictions
     if (user?.role === 'contributor') {
       if (!user.restrictions) {
         return true; // No restrictions = full access (legacy users)
@@ -246,30 +241,29 @@ export const AuthProvider = ({ children }) => {
       const { allowedScopes, allowedActivities } = user.restrictions;
       
       // Check if scope is explicitly allowed
-      if (allowedScopes && allowedScopes.includes(parseInt(scope))) {
+      if (allowedScopes && allowedScopes.length > 0 && allowedScopes.includes(parseInt(scope))) {
         return true;
       }
       
-      // Check if user has any activities in this scope
+      // CRITICAL FIX: Check if user has any activities in this scope
       if (allowedActivities && allowedActivities.length > 0) {
-        // Import emission factors to check which activities belong to this scope
-        // For now, we'll do a simple check - you might want to import emissionFactors here
-        const scopeActivities = {
-          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-          2: ['Electricity Purchased'],
-          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-        };
-        
-        const activitiesInScope = scopeActivities[parseInt(scope)] || [];
-        const hasActivityInScope = allowedActivities.some(activity => 
-          activitiesInScope.includes(activity)
-        );
+        // Check each allowed activity to see if it belongs to this scope
+        const hasActivityInScope = allowedActivities.some(activity => {
+          const activityScope = getScopeForActivity(activity);
+          return activityScope === parseInt(scope);
+        });
         
         return hasActivityInScope;
       }
       
-      // No explicit scope access and no activities in this scope
-      return false;
+      // If allowedScopes is empty array and allowedActivities is empty array, no access
+      if (Array.isArray(allowedScopes) && allowedScopes.length === 0 && 
+          Array.isArray(allowedActivities) && allowedActivities.length === 0) {
+        return false;
+      }
+      
+      // Default: if no explicit restrictions, allow access
+      return true;
     }
     
     return false;
@@ -285,7 +279,7 @@ export const AuthProvider = ({ children }) => {
     // Viewers can access all activities for viewing
     if (user?.role === 'viewer') return true;
     
-    // Contributors with granular restrictions
+    // Contributors with restrictions
     if (user?.role === 'contributor') {
       if (!user.restrictions) {
         return true; // No restrictions = full access (legacy users)
@@ -294,30 +288,18 @@ export const AuthProvider = ({ children }) => {
       const { allowedScopes, allowedActivities } = user.restrictions;
       
       // If user has specific activity restrictions, check if this activity is allowed
-      if (allowedActivities && allowedActivities.length > 0) {
+      if (allowedActivities && Array.isArray(allowedActivities) && allowedActivities.length > 0) {
         return allowedActivities.includes(activity);
       }
       
       // If no specific activity restrictions, check scope-level access
-      // Find which scope this activity belongs to
-      const scopeActivities = {
-        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-        2: ['Electricity Purchased'],
-        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-      };
-      
-      for (let scope = 1; scope <= 3; scope++) {
-        const activitiesInScope = scopeActivities[scope] || [];
-        if (activitiesInScope.includes(activity)) {
-          // Check if user has access to this scope
-          if (allowedScopes && allowedScopes.includes(scope)) {
-            return true;
-          }
-          break;
-        }
+      const activityScope = getScopeForActivity(activity);
+      if (activityScope && allowedScopes && Array.isArray(allowedScopes)) {
+        return allowedScopes.includes(activityScope);
       }
       
-      return false;
+      // Default: if no explicit restrictions, allow access
+      return true;
     }
     
     return false;
@@ -351,6 +333,7 @@ export const AuthProvider = ({ children }) => {
     return true;
   };
 
+  // CRITICAL FIX: Get effective allowed scopes (including scopes derived from activities)
   const getEffectiveAllowedScopes = () => {
     if (!isAuthenticated) return [];
     
@@ -370,25 +353,16 @@ export const AuthProvider = ({ children }) => {
       const effectiveScopes = new Set();
       
       // Add explicitly allowed scopes
-      if (allowedScopes) {
+      if (allowedScopes && Array.isArray(allowedScopes)) {
         allowedScopes.forEach(scope => effectiveScopes.add(scope));
       }
       
-      // Add scopes that have allowed activities
-      if (allowedActivities && allowedActivities.length > 0) {
-        const scopeActivities = {
-          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-          2: ['Electricity Purchased'],
-          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-        };
-        
+      // CRITICAL FIX: Add scopes that have allowed activities
+      if (allowedActivities && Array.isArray(allowedActivities) && allowedActivities.length > 0) {
         allowedActivities.forEach(activity => {
-          for (let scope = 1; scope <= 3; scope++) {
-            const activitiesInScope = scopeActivities[scope] || [];
-            if (activitiesInScope.includes(activity)) {
-              effectiveScopes.add(scope);
-              break;
-            }
+          const scope = getScopeForActivity(activity);
+          if (scope) {
+            effectiveScopes.add(scope);
           }
         });
       }
@@ -401,65 +375,53 @@ export const AuthProvider = ({ children }) => {
 
   // RBAC: Get user's allowed scopes
   const getAllowedScopes = () => {
-    return getEffectiveAllowedScopes();
+    const scopes = getEffectiveAllowedScopes();
+    console.log('📋 getAllowedScopes() returning:', scopes);
+    return scopes;
   };
   
-  // ADD this function to get user's allowed activities for a specific scope:
+  // Get user's allowed activities for a specific scope
   const getAllowedActivitiesForScope = (scope) => {
     if (!isAuthenticated) return [];
     
     // Admin and analysts have full access
     if (['admin', 'analyst'].includes(user?.role)) {
-      const scopeActivities = {
-        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-        2: ['Electricity Purchased'],
-        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-      };
-      return scopeActivities[scope] || [];
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      return scopeData ? Object.keys(scopeData) : [];
     }
     
     // Viewers can see all activities
     if (user?.role === 'viewer') {
-      const scopeActivities = {
-        1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-        2: ['Electricity Purchased'],
-        3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-      };
-      return scopeActivities[scope] || [];
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      return scopeData ? Object.keys(scopeData) : [];
     }
     
     // Contributors with restrictions
     if (user?.role === 'contributor') {
       if (!user.restrictions) {
-        const scopeActivities = {
-          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-          2: ['Electricity Purchased'],
-          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-        };
-        return scopeActivities[scope] || []; // No restrictions = full access
+        const scopeKey = `scope${scope}`;
+        const scopeData = emissionFactors[scopeKey];
+        return scopeData ? Object.keys(scopeData) : [];
       }
       
       const { allowedScopes, allowedActivities } = user.restrictions;
       
       // If scope is explicitly allowed, return all activities in that scope
-      if (allowedScopes && allowedScopes.includes(scope)) {
-        const scopeActivities = {
-          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-          2: ['Electricity Purchased'],
-          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-        };
-        return scopeActivities[scope] || [];
+      if (allowedScopes && Array.isArray(allowedScopes) && allowedScopes.includes(scope)) {
+        const scopeKey = `scope${scope}`;
+        const scopeData = emissionFactors[scopeKey];
+        return scopeData ? Object.keys(scopeData) : [];
       }
       
       // Otherwise, return only allowed activities for this scope
-      if (allowedActivities && allowedActivities.length > 0) {
-        const scopeActivities = {
-          1: ['Fuel from Generator', 'Wood Burnt for Boilers', 'Fuel Used by Company vehicles', 'Refrigerant Purchased', 'Water Used', 'Water Recycled', 'Waste Generation', 'Fuel used in mess', 'Steam Production', 'AC service data'],
-          2: ['Electricity Purchased'],
-          3: ['Transport: Harbor to plant', 'Export of Material', 'Domestic Sales Transport', 'Employee transport', 'Business travel']
-        };
+      if (allowedActivities && Array.isArray(allowedActivities) && allowedActivities.length > 0) {
+        const scopeKey = `scope${scope}`;
+        const scopeData = emissionFactors[scopeKey];
+        if (!scopeData) return [];
         
-        const activitiesInScope = scopeActivities[scope] || [];
+        const activitiesInScope = Object.keys(scopeData);
         return allowedActivities.filter(activity => activitiesInScope.includes(activity));
       }
       
@@ -473,7 +435,7 @@ export const AuthProvider = ({ children }) => {
   const getAllowedActivities = () => {
     if (!isAuthenticated) return [];
     
-    // Admin and analysts have full access
+    // Admin and analysts have full access (return empty to indicate no restrictions)
     if (['admin', 'analyst'].includes(user?.role)) return [];
     
     // Contributors with restrictions
@@ -590,6 +552,7 @@ export const AuthProvider = ({ children }) => {
     getAllowedActivities,
     getEffectiveAllowedScopes,
     getAllowedActivitiesForScope,
+    getScopeForActivity, // Export this helper
     
     // Role helpers
     isAdmin,

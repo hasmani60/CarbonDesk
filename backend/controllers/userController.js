@@ -1,5 +1,5 @@
 // backend/controllers/userController.js
-// Complete user controller with organisation scoping
+// Complete user controller with RBAC restrictions support
 
 const localDB = require('../database/localDB');
 const { scopeQuery } = require('../middleware/organisationScope');
@@ -33,14 +33,21 @@ const getUsers = async (req, res) => {
     // Remove sensitive data (password already excluded by getAllUsers)
     const sanitizedUsers = users.map(user => ({
       id: user.id,
+      _id: user.id, // Add _id for frontend compatibility
       name: user.name,
       email: user.email,
       role: user.role,
       status: user.status,
       organisation_id: user.organisation_id,
       restrictions: user.restrictions,
+      createdAt: user.created_at,
       created_at: user.created_at,
-      last_login: user.last_login
+      lastLogin: user.last_login,
+      last_login: user.last_login,
+      statistics: {
+        totalActivities: 0,
+        lastActivity: user.last_login
+      }
     }));
     
     console.log(`✅ Found ${sanitizedUsers.length} users in organisation: ${req.organisation?.name}`);
@@ -127,8 +134,19 @@ const getUserById = async (req, res) => {
 const createUser = async (req, res) => {
   try {
     console.log('➕ Creating user for org:', req.organisationId, 'by admin:', req.user.email);
+    console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
     
-    const { name, email, password, role, restrictions } = req.body;
+    const { 
+      name, 
+      email, 
+      password, 
+      role, 
+      status,
+      allowedScopes,
+      allowedActivities,
+      restrictedPages,
+      restrictions // Also support restrictions object directly
+    } = req.body;
     
     // Validate required fields
     if (!name || !email || !password) {
@@ -173,21 +191,52 @@ const createUser = async (req, res) => {
       });
     }
     
+    // CRITICAL: Build restrictions object properly
+    let userRestrictions = null;
+    
+    // If restrictions object is provided directly, use it
+    if (restrictions && typeof restrictions === 'object') {
+      userRestrictions = restrictions;
+    } 
+    // Otherwise, build from individual fields (frontend sends these)
+    else if ((role || 'contributor') === 'contributor') {
+      // Only create restrictions object if at least one restriction is provided
+      if (allowedScopes || allowedActivities || restrictedPages) {
+        userRestrictions = {
+          allowedScopes: Array.isArray(allowedScopes) ? allowedScopes : [],
+          allowedActivities: Array.isArray(allowedActivities) ? allowedActivities : [],
+          restrictedPages: Array.isArray(restrictedPages) ? restrictedPages : []
+        };
+        
+        console.log('🔒 Built restrictions object:', JSON.stringify(userRestrictions, null, 2));
+      }
+    }
+    
     // Prepare user data
     const userData = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
       role: role || 'contributor',
-      status: 'active',
-      restrictions: restrictions || null,
+      status: status || 'active',
+      restrictions: userRestrictions, // CRITICAL: Pass restrictions here
       organisation_id: req.organisationId // CRITICAL: Add organisation
     };
     
-    console.log('📝 Creating user with organisation:', userData.organisation_id);
+    console.log('🔐 Creating user with data:', {
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      status: userData.status,
+      organisation_id: userData.organisation_id,
+      restrictions: userData.restrictions
+    });
     
     // Create user
     const newUser = await localDB.createUser(userData);
+    
+    console.log('✅ User created in database with ID:', newUser.id);
+    console.log('🔒 Restrictions saved:', JSON.stringify(newUser.restrictions, null, 2));
     
     // Log activity
     await localDB.logActivity({
@@ -203,16 +252,19 @@ const createUser = async (req, res) => {
     // Remove password from response
     const sanitizedUser = {
       id: newUser.id,
+      _id: newUser.id, // Add _id for frontend compatibility
       name: newUser.name,
       email: newUser.email,
       role: newUser.role,
       status: newUser.status,
       organisation_id: newUser.organisation_id,
-      restrictions: newUser.restrictions,
+      restrictions: newUser.restrictions, // CRITICAL: Include restrictions in response
+      createdAt: newUser.created_at,
       created_at: newUser.created_at
     };
     
-    console.log(`✅ User created: ${newUser.email} for organisation: ${req.organisation?.name}`);
+    console.log(`✅ User created successfully: ${newUser.email} for organisation: ${req.organisation?.name}`);
+    console.log('📤 Sending response with restrictions:', JSON.stringify(sanitizedUser.restrictions, null, 2));
     
     res.status(201).json({
       success: true,
@@ -322,9 +374,15 @@ const updateUserRole = async (req, res) => {
 const updateUserRestrictions = async (req, res) => {
   try {
     const { id } = req.params;
-    const { restrictions } = req.body;
+    const { 
+      restrictions,
+      allowedScopes,
+      allowedActivities,
+      restrictedPages
+    } = req.body;
     
     console.log('✏️ Updating user restrictions:', id, 'by admin:', req.user.email);
+    console.log('📦 Received data:', JSON.stringify(req.body, null, 2));
     
     // Get user to check organisation
     const user = await localDB.findUserById(id);
@@ -344,16 +402,26 @@ const updateUserRestrictions = async (req, res) => {
       });
     }
     
-    // Validate restrictions format
-    if (restrictions && typeof restrictions !== 'object') {
-      return res.status(400).json({
-        success: false,
-        message: 'Restrictions must be an object'
-      });
+    // Build restrictions object
+    let userRestrictions = null;
+    
+    // If restrictions object is provided directly, use it
+    if (restrictions && typeof restrictions === 'object') {
+      userRestrictions = restrictions;
+    }
+    // Otherwise, build from individual fields
+    else if (allowedScopes || allowedActivities || restrictedPages) {
+      userRestrictions = {
+        allowedScopes: Array.isArray(allowedScopes) ? allowedScopes : [],
+        allowedActivities: Array.isArray(allowedActivities) ? allowedActivities : [],
+        restrictedPages: Array.isArray(restrictedPages) ? restrictedPages : []
+      };
     }
     
+    console.log('🔒 Updating to restrictions:', JSON.stringify(userRestrictions, null, 2));
+    
     // Update restrictions
-    await localDB.updateUser(id, { restrictions });
+    await localDB.updateUser(id, { restrictions: userRestrictions });
     
     // Get updated user
     const updatedUser = await localDB.findUserById(id);
@@ -370,6 +438,7 @@ const updateUserRestrictions = async (req, res) => {
     });
     
     console.log(`✅ User restrictions updated: ${user.email}`);
+    console.log('🔒 New restrictions:', JSON.stringify(updatedUser.restrictions, null, 2));
     
     res.json({
       success: true,
@@ -556,6 +625,7 @@ const getUserStats = async (req, res) => {
           COUNT(*) as totalUsers,
           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeUsers,
           SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactiveUsers,
+          SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) as suspendedUsers,
           SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as adminUsers,
           SUM(CASE WHEN role = 'analyst' THEN 1 ELSE 0 END) as analystUsers,
           SUM(CASE WHEN role = 'contributor' THEN 1 ELSE 0 END) as contributorUsers,
@@ -572,7 +642,9 @@ const getUserStats = async (req, res) => {
     
     res.json({
       success: true,
-      data: stats,
+      data: {
+        overview: stats
+      },
       organisation: req.organisation?.name || 'N/A'
     });
     

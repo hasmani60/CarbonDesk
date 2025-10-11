@@ -1,4 +1,4 @@
-// pages/Admin/UserManagement.jsx - Complete Working Version
+// pages/Admin/UserManagement.jsx - Updated to match Input.jsx RBAC structure
 import { useState, useEffect } from 'react';
 import { 
   Users, 
@@ -34,7 +34,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
 import { adminAPI } from '../../services/api';
-import { emissionFactors } from '../../data/emissionFactors';
+import { emissionFactors } from '../../data/complete_emission_factors_db';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
 
@@ -87,10 +87,14 @@ const UserManagement = () => {
       const activityCountByScope = {};
       allowedActivities.forEach(activity => {
         for (let scope = 1; scope <= 3; scope++) {
-          const activitiesInScope = Object.keys(emissionFactors[`scope${scope}`] || {});
-          if (activitiesInScope.includes(activity)) {
-            activityCountByScope[scope] = (activityCountByScope[scope] || 0) + 1;
-            break;
+          const scopeKey = `scope${scope}`;
+          const scopeData = emissionFactors[scopeKey];
+          if (scopeData) {
+            const categories = Object.keys(scopeData);
+            if (categories.includes(activity)) {
+              activityCountByScope[scope] = (activityCountByScope[scope] || 0) + 1;
+              break;
+            }
           }
         }
       });
@@ -205,23 +209,39 @@ const UserManagement = () => {
   };
 
   const loadRBACOptions = () => {
-    // RBAC options are static configuration - no API needed
+    // Get all activities from the complete emission factors database - EXACTLY as Input.jsx does
+    const activitiesPerScope = {};
+    
+    ['1', '2', '3'].forEach(scope => {
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      if (scopeData) {
+        // Get category names (NOT individual sources)
+        activitiesPerScope[scope] = Object.keys(scopeData);
+      }
+    });
+
+    console.log('📋 RBAC Options - Activities per scope:', activitiesPerScope);
+
     setRBACOptions({
       scopes: [
-        { value: 1, label: 'Scope 1 - Direct Emissions' },
-        { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)' },
-        { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)' }
+        { value: 1, label: 'Scope 1 - Direct Emissions', description: 'Direct emissions from owned or controlled sources' },
+        { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)', description: 'Indirect emissions from purchased energy' },
+        { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)', description: 'All other indirect emissions from value chain activities' }
       ],
-      activities: {
-        1: Object.keys(emissionFactors.scope1 || {}),
-        2: Object.keys(emissionFactors.scope2 || {}),
-        3: Object.keys(emissionFactors.scope3 || {})
-      },
+      activities: activitiesPerScope, // This now matches Input.jsx exactly
       roles: [
         { value: 'admin', label: 'Administrator', description: 'Full system access' },
         { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
         { value: 'contributor', label: 'Contributor', description: 'Data entry and management' },
         { value: 'viewer', label: 'Viewer', description: 'Read-only access' }
+      ],
+      pages: [
+        { value: '/dashboard', label: 'Dashboard', icon: '📊' },
+        { value: '/input', label: 'Add Emission', icon: '➕' },
+        { value: '/monitor', label: 'Monitor', icon: '👁️' },
+        { value: '/analytics', label: 'Analytics', icon: '📈' },
+        { value: '/settings', label: 'Settings', icon: '⚙️' }
       ]
     });
   };
@@ -272,7 +292,24 @@ const UserManagement = () => {
         restrictedPages: userData.restrictedPages || []
       };
       
+      // DEBUG: Log what we're sending
+      console.log('===========================================');
+      console.log('CREATING USER WITH RESTRICTIONS:');
+      console.log('User Data:', dataToSend);
+      console.log('Allowed Scopes:', dataToSend.allowedScopes);
+      console.log('Allowed Activities:', dataToSend.allowedActivities);
+      console.log('Restricted Pages:', dataToSend.restrictedPages);
+      console.log('===========================================');
+      
       const response = await adminAPI.createUser(dataToSend);
+      
+      // DEBUG: Log the response
+      console.log('===========================================');
+      console.log('CREATE USER RESPONSE:');
+      console.log('Success:', response.success !== false);
+      console.log('Response Data:', response.data || response);
+      console.log('Restrictions in response:', response.data?.restrictions || response.restrictions);
+      console.log('===========================================');
       
       if (response.success !== false) {
         toast.success(`User created successfully: ${userData.name}`);
@@ -675,7 +712,7 @@ const UserManagement = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {users.map((userItem) => (
-                  <tr key={userItem._id} className="hover:bg-gray-50">
+                  <tr key={userItem._id || userItem.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center">
@@ -692,9 +729,9 @@ const UserManagement = () => {
                     <td className="px-6 py-4">
                       <select
                         value={userItem.role}
-                        onChange={(e) => handleUpdateUserRole(userItem._id, e.target.value)}
+                        onChange={(e) => handleUpdateUserRole(userItem._id || userItem.id, e.target.value)}
                         className="text-xs px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        disabled={userItem._id === user.id}
+                        disabled={userItem._id === user.id || userItem.id === user.id}
                       >
                         <option value="admin">Admin</option>
                         <option value="analyst">Analyst</option>
@@ -711,9 +748,9 @@ const UserManagement = () => {
                     <td className="px-6 py-4">
                       <select
                         value={userItem.status}
-                        onChange={(e) => handleUpdateUserStatus(userItem._id, e.target.value)}
+                        onChange={(e) => handleUpdateUserStatus(userItem._id || userItem.id, e.target.value)}
                         className={`text-xs px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getStatusBadgeColor(userItem.status)}`}
-                        disabled={userItem._id === user.id}
+                        disabled={userItem._id === user.id || userItem.id === user.id}
                       >
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -748,7 +785,7 @@ const UserManagement = () => {
                       {getRestrictionsDisplay(userItem)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {new Date(userItem.createdAt).toLocaleDateString()}
+                      {new Date(userItem.createdAt || userItem.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
@@ -766,9 +803,9 @@ const UserManagement = () => {
                         >
                           <Activity className="w-4 h-4" />
                         </button>
-                        {userItem._id !== user.id && (
+                        {(userItem._id !== user.id && userItem.id !== user.id) && (
                           <button
-                            onClick={() => handleDeleteUser(userItem._id, userItem.name)}
+                            onClick={() => handleDeleteUser(userItem._id || userItem.id, userItem.name)}
                             className="text-red-600 hover:text-red-900 transition-colors"
                             title="Delete User"
                           >
@@ -925,7 +962,7 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
   );
 };
 
-// Create User Modal Component (with full RBAC functionality)
+// Create User Modal Component - MATCHING INPUT.JSX EXACTLY
 const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -944,11 +981,14 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [accessPreview, setAccessPreview] = useState('');
   const [activitySearchTerm, setActivitySearchTerm] = useState({});
 
-  const activitiesPerScope = {
-    1: Object.keys(emissionFactors.scope1 || {}),
-    2: Object.keys(emissionFactors.scope2 || {}),
-    3: Object.keys(emissionFactors.scope3 || {})
+  // Get activities per scope from the complete emission factors database - MATCHES INPUT.JSX
+  const activitiesPerScope = rbacOptions?.activities || {
+    1: [],
+    2: [],
+    3: []
   };
+
+  console.log('📋 Create User Modal - Activities per scope:', activitiesPerScope);
 
   useEffect(() => {
     setShowRestrictions(formData.role === 'contributor');
@@ -1069,6 +1109,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         finalFormData.restrictedPages = [];
       }
       
+      console.log('🚀 Submitting user with final data:', finalFormData);
       onSubmit(finalFormData);
     }
   };
@@ -1230,9 +1271,9 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[95vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[95vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-6 border-b">
           <h2 className="text-xl font-semibold text-gray-900">Create New User with Activity-Specific Access Control</h2>
           <button
             onClick={onClose}
@@ -1242,7 +1283,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -1345,9 +1386,9 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                   Enhanced Access Configuration:
                 </h4>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• <strong>Full Scope Access:</strong> Grant access to all activities within a scope</li>
-                  <li>• <strong>Activity-Specific Access:</strong> Choose individual activities with advanced filtering</li>
+                  <li>• <strong>Activity-Specific Access:</strong> Choose individual activity categories for granular control</li>
                   <li>• <strong>No Access:</strong> Completely deny access to a scope</li>
+                  <li>• <strong>Note:</strong> Activity categories match exactly what users see in the Input page</li>
                 </ul>
               </div>
 
@@ -1362,20 +1403,18 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md ${
                               scope === 1 ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' :
                               scope === 2 ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 
-                              'bg-gradient-to-br from-red-500 to-red-600'
+                              'bg-gradient-to-br from-purple-500 to-purple-600'
                             }`}>
                               {scope}
                             </div>
                             <div>
                               <h4 className="font-medium text-gray-900">Scope {scope}</h4>
                               <p className="text-sm text-gray-600">
-                                {scope === 1 ? 'Direct emissions from owned/controlled sources' :
-                                 scope === 2 ? 'Indirect emissions from purchased energy' :
-                                 'All other indirect emissions from value chain'}
+                                {rbacOptions.scopes.find(s => s.value === scope)?.description}
                               </p>
                               <div className="flex items-center space-x-2 mt-1">
                                 <span className="text-xs text-gray-500">
-                                  {activitiesPerScope[scope]?.length || 0} total activities
+                                  {activitiesPerScope[scope]?.length || 0} activity categories
                                 </span>
                                 {scopeSelectionMode[scope] === 'activity' && (
                                   <span className="text-xs text-blue-600">
@@ -1413,17 +1452,17 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           <label className="block text-sm font-medium text-gray-700 mb-3">
                             Access Level for Scope {scope}
                           </label>
-                          <div className="grid grid-cols-3 gap-3">
+                          <div className="grid grid-cols-2 gap-3">
                             <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                              scopeSelectionMode[scope] === 'scope' 
-                                ? 'border-green-500 bg-green-50 shadow-md' 
+                              scopeSelectionMode[scope] === 'activity' 
+                                ? 'border-blue-500 bg-blue-50 shadow-md' 
                                 : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                             }`}>
                               <input
                                 type="radio"
                                 name={`scope-${scope}-mode`}
-                                value="scope"
-                                checked={scopeSelectionMode[scope] === 'scope'}
+                                value="activity"
+                                checked={scopeSelectionMode[scope] === 'activity'}
                                 onChange={() => handleScopeSelectionModeChange(scope, 'activity')}
                                 className="text-blue-600 focus:ring-blue-500"
                               />
@@ -1432,7 +1471,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               }`} />
                               <div className="text-center">
                                 <div className="font-medium text-blue-700">Activity-Specific</div>
-                                <div className="text-xs text-blue-600">Choose individual activities</div>
+                                <div className="text-xs text-blue-600">Choose categories</div>
                               </div>
                             </label>
 
@@ -1466,7 +1505,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                             <div className="flex items-center justify-between mb-4">
                               <label className="block text-sm font-medium text-blue-900 flex items-center">
                                 <List className="w-4 h-4 mr-2" />
-                                Select Specific Activities in Scope {scope}
+                                Select Activity Categories in Scope {scope}
                               </label>
                               <div className="flex items-center space-x-2">
                                 <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
@@ -1483,7 +1522,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                                 <input
                                   type="text"
-                                  placeholder="Search activities..."
+                                  placeholder="Search activity categories..."
                                   value={activitySearchTerm[scope] || ''}
                                   onChange={(e) => setActivitySearchTerm(prev => ({
                                     ...prev,
@@ -1551,7 +1590,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                         <div className="text-xs text-gray-600">
                                           {emissionFactors?.[`scope${scope}`]?.[activity] ? 
                                             `${Object.keys(emissionFactors[`scope${scope}`][activity]).length} emission sources` :
-                                            'Various emission sources'
+                                            'Activity category for emission tracking'
                                           }
                                         </div>
                                       </div>
@@ -1582,18 +1621,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           </div>
                         )}
 
-                        {/* Status messages for other modes */}
-                        {scopeSelectionMode[scope] === 'scope' && (
-                          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center space-x-2">
-                              <Check className="w-4 h-4 text-green-600" />
-                              <p className="text-sm text-green-800">
-                                <strong>Full Access:</strong> User will have access to all {activitiesPerScope[scope]?.length || 0} activities in Scope {scope}.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
+                        {/* Status messages for none mode */}
                         {scopeSelectionMode[scope] === 'none' && (
                           <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                             <div className="flex items-center space-x-2">
@@ -1620,7 +1648,71 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                   {accessPreview || 'No access configured'}
                 </div>
                 <div className="mt-2 text-xs text-emerald-600">
-                  This preview shows exactly what the user will be able to access
+                  This preview shows exactly what the user will be able to access in the Input page
+                </div>
+              </div>
+
+              {/* Page Access Restrictions (Optional) */}
+              <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <h4 className="font-medium text-orange-900 mb-3 flex items-center">
+                  <Lock className="w-4 h-4 mr-2" />
+                  Page Access Restrictions (Optional)
+                </h4>
+                <p className="text-xs text-orange-700 mb-3">
+                  By default, contributors can access Dashboard, Input, Monitor, and Settings pages. 
+                  Select pages below to RESTRICT access (remove from available pages).
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {rbacOptions?.pages?.filter(page => 
+                    ['/dashboard', '/input', '/monitor', '/settings'].includes(page.value)
+                  ).map(page => (
+                    <label 
+                      key={page.value}
+                      className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all border-2 ${
+                        formData.restrictedPages?.includes(page.value)
+                          ? 'bg-red-50 border-red-300'
+                          : 'bg-white border-gray-200 hover:border-orange-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.restrictedPages?.includes(page.value) || false}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData(prev => ({
+                              ...prev,
+                              restrictedPages: [...(prev.restrictedPages || []), page.value]
+                            }));
+                          } else {
+                            setFormData(prev => ({
+                              ...prev,
+                              restrictedPages: (prev.restrictedPages || []).filter(p => p !== page.value)
+                            }));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-red-600 focus:ring-red-500 h-4 w-4"
+                      />
+                      <div className="flex items-center space-x-2 flex-1">
+                        <span className="text-lg">{page.icon}</span>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{page.label}</div>
+                          <div className="text-xs text-gray-600">{page.value}</div>
+                        </div>
+                      </div>
+                      {formData.restrictedPages?.includes(page.value) && (
+                        <XCircle className="w-4 h-4 text-red-600" />
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 text-xs text-orange-600">
+                  {formData.restrictedPages?.length > 0 ? (
+                    <span>⚠️ User will NOT be able to access: {formData.restrictedPages.map(p => 
+                      rbacOptions?.pages?.find(page => page.value === p)?.label
+                    ).join(', ')}</span>
+                  ) : (
+                    <span>✓ User can access all default contributor pages</span>
+                  )}
                 </div>
               </div>
 
@@ -1634,7 +1726,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           )}
 
           {/* Submit Buttons */}
-          <div className="flex space-x-3 pt-4">
+          <div className="flex space-x-3 pt-4 sticky bottom-0 bg-white border-t -mx-6 px-6 py-4">
             <button 
               type="submit" 
               disabled={loading}
@@ -1664,19 +1756,25 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         </form>
 
         {/* RBAC Information */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">
-            <Info className="w-4 h-4 mr-2" />
-            Role-Based Access Control (RBAC) + Activity-Specific Restrictions:
-          </p>
-          <div className="grid grid-cols-2 gap-4 text-xs text-blue-700">
-            <div>
-              <strong>Admin:</strong> Full system access (restrictions ignored)<br/>
-              <strong>Analyst:</strong> Analytics & Settings only<br/>
+        <div className="p-6 pt-0">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">
+              <Info className="w-4 h-4 mr-2" />
+              Role-Based Access Control (RBAC) + Activity-Specific Restrictions:
+            </p>
+            <div className="grid grid-cols-2 gap-4 text-xs text-blue-700">
+              <div>
+                <strong>Admin:</strong> Full system access (restrictions ignored)<br/>
+                <strong>Analyst:</strong> Analytics & Settings only<br/>
+              </div>
+              <div>
+                <strong>Contributor:</strong> Input & Settings (with optional activity-specific restrictions)<br/>
+                <strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)<br/>
+              </div>
             </div>
-            <div>
-              <strong>Contributor:</strong> Input & Settings (with optional activity-specific restrictions)<br/>
-              <strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)<br/>
+            <div className="mt-3 text-xs text-blue-600 border-t border-blue-200 pt-3">
+              <strong>Note:</strong> Activity categories selected here match exactly what users will see in the Input page. 
+              For example, selecting "Gaseous Fuels" gives access to all gaseous fuel types (Butane, CNG, LNG, LPG, Natural Gas, Propane).
             </div>
           </div>
         </div>

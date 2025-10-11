@@ -91,16 +91,31 @@ if (process.env.NODE_ENV === 'development') {
 
 // CORS configuration
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    process.env.CLIENT_URL
-  ].filter(Boolean),
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000',
+      process.env.CLIENT_URL
+    ].filter(Boolean);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(null, true); // Allow for development - remove in production
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
+  exposedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 }));
 
 // Apply general rate limiting
@@ -158,23 +173,95 @@ const companyController = require('./controllers/companyController');
 // COMPANY OPERATIONS ROUTES (HIDDEN)
 // ============================================
 
+console.log('🏢 Registering Company Operations routes...');
+
+// Company Auth Routes - NO authentication required for login
 const companyAuthRouter = express.Router();
 companyAuthRouter.post('/login', companyController.companyLogin);
 companyAuthRouter.get('/profile', authenticateCompanyOperator, companyController.getCompanyProfile);
-app.use('/api/company/auth', companyLimiter, companyAuthRouter);
 
+app.use('/api/company/auth', companyLimiter, companyAuthRouter);
+console.log('✅ Company auth routes registered: /api/company/auth');
+
+// Company Dashboard Routes - Requires authentication
 const companyDashboardRouter = express.Router();
 companyDashboardRouter.get('/', companyController.getCompanyDashboard);
-app.use('/api/company/dashboard', companyLimiter, authenticateCompanyOperator, companyDashboardRouter);
 
+app.use('/api/company/dashboard', 
+  companyLimiter, 
+  authenticateCompanyOperator, 
+  companyDashboardRouter
+);
+console.log('✅ Company dashboard routes registered: /api/company/dashboard');
+
+// Company Organisation Routes - Requires authentication
 const companyOrgRouter = express.Router();
-companyOrgRouter.post('/', canCreateOrganisations, logCompanyActivity('org_create', 'Creating new organisation'), companyController.createOrganisation);
-companyOrgRouter.get('/', companyController.getAllOrganisations);
-companyOrgRouter.get('/:id', companyController.getOrganisationById);
-companyOrgRouter.patch('/:id', canManageOrganisations, logCompanyActivity('org_update', 'Updating organisation'), companyController.updateOrganisation);
-companyOrgRouter.delete('/:id', canManageOrganisations, logCompanyActivity('org_deactivate', 'Deactivating organisation'), companyController.deactivateOrganisation);
-companyOrgRouter.get('/:id/stats', companyController.getOrganisationStats);
-app.use('/api/company/organisations', companyLimiter, authenticateCompanyOperator, companyOrgRouter);
+
+// CREATE new organisation (with super admin)
+companyOrgRouter.post('/', 
+  canCreateOrganisations, 
+  logCompanyActivity('org_create', 'Creating new organisation'), 
+  companyController.createOrganisation
+);
+
+// GET all organisations
+companyOrgRouter.get('/', 
+  companyController.getAllOrganisations
+);
+
+// GET organisation by ID
+companyOrgRouter.get('/:id', 
+  companyController.getOrganisationById
+);
+
+// UPDATE organisation
+companyOrgRouter.patch('/:id', 
+  canManageOrganisations, 
+  logCompanyActivity('org_update', 'Updating organisation'), 
+  companyController.updateOrganisation
+);
+
+// DELETE/DEACTIVATE organisation
+companyOrgRouter.delete('/:id', 
+  canManageOrganisations, 
+  logCompanyActivity('org_deactivate', 'Deactivating organisation'), 
+  companyController.deactivateOrganisation
+);
+
+// GET organisation stats
+companyOrgRouter.get('/:id/stats', 
+  companyController.getOrganisationStats
+);
+
+app.use('/api/company/organisations', 
+  companyLimiter, 
+  authenticateCompanyOperator, 
+  companyOrgRouter
+);
+console.log('✅ Company organisation routes registered: /api/company/organisations');
+
+// Test endpoint to verify company routes are working
+app.get('/api/company/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Company operations endpoint is accessible',
+    timestamp: new Date().toISOString(),
+    availableRoutes: [
+      'POST /api/company/auth/login',
+      'GET /api/company/auth/profile',
+      'GET /api/company/dashboard',
+      'POST /api/company/organisations',
+      'GET /api/company/organisations',
+      'GET /api/company/organisations/:id'
+    ]
+  });
+});
+console.log('✅ Company test route registered: /api/company/test');
+
+console.log('🏢 ================================');
+console.log('🏢 Company Operations routes ready!');
+console.log('🏢 ================================\n');
+
 
 // ============================================
 // REGULAR USER AUTHENTICATION ROUTES

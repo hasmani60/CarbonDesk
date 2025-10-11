@@ -1,11 +1,11 @@
-// pages/Input/Input.jsx - Complete rewrite with fixed imports and RBAC
+// pages/Input/Input.jsx - Fine-Grained RBAC Implementation
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, ChevronDown, ChevronUp, Info, Lock, Shield, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
 import { emissionsAPI } from '../../services/api';
-import { emissionFactors } from '../../data/emissionFactors';
+import { emissionFactors } from '../../data/complete_emission_factors_db';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
@@ -18,10 +18,10 @@ const Input = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeScope, setActiveScope] = useState('1');
-  const [categories, setCategories] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedCategories, setExpandedCategories] = useState({});
-  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [expandedActivities, setExpandedActivities] = useState({});
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [showEmissionForm, setShowEmissionForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -33,128 +33,163 @@ const Input = () => {
     { id: '3', label: 'Scope 3', description: 'All other indirect emissions from value chain activities' }
   ];
 
-  // Emission categories data
-  const emissionCategories = {
-    '1': [
-      {
-        name: 'Fuel from Generator',
-        description: 'Emissions from the combustion of diesel, HSD, or biofuels in company-operated generators',
-        subcategories: ['Diesel', 'HSD', 'Biofuel'],
-        icon: '⚡'
-      },
-      {
-        name: 'Wood Burnt for Boilers',
-        description: 'GHG emissions from burning biomass like firewood or coconut husk in industrial boilers',
-        subcategories: ['Firewood', 'Coconut Husk'],
-        icon: '🔥'
-      },
-      {
-        name: 'Fuel Used by Company vehicles',
-        description: 'Emissions from company-owned vehicles using petrol, diesel, or electricity',
-        subcategories: ['Diesel', 'Petrol', 'Electric'],
-        icon: '🚗'
-      },
-      {
-        name: 'Refrigerant Purchased',
-        description: 'Potential GHG emissions from refrigerant gases like R22 or R134a',
-        subcategories: ['R22', 'R134a', 'R410A'],
-        icon: '❄️'
-      },
-      {
-        name: 'Water Used',
-        description: 'Energy-associated emissions from water extraction, treatment, and use',
-        subcategories: ['Borewell', 'Municipality', 'Tanker'],
-        icon: '💧'
-      },
-      {
-        name: 'Water Recycled',
-        description: 'Efforts to reduce water-related emissions by reusing treated or collected water',
-        subcategories: ['ETP', 'RO plant', 'Rainwater'],
-        icon: '♻️'
-      },
-      {
-        name: 'Waste Generation',
-        description: 'Waste from operations like processing units or canteens',
-        subcategories: ['Organic', 'Packaging', 'Plastic', 'Sludge'],
-        icon: '🗑️'
-      },
-      {
-        name: 'Fuel used in mess',
-        description: 'Emissions from cooking fuel used in the employee mess/canteen',
-        subcategories: ['LPG', 'Firewood', 'Kerosene'],
-        icon: '🍽️'
-      },
-      {
-        name: 'Steam Production',
-        description: 'Steam generation typically uses fuel combustion in boilers',
-        subcategories: ['Steam'],
-        icon: '💨'
-      },
-      {
-        name: 'AC service data',
-        description: 'Emissions from recharging refrigerants in air conditioners',
-        subcategories: ['R134a', 'R410a'],
-        icon: '🌨️'
+  // Get activity structure from emission factors database
+  const getActivityStructure = () => {
+    const activityStructure = {};
+    
+    ['1', '2', '3'].forEach(scope => {
+      const scopeKey = `scope${scope}`;
+      const scopeData = emissionFactors[scopeKey];
+      
+      if (scopeData) {
+        activityStructure[scope] = Object.keys(scopeData).map(categoryName => {
+          const sources = scopeData[categoryName];
+          
+          // Determine activity type based on category and sources
+          const activityType = determineActivityType(categoryName, sources);
+          
+          return {
+            name: categoryName,
+            activityType: activityType,
+            sources: Object.keys(sources),
+            icon: getCategoryIcon(categoryName),
+            description: getActivityDescription(categoryName, activityType)
+          };
+        });
       }
-    ],
-    '2': [
-      {
-        name: 'Electricity Purchased',
-        description: 'Indirect emissions from the consumption of grid electricity',
-        subcategories: ['Grid Electricity', 'Renewable Energy', 'Non-Renewable'],
-        icon: '⚡'
-      }
-    ],
-    '3': [
-      {
-        name: 'Transport: Harbor to plant',
-        description: 'Emissions from third-party transport of raw materials from ports to the factory',
-        subcategories: ['Truck', 'Rail'],
-        icon: '🚢'
-      },
-      {
-        name: 'Export of Material',
-        description: 'Logistics-related emissions from exporting products via ship, air, or road',
-        subcategories: ['Ship', 'Air', 'Truck'],
-        icon: '📤'
-      },
-      {
-        name: 'Domestic Sales Transport',
-        description: 'GHG emissions from transporting products to domestic buyers',
-        subcategories: ['Truck', 'Train'],
-        icon: '🚚'
-      },
-      {
-        name: 'Employee transport',
-        description: 'Emissions from commuting, based on vehicle type, distance, and employee attendance',
-        subcategories: ['Bus', 'Carpool', 'Van'],
-        icon: '🚌'
-      },
-      {
-        name: 'Business travel',
-        description: 'Travel-related emissions from flights, trains, or taxis used by employees for work purposes',
-        subcategories: ['Air', 'Rail', 'Taxi'],
-        icon: '✈️'
-      }
-    ]
+    });
+    
+    return activityStructure;
   };
+
+  // Determine what type of input is needed for this activity
+  const determineActivityType = (categoryName, sources) => {
+    const firstSourceKey = Object.keys(sources)[0];
+    const firstSource = sources[firstSourceKey];
+    
+    // Check unit to determine activity type
+    if (firstSource.unit.includes('passenger.km')) {
+      return 'passenger-distance';
+    } else if (firstSource.unit.includes('tonne.km')) {
+      return 'freight';
+    } else if (firstSource.unit.includes('km')) {
+      return 'distance';
+    } else if (firstSource.unit === 'kg' && categoryName === 'Refrigerants') {
+      return 'refrigerant';
+    } else if (['tonnes', 'litres', 'kWh', 'm3', 'cubic metres'].some(u => firstSource.unit.includes(u))) {
+      return 'fuel-based';
+    } else if (firstSource.unit === 'room.night') {
+      return 'accommodation';
+    } else if (firstSource.unit === 'employee.hour') {
+      return 'homeworking';
+    } else {
+      return 'quantity';
+    }
+  };
+
+  // Get user-friendly description based on activity type
+  const getActivityDescription = (categoryName, activityType) => {
+    const descriptions = {
+      'fuel-based': `Select fuel type and enter quantity consumed`,
+      'distance': `Select vehicle type and enter distance travelled`,
+      'passenger-distance': `Enter number of passengers and distance travelled`,
+      'freight': `Enter cargo weight and distance transported`,
+      'refrigerant': `Select refrigerant type and enter amount leaked/used`,
+      'accommodation': `Enter number of room nights`,
+      'homeworking': `Enter number of employee working hours`,
+      'quantity': `Enter quantity consumed or used`
+    };
+    
+    return descriptions[activityType] || `Track emissions from ${categoryName}`;
+  };
+
+  // Helper function to get appropriate icon for category
+  const getCategoryIcon = (categoryName) => {
+    const iconMap = {
+      // Scope 1
+      'Gaseous Fuels': '⛽',
+      'Liquid Fuels': '🛢️',
+      'Solid Fuels': '⚫',
+      'Bioenergy - Bioethanol': '🌱',
+      'Bioenergy - Biodiesel': '🌾',
+      'Bioenergy - Biomass': '🪵',
+      'Refrigerants': '❄️',
+      'Passenger Vehicles - Cars by Size': '🚗',
+      'Passenger Vehicles - Cars by Market Segment': '🚙',
+      'Passenger Vehicles - Motorbikes': '🏍️',
+      'Delivery Vehicles - Vans': '🚐',
+      'Delivery Vehicles - HGV': '🚛',
+      
+      // Scope 2
+      'UK Electricity': '⚡',
+      'UK Electricity for Electric Vehicles': '🔌',
+      'Transmission & Distribution Losses': '📊',
+      
+      // Scope 3
+      'Business Travel - Air - Domestic': '✈️',
+      'Business Travel - Air - Short Haul': '🛫',
+      'Business Travel - Air - Long Haul': '🛬',
+      'Business Travel - Air - International': '🌍',
+      'Business Travel - Cars': '🚗',
+      'Business Travel - Taxis': '🚕',
+      'Business Travel - Motorbikes': '🏍️',
+      'Business Travel - Bus': '🚌',
+      'Business Travel - Rail': '🚆',
+      'Business Travel - Sea': '🚢',
+      'Freighting Goods - Road': '🚚',
+      'Freighting Goods - Air': '✈️',
+      'Freighting Goods - Sea': '⚓',
+      'Freighting Goods - Rail': '🚂',
+      'Material Use - Aggregates & Minerals': '⛰️',
+      'Material Use - Metals': '⚙️',
+      'Material Use - Plastics & Polymers': '♻️',
+      'Material Use - Organics': '📄',
+      'Material Use - Textiles': '👕',
+      'Material Use - Electronics': '💻',
+      'Material Use - Other': '📦',
+      'Waste Disposal - Refuse': '🗑️',
+      'Waste Disposal - Organic': '🍂',
+      'Waste Disposal - Paper & Cardboard': '📦',
+      'Waste Disposal - Plastics': '♻️',
+      'Waste Disposal - Metal': '⚙️',
+      'Waste Disposal - Glass': '🥤',
+      'Waste Disposal - Clothing & Textiles': '👔',
+      'Waste Disposal - WEEE': '💾',
+      'Waste Disposal - Construction': '🏗️',
+      'Waste Disposal - Other': '🗑️',
+      'Water Supply': '💧',
+      'Water Treatment': '🚰',
+      'Hotel Stay': '🏨',
+      'Homeworking': '🏠'
+    };
+    
+    return iconMap[categoryName] || '📊';
+  };
+
+  const activityStructure = getActivityStructure();
 
   // RBAC check - ensure user can access Input page
   useEffect(() => {
     if (!user) return;
     
-    // Check if user role is allowed to access input
+    // Check page-level access first
     if (!['admin', 'contributor'].includes(user.role)) {
       navigate('/dashboard');
       toast.error(`Access denied. Your role (${user.role}) cannot access the Input page.`);
       return;
     }
 
-    // Log page view
+    // Check if contributor has page restricted
+    if (user.role === 'contributor' && user.restrictions?.restrictedPages?.includes('/input')) {
+      navigate('/dashboard');
+      toast.error('Access denied. You do not have permission to access the Input page.');
+      return;
+    }
+
     logPageView('Input', { userRole: user.role, allowedScopes: getAllowedScopes() });
   }, [user, navigate, logPageView, getAllowedScopes]);
 
-  // Initialize scope and load categories
+  // Initialize scope and load activities
   useEffect(() => {
     initializeScope();
   }, [user]);
@@ -163,14 +198,14 @@ const Input = () => {
   useEffect(() => {
     const scopeParam = searchParams.get('scope');
     if (scopeParam && ['1', '2', '3'].includes(scopeParam) && scopeParam !== activeScope) {
-      handleScopeChange(scopeParam, false); // Don't update URL again
+      handleScopeChange(scopeParam, false);
     }
   }, [searchParams]);
 
-  // Load categories when active scope changes
+  // Load activities when active scope changes
   useEffect(() => {
     if (activeScope) {
-      loadCategories();
+      loadActivities();
     }
   }, [activeScope, user]);
 
@@ -187,91 +222,90 @@ const Input = () => {
     }
 
     if (scopeParam && ['1', '2', '3'].includes(scopeParam)) {
-      // Check if user can access the requested scope
       if (canAccessScope(scopeParam)) {
         setActiveScope(scopeParam);
         setAccessDenied(false);
       } else {
-        // Redirect to first allowed scope
         const firstAllowed = allowedScopes[0].toString();
         setActiveScope(firstAllowed);
         setSearchParams({ scope: firstAllowed });
         toast.warning(`Access denied to Scope ${scopeParam}. Redirected to Scope ${firstAllowed}.`);
       }
     } else {
-      // No scope specified, use first allowed scope
       const firstAllowed = allowedScopes[0].toString();
       setActiveScope(firstAllowed);
       setSearchParams({ scope: firstAllowed });
     }
   };
 
-  const loadCategories = () => {
+  const loadActivities = () => {
     if (!user || !canAccessScope(activeScope)) {
-      setCategories([]);
+      setActivities([]);
       setLoading(false);
       return;
     }
   
-    let allCategories = emissionCategories[activeScope] || [];
+    let allActivities = activityStructure[activeScope] || [];
     
-    // Enhanced filtering based on user's granular restrictions
+    console.log(`[RBAC Debug] Loading activities for Scope ${activeScope}`);
+    console.log(`[RBAC Debug] Total activities in scope: ${allActivities.length}`);
+    console.log(`[RBAC Debug] User role: ${user.role}`);
+    console.log(`[RBAC Debug] User restrictions:`, user.restrictions);
+    
+    // Fine-grained RBAC filtering for contributors
     if (user.role === 'contributor' && user.restrictions) {
       const { allowedScopes, allowedActivities } = user.restrictions;
       
-      // If user has specific activity restrictions, filter accordingly
-      if (allowedActivities && allowedActivities.length > 0) {
-        // Only show categories that have at least one allowed activity
-        allCategories = allCategories.filter(category => {
-          // Check if any subcategory (activity type) is allowed
-          const hasAllowedActivity = category.subcategories.some(subcategory => {
-            const fullActivityName = category.name; // The main activity name
-            return allowedActivities.includes(fullActivityName);
-          });
-          return hasAllowedActivity;
+      console.log(`[RBAC Debug] Allowed scopes:`, allowedScopes);
+      console.log(`[RBAC Debug] Allowed activities:`, allowedActivities);
+      
+      // Check if user has full scope access
+      const hasFullScopeAccess = allowedScopes && allowedScopes.includes(parseInt(activeScope));
+      
+      if (hasFullScopeAccess) {
+        console.log(`[RBAC Debug] User has FULL access to Scope ${activeScope}`);
+        // User has full scope access, show all activities
+      } else if (allowedActivities && allowedActivities.length > 0) {
+        // User has activity-specific access, filter activities
+        console.log(`[RBAC Debug] Filtering to specific activities`);
+        allActivities = allActivities.filter(activity => {
+          const hasAccess = allowedActivities.includes(activity.name);
+          console.log(`[RBAC Debug] Activity "${activity.name}": ${hasAccess ? 'ALLOWED' : 'DENIED'}`);
+          return hasAccess;
         });
-        
-        // Also filter subcategories within each category
-        allCategories = allCategories.map(category => {
-          // If the main activity is allowed, show all subcategories
-          if (allowedActivities.includes(category.name)) {
-            return category;
-          }
-          
-          // Otherwise, this category shouldn't be shown (filtered out above)
-          return category;
-        });
+      } else {
+        console.log(`[RBAC Debug] No access configured - showing NO activities`);
+        // No access configured for this scope
+        allActivities = [];
       }
-      // If user has scope-level access but no specific activity restrictions,
-      // show all categories in the scope (this is handled by the allowedScopes check above)
     }
     
-    console.log(`Loaded ${allCategories.length} categories for scope ${activeScope}:`, allCategories.map(c => c.name));
-    setCategories(allCategories);
+    console.log(`[RBAC Debug] Final filtered activities: ${allActivities.length}`);
+    console.log(`[RBAC Debug] Activities:`, allActivities.map(a => a.name));
+    
+    setActivities(allActivities);
     setLoading(false);
   };
   
-  // ADD this new function to check if a specific category/activity is accessible:
-  const isCategoryAccessible = (categoryName) => {
+  const isActivityAccessible = (activityName) => {
     if (!user) return false;
     
-    // Admin and analysts have full access
+    // Admin and analyst have full access
     if (['admin', 'analyst'].includes(user.role)) return true;
     
-    // For contributors, check restrictions
+    // Contributors with restrictions
     if (user.role === 'contributor') {
-      if (!user.restrictions) {
-        return true; // Legacy users with no restrictions
-      }
+      // If no restrictions, full access (legacy users)
+      if (!user.restrictions) return true;
       
       const { allowedScopes, allowedActivities } = user.restrictions;
       
-      // If user has specific activity restrictions, check if this activity is allowed
+      // Check if has specific activity access
       if (allowedActivities && allowedActivities.length > 0) {
-        return allowedActivities.includes(categoryName);
+        return allowedActivities.includes(activityName);
       }
       
-      // If no specific activity restrictions, check if scope is allowed
+      // Check if has full scope access
       if (allowedScopes && allowedScopes.includes(parseInt(activeScope))) {
         return true;
       }
@@ -279,12 +313,11 @@ const Input = () => {
       return false;
     }
     
-    // Viewers can access for viewing but not for adding
-    return user.role === 'viewer';
+    // Viewers cannot add emissions
+    return false;
   };
 
   const handleScopeChange = (scope, updateUrl = true) => {
-    // Check if user can access this scope
     if (!canAccessScope(scope)) {
       toast.error(`Access denied. You don't have permission to access Scope ${scope}`);
       return;
@@ -294,10 +327,9 @@ const Input = () => {
     if (updateUrl) {
       setSearchParams({ scope });
     }
-    setExpandedCategories({});
-    setSelectedCategory(null);
+    setExpandedActivities({});
+    setSelectedActivity(null);
 
-    // Log scope change activity
     logPageView(`Input - Scope ${scope}`, { 
       previousScope: activeScope,
       userRole: user?.role,
@@ -305,67 +337,61 @@ const Input = () => {
     });
   };
 
-  const toggleCategoryExpansion = (categoryName) => {
-    // Check if user can access this activity
-    if (!isCategoryAccessible(categoryName)) {
-      toast.error(`Access denied. You don't have permission to access ${categoryName}`);
+  const toggleActivityExpansion = (activityName) => {
+    if (!isActivityAccessible(activityName)) {
+      toast.error(`Access denied. You don't have permission to access ${activityName}`);
       return;
     }
   
-    setExpandedCategories(prev => ({
+    setExpandedActivities(prev => ({
       ...prev,
-      [categoryName]: !prev[categoryName]
+      [activityName]: !prev[activityName]
     }));
   };
 
-  const handleCategorySelect = (category, selectedType) => {
+  const handleActivitySelect = (activity) => {
     // Enhanced permission checks
     if (!canAccessScope(activeScope)) {
       toast.error(`Access denied. You don't have permission to access Scope ${activeScope}`);
       return;
     }
   
-    if (!isCategoryAccessible(category.name)) {
-      toast.error(`Access denied. You don't have permission to access ${category.name}`);
+    if (!isActivityAccessible(activity.name)) {
+      toast.error(`Access denied. You don't have permission to access ${activity.name}`);
       return;
     }
   
-    // Additional check for viewers (they can see but not add)
     if (user.role === 'viewer') {
       toast.error(`Access denied. Viewers cannot add emission data`);
       return;
     }
   
-    setSelectedCategory({
-      ...category,
-      selectedType,
+    setSelectedActivity({
+      ...activity,
       scope: activeScope
     });
     setShowEmissionForm(true);
   
-    // Log category selection
-    logEmissionAction('category_selected', null, 
-      `Selected ${category.name} - ${selectedType} in Scope ${activeScope}`, {
+    logEmissionAction('activity_selected', null, 
+      `Selected ${activity.name} in Scope ${activeScope}`, {
         scope: activeScope,
-        category: category.name,
-        type: selectedType
+        activity: activity.name,
+        activityType: activity.activityType
       });
   };
 
   const handleEmissionSubmit = async (emissionData) => {
     try {
-      // Final permission check before submission
-      if (!canAccessScope(activeScope) || !canAccessActivity(selectedCategory.name)) {
+      if (!canAccessScope(activeScope) || !canAccessActivity(selectedActivity.name)) {
         toast.error('Access denied. Insufficient permissions to create this emission record.');
         return;
       }
 
-      // Save to local storage
       const emissionRecord = {
         id: `emission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         scope: parseInt(activeScope),
-        category: selectedCategory.name,
-        type: selectedCategory.selectedType,
+        category: selectedActivity.name,
+        type: emissionData.source || emissionData.selectedType,
         amount: parseFloat(emissionData.amount),
         unit: emissionData.unit,
         startDate: emissionData.startDate,
@@ -377,17 +403,18 @@ const Input = () => {
         user: user.id,
         userName: user.name,
         createdAt: new Date().toISOString(),
-        status: 'submitted'
+        status: 'submitted',
+        activityType: selectedActivity.activityType,
+        activityData: emissionData.activityData
       };
       
       await saveEmission(emissionRecord);
       
-      // Log successful emission creation
       logEmissionAction('created', emissionRecord.id, 
-        `Created emission record: ${selectedCategory.name} - ${selectedCategory.selectedType}`, {
+        `Created emission record: ${selectedActivity.name}`, {
           scope: activeScope,
-          category: selectedCategory.name,
-          type: selectedCategory.selectedType,
+          activity: selectedActivity.name,
+          activityType: selectedActivity.activityType,
           amount: emissionData.amount,
           unit: emissionData.unit,
           calculatedEmissions: emissionData.calculatedEmissions
@@ -395,34 +422,30 @@ const Input = () => {
 
       toast.success('Emission data saved successfully!');
       setShowEmissionForm(false);
-      setSelectedCategory(null);
+      setSelectedActivity(null);
       
-      // Trigger custom event for dashboard updates
       window.dispatchEvent(new CustomEvent('emissionSaved', { detail: emissionRecord }));
     } catch (error) {
       toast.error('Failed to save emission data');
       console.error('Emission submission error:', error);
       
-      // Log failed emission creation
       logEmissionAction('creation_failed', null, 
         `Failed to create emission record: ${error.message}`, {
           scope: activeScope,
-          category: selectedCategory?.name,
+          activity: selectedActivity?.name,
           error: error.message
         });
     }
   };
 
-  // Filter categories based on search query
-  const filteredCategories = categories.filter(category =>
-    category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    category.description.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter activities based on search query
+  const filteredActivities = activities.filter(activity =>
+    activity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    activity.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Get available scopes for user
   const availableScopes = scopes.filter(scope => canAccessScope(scope.id));
 
-  // Show loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -432,7 +455,6 @@ const Input = () => {
     );
   }
 
-  // Access denied for Input page entirely
   if (!user || !['admin', 'contributor'].includes(user.role)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -478,7 +500,6 @@ const Input = () => {
     );
   }
 
-  // Access denied for this scope or no available scopes
   if (accessDenied || availableScopes.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -528,7 +549,6 @@ const Input = () => {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <PageHeader 
         title="Add Emission"
         breadcrumb={[
@@ -537,25 +557,30 @@ const Input = () => {
         ]}
       />
 
-      {/* RBAC Info for Restricted Users */}
       {user?.role === 'contributor' && user?.restrictions && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Shield className="w-5 h-5 text-blue-600" />
-            <h3 className="font-medium text-blue-900">Access Restrictions Applied</h3>
+            <h3 className="font-medium text-blue-900">Your Access Permissions</h3>
           </div>
           <div className="text-sm text-blue-800 space-y-1">
-            {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length < 3 && (
-              <p>• Limited to Scopes: {user.restrictions.allowedScopes.join(', ')}</p>
+            {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
+              <p>• <strong>Full Scope Access:</strong> Scopes {user.restrictions.allowedScopes.join(', ')}</p>
             )}
             {user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0 && (
-              <p>• Limited to {user.restrictions.allowedActivities.length} specific activities</p>
+              <p>• <strong>Specific Activities:</strong> {user.restrictions.allowedActivities.length} activities across scopes</p>
             )}
+            {(!user.restrictions.allowedScopes || user.restrictions.allowedScopes.length === 0) && 
+             (!user.restrictions.allowedActivities || user.restrictions.allowedActivities.length === 0) && (
+              <p>• <strong>No restrictions</strong> - Full access to all activities</p>
+            )}
+          </div>
+          <div className="mt-2 text-xs text-blue-600">
+            ℹ️ You can only see and add emissions for activities you have permission to access
           </div>
         </div>
       )}
 
-      {/* Scope Tabs */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex space-x-1">
@@ -570,14 +595,10 @@ const Input = () => {
                 }`}
               >
                 {scope.label}
-                {!canAccessScope(scope.id) && (
-                  <Lock className="w-3 h-3 ml-1 inline" />
-                )}
               </button>
             ))}
           </div>
 
-          {/* Search */}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
@@ -590,7 +611,6 @@ const Input = () => {
           </div>
         </div>
 
-        {/* Scope Description */}
         <div className="p-4 bg-emerald-50 border-b">
           <div className="flex items-center space-x-2">
             <Info className="w-4 h-4 text-emerald-600" />
@@ -600,120 +620,99 @@ const Input = () => {
           </div>
         </div>
 
-        {/* Categories */}
         <div className="p-6">
-        {filteredCategories.length > 0 ? (
-  <div className="space-y-4">
-    {filteredCategories.map((category, index) => {
-      const hasActivityAccess = isCategoryAccessible(category.name);
-      
-      return (
-        <div key={index} className={`border rounded-lg ${!hasActivityAccess ? 'opacity-50 bg-red-50 border-red-200' : ''}`}>
-          <button
-            onClick={() => hasActivityAccess ? toggleCategoryExpansion(category.name) : null}
-            disabled={!hasActivityAccess}
-            className={`w-full flex items-center justify-between p-4 text-left transition-colors ${
-              hasActivityAccess ? 'hover:bg-gray-50' : 'cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center space-x-3">
-              <span className="text-2xl">{category.icon}</span>
-              <div className="flex-1">
-                <div className="flex items-center space-x-2">
-                  <h3 className="font-medium text-gray-900">{category.name}</h3>
-                  {!hasActivityAccess && (
-                    <div className="flex items-center space-x-1">
-                      <Lock className="w-4 h-4 text-red-500" title="Access Restricted" />
-                      <span className="text-xs text-red-600 font-medium">RESTRICTED</span>
-                    </div>
+          {filteredActivities.length > 0 ? (
+            <div className="space-y-4">
+              {filteredActivities.map((activity, index) => {
+                const hasActivityAccess = isActivityAccessible(activity.name);
+                
+                return (
+                  <div key={index} className="border rounded-lg hover:shadow-md transition-shadow">
+                    <button
+                      onClick={() => hasActivityAccess ? toggleActivityExpansion(activity.name) : null}
+                      disabled={!hasActivityAccess}
+                      className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-gray-50"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span className="text-2xl">{activity.icon}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-gray-900">{activity.name}</h3>
+                            <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
+                              {activity.sources.length} sources
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500">{activity.description}</p>
+                        </div>
+                      </div>
+                      {expandedActivities[activity.name] ? (
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+
+                    {expandedActivities[activity.name] && hasActivityAccess && (
+                      <div className="border-t bg-gray-50 p-4">
+                        <button
+                          onClick={() => handleActivitySelect(activity)}
+                          className="w-full p-4 bg-emerald-50 border-2 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 rounded-lg text-left transition-all group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-base font-medium text-emerald-900">
+                                Add {activity.name} Data
+                              </span>
+                              <p className="text-sm text-emerald-700 mt-1">
+                                Click to open the emission form
+                              </p>
+                            </div>
+                            <div className="text-emerald-600 group-hover:translate-x-1 transition-transform">
+                              →
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-2">
+                {activities.length === 0 ? 'No activities available for your access level' : 'No activities found'}
+              </div>
+              <p className="text-sm text-gray-500">
+                {activities.length === 0 ? 
+                  'Contact your administrator to request access to additional activities.' :
+                  'Try adjusting your search terms or select a different scope.'
+                }
+              </p>
+              {user?.restrictions && (
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg inline-block">
+                  <p className="text-sm text-blue-800 font-medium">Your Access Level:</p>
+                  {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
+                    <p className="text-xs text-blue-700">Full Scope Access: {user.restrictions.allowedScopes.join(', ')}</p>
+                  )}
+                  {user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0 && (
+                    <p className="text-xs text-blue-700">Specific Activities: {user.restrictions.allowedActivities.length} activities</p>
                   )}
                 </div>
-                <p className="text-sm text-gray-500">{category.description}</p>
-                {!hasActivityAccess && (
-                  <p className="text-xs text-red-600 mt-1">
-                    Contact your administrator to request access to this activity.
-                  </p>
-                )}
-              </div>
-            </div>
-            {hasActivityAccess && (
-              expandedCategories[category.name] ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
-              )
-            )}
-          </button>
-
-          {expandedCategories[category.name] && hasActivityAccess && (
-            <div className="border-t bg-gray-50 p-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                {category.subcategories.map((subcategory, subIndex) => {
-                  const factorData = emissionFactors?.[`scope${activeScope}`]?.[category.name]?.[subcategory];
-                  
-                  return (
-                    <button
-                      key={subIndex}
-                      onClick={() => handleCategorySelect(category, subcategory)}
-                      className="p-3 bg-emerald-100 hover:bg-emerald-200 rounded-lg text-center transition-colors group relative"
-                    >
-                      {factorData && (
-                        <div className="flex items-center justify-center mb-2">
-                          <InfoTooltip 
-                            content={factorData.description || `${subcategory} emission source`}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          />
-                        </div>
-                      )}
-                      <span className="text-sm font-medium text-emerald-800">
-                        {subcategory}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              )}
             </div>
           )}
         </div>
-      );
-    })}
-  </div>
-) : (
-  <div className="text-center py-12">
-    <div className="text-gray-400 mb-2">
-      {categories.length === 0 ? 'No activities available for your access level' : 'No categories found'}
-    </div>
-    <p className="text-sm text-gray-500">
-      {categories.length === 0 ? 
-        'Contact your administrator to request access to additional activities.' :
-        'Try adjusting your search terms or select a different scope.'
-      }
-    </p>
-    {user?.restrictions && (
-      <div className="mt-4 p-3 bg-blue-50 rounded-lg inline-block">
-        <p className="text-sm text-blue-800 font-medium">Your Access Level:</p>
-        {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
-          <p className="text-xs text-blue-700">Allowed Scopes: {user.restrictions.allowedScopes.join(', ')}</p>
-        )}
-        {user.restrictions.allowedActivities && user.restrictions.allowedActivities.length > 0 && (
-          <p className="text-xs text-blue-700">Specific Activities: {user.restrictions.allowedActivities.length} activities</p>
-        )}
-      </div>
-    )}
-  </div>
-)}
-        </div>
       </div>
 
-      {/* Emission Form Modal */}
-      {showEmissionForm && selectedCategory && (
+      {showEmissionForm && selectedActivity && (
         <EmissionForm
-          category={selectedCategory}
+          activity={selectedActivity}
           scope={activeScope}
           onSubmit={handleEmissionSubmit}
           onClose={() => {
             setShowEmissionForm(false);
-            setSelectedCategory(null);
+            setSelectedActivity(null);
           }}
         />
       )}
