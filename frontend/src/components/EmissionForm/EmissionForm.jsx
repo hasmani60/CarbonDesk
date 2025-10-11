@@ -1,4 +1,5 @@
 // frontend/src/components/EmissionForm/EmissionForm.jsx - Activity-Based Version
+// UPDATED: Removed emission factor displays from UI while keeping calculations
 import { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Lock, AlertCircle, Users, Truck, Gauge } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -307,7 +308,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
         // Activity-specific data
         activityData: activityData,
         
-        // Emission factor details
+        // Emission factor details (stored but not displayed)
         factor: factorData.factor,
         emissionFactor: {
           value: factorData.factor,
@@ -893,7 +894,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
             </div>
           </div>
 
-          {/* Emission Preview */}
+          {/* Emission Preview - Simplified without showing calculation details */}
           {emissionsPreview && factorData && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -901,40 +902,12 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                   Estimated Total Emissions:
                 </span>
                 <span className="text-lg font-bold text-emerald-900">
-                  {emissionsPreview.total.toFixed(4)} kg CO₂e
+                  {emissionsPreview.total.toFixed(2)} kg CO₂e
                 </span>
               </div>
               
-              {/* Gas Breakdown */}
-              <div className="border-t border-emerald-200 pt-2 space-y-1">
-                <div className="text-xs text-emerald-700 font-medium">Breakdown by Gas:</div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div className="bg-white rounded px-2 py-1">
-                    <div className="text-gray-500">CO₂</div>
-                    <div className="font-semibold text-emerald-800">
-                      {emissionsPreview.co2.toFixed(4)} kg
-                    </div>
-                  </div>
-                  <div className="bg-white rounded px-2 py-1">
-                    <div className="text-gray-500">CH₄</div>
-                    <div className="font-semibold text-emerald-800">
-                      {emissionsPreview.ch4.toFixed(4)} kg
-                    </div>
-                  </div>
-                  <div className="bg-white rounded px-2 py-1">
-                    <div className="text-gray-500">N₂O</div>
-                    <div className="font-semibold text-emerald-800">
-                      {emissionsPreview.n2o.toFixed(4)} kg
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Calculation Details */}
-              <div className="text-xs text-emerald-600 border-t border-emerald-200 pt-2">
-                <p className="font-medium">Calculation:</p>
-                <p>{emissionsPreview.amount} {emissionsPreview.unit} × {factorData.factor} = {emissionsPreview.total.toFixed(4)} kg CO₂e</p>
-                <p className="text-emerald-500 mt-1">Emission Factor: {factorData.factor} kg CO₂e per {factorData.unit}</p>
+              <div className="text-xs text-emerald-600 text-center">
+                Based on your input: {emissionsPreview.amount} {emissionsPreview.unit}
               </div>
             </div>
           )}

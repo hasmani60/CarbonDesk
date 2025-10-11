@@ -180,15 +180,15 @@ const Header = () => {
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center">
               <span className="text-white font-medium text-sm">
-                {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'JD'}
+                {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
               </span>
             </div>
             <div className="hidden md:block">
               <p className="text-sm font-medium text-gray-900">
-                {user?.name || 'Jhon Doe'}
+                {user?.name || 'User'}
               </p>
               <p className="text-xs text-gray-500">
-                {user?.email || 'jhondoe@gmail.com'}
+                {user?.email || 'user@example.com'}
               </p>
             </div>
           </div>

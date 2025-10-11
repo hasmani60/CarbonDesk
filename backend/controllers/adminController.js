@@ -1,5 +1,6 @@
-// controllers/adminController.js - Updated without Audit Logs functionality
+// controllers/adminController.js - FIXED to use SQLite Database
 const mongoose = require('mongoose');
+const localDB = require('../database/localDB');
 
 // Helper function to check if MongoDB is connected
 const isMongoConnected = () => {
@@ -10,113 +11,147 @@ const isMongoConnected = () => {
   }
 };
 
-// Helper function to log admin activity
-const logAdminActivity = async (adminId, action, resourceType, resourceId, details, req) => {
-  try {
-    if (!isMongoConnected()) {
-      console.log('MongoDB not connected - skipping activity log');
-      return;
-    }
-    const { Activity } = require('../models');
-    await Activity.create({
-      user: adminId,
-      action: `admin_${action}`,
-      resourceType,
-      resourceId,
-      details,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      metadata: {
-        browser: extractBrowser(req.get('User-Agent')),
-        os: extractOS(req.get('User-Agent'))
-      }
-    });
-  } catch (error) {
-    console.error('Failed to log admin activity:', error);
-  }
-};
-
 // @desc    Get all user activities (Admin only)
 // @route   GET /api/admin/activities
 // @access  Private (Admin)
 const getAllActivities = async (req, res) => {
   try {
+    console.log('📊 getAllActivities called');
+    
     // Check if MongoDB is connected
     if (!isMongoConnected()) {
-      // Return demo data when MongoDB is not available
-      const demoActivities = [
-        {
-          _id: 'demo1',
-          user: {
-            id: 'demo_user',
-            name: 'Demo User',
-            email: 'user@example.com',
-            role: 'contributor',
-            avatar: 'DU'
-          },
-          action: 'created_emission',
-          actionDisplay: 'Created Emission',
-          resourceType: 'emission',
-          resourceId: 'emission1',
-          details: 'Created emission record: Fuel from Generator',
-          ipAddress: '127.0.0.1',
-          userAgent: 'Mozilla/5.0',
-          createdAt: new Date(),
-          timestamp: new Date().toISOString()
+      console.log('🗄️  Using SQLite database for activities...');
+      
+      // USE SQLITE DATABASE
+      const {
+        page = 1,
+        limit = 20,
+        userId,
+        action,
+        startDate,
+        endDate,
+        search
+      } = req.query;
+
+      // Build SQLite query
+      let query = `
+        SELECT 
+          a.id,
+          a.user_id,
+          a.action,
+          a.resource_type,
+          a.resource_id,
+          a.details,
+          a.ip_address,
+          a.user_agent,
+          a.created_at,
+          u.id as user_id,
+          u.name as user_name,
+          u.email as user_email,
+          u.role as user_role
+        FROM activity_logs a
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE 1=1
+      `;
+      const params = [];
+
+      // Apply filters
+      if (userId && userId !== 'all') {
+        query += ' AND a.user_id = ?';
+        params.push(userId);
+      }
+
+      if (action && action !== 'all') {
+        query += ' AND a.action LIKE ?';
+        params.push(`%${action}%`);
+      }
+
+      if (startDate) {
+        query += ' AND a.created_at >= ?';
+        params.push(startDate);
+      }
+
+      if (endDate) {
+        query += ' AND a.created_at <= ?';
+        params.push(endDate);
+      }
+
+      if (search) {
+        query += ' AND (a.details LIKE ? OR a.action LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      }
+
+      query += ' ORDER BY a.created_at DESC';
+      
+      // Get total count for pagination
+      const countQuery = query.replace(
+        'SELECT a.id, a.user_id, a.action, a.resource_type, a.resource_id, a.details, a.ip_address, a.user_agent, a.created_at, u.id as user_id, u.name as user_name, u.email as user_email, u.role as user_role',
+        'SELECT COUNT(*) as total'
+      ).split('ORDER BY')[0];
+
+      const totalResult = await new Promise((resolve, reject) => {
+        localDB.db.get(countQuery, params, (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+
+      const total = totalResult?.total || 0;
+
+      // Apply pagination
+      const offset = (page - 1) * limit;
+      query += ` LIMIT ? OFFSET ?`;
+      params.push(parseInt(limit), offset);
+
+      // Execute query
+      const activities = await new Promise((resolve, reject) => {
+        localDB.db.all(query, params, (err, rows) => {
+          if (err) {
+            console.error('SQLite query error:', err);
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        });
+      });
+
+      // Transform activities for frontend
+      const transformedActivities = activities.map(activity => ({
+        _id: activity.id,
+        id: activity.id,
+        user: {
+          id: activity.user_id,
+          name: activity.user_name || 'Unknown User',
+          email: activity.user_email,
+          role: activity.user_role,
+          avatar: activity.user_name ? activity.user_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'
         },
-        {
-          _id: 'demo2',
-          user: {
-            id: 'demo_admin',
-            name: 'Demo Admin',
-            email: 'demo@example.com',
-            role: 'admin',
-            avatar: 'DA'
-          },
-          action: 'login',
-          actionDisplay: 'User Login',
-          resourceType: 'user',
-          resourceId: 'demo_admin',
-          details: 'User logged in successfully',
-          ipAddress: '127.0.0.1',
-          userAgent: 'Mozilla/5.0',
-          createdAt: new Date(Date.now() - 3600000),
-          timestamp: new Date(Date.now() - 3600000).toISOString()
-        },
-        {
-          _id: 'demo3',
-          user: {
-            id: 'demo_admin',
-            name: 'Demo Admin',
-            email: 'demo@example.com',
-            role: 'admin',
-            avatar: 'DA'
-          },
-          action: 'admin_created_user',
-          actionDisplay: 'Admin: Created User',
-          resourceType: 'user',
-          resourceId: 'new_user_id',
-          details: 'Created new user: John Smith with role: contributor',
-          ipAddress: '127.0.0.1',
-          userAgent: 'Mozilla/5.0',
-          createdAt: new Date(Date.now() - 7200000),
-          timestamp: new Date(Date.now() - 7200000).toISOString()
-        }
-      ];
+        action: activity.action,
+        actionDisplay: formatActionDisplay(activity.action),
+        resourceType: activity.resource_type,
+        resourceId: activity.resource_id,
+        details: activity.details,
+        ipAddress: activity.ip_address,
+        userAgent: activity.user_agent,
+        createdAt: activity.created_at,
+        timestamp: activity.created_at
+      }));
+
+      console.log(`✅ Loaded ${transformedActivities.length} activities from SQLite`);
 
       return res.json({
         success: true,
-        data: demoActivities,
+        data: transformedActivities,
         pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          totalItems: 3,
-          itemsPerPage: 20
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / limit),
+          totalItems: total,
+          itemsPerPage: parseInt(limit)
         }
       });
     }
 
-    // Original MongoDB logic for user activities
+    // Original MongoDB logic (if connected)
     const { Activity, User } = require('../models');
     const {
       page = 1,
@@ -131,29 +166,24 @@ const getAllActivities = async (req, res) => {
 
     let query = {};
 
-    // Filter by user
     if (userId && userId !== 'all') {
       query.user = userId;
     }
 
-    // Filter by action
     if (action && action !== 'all') {
       query.action = new RegExp(action, 'i');
     }
 
-    // Filter by resource type
     if (resourceType && resourceType !== 'all') {
       query.resourceType = resourceType;
     }
 
-    // Filter by date range
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
       if (endDate) query.createdAt.$lte = new Date(endDate);
     }
 
-    // Search in details
     if (search) {
       query.$or = [
         { details: new RegExp(search, 'i') },
@@ -169,7 +199,6 @@ const getAllActivities = async (req, res) => {
 
     const total = await Activity.countDocuments(query);
 
-    // Transform activities for better frontend display
     const transformedActivities = activities.map(activity => ({
       _id: activity._id,
       user: {
@@ -190,16 +219,6 @@ const getAllActivities = async (req, res) => {
       timestamp: activity.createdAt.toISOString(),
       metadata: activity.metadata
     }));
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_user_activities',
-      'activity',
-      null,
-      `Viewed ${activities.length} user activities`,
-      req
-    );
 
     res.json({
       success: true,
@@ -225,46 +244,98 @@ const getAllActivities = async (req, res) => {
 // @access  Private (Admin)
 const getUserActivitySummary = async (req, res) => {
   try {
-    // Check if MongoDB is connected
+    console.log('📊 getUserActivitySummary called');
+    
     if (!isMongoConnected()) {
-      // Return demo data
+      console.log('🗄️  Using SQLite database for user summary...');
+      
+      const { timeframe = '7days' } = req.query;
+      
+      // Calculate date filter
+      const now = new Date();
+      let dateFilter;
+      
+      switch (timeframe) {
+        case '24hours':
+          dateFilter = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+          break;
+        case '7days':
+          dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          break;
+        case '30days':
+          dateFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          break;
+        default:
+          dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      // Get user activity statistics from SQLite
+      const userStatsQuery = `
+        SELECT 
+          u.id as userId,
+          u.name,
+          u.email,
+          u.role,
+          COUNT(a.id) as totalActivities,
+          COUNT(DISTINCT a.action) as uniqueActions,
+          MAX(a.created_at) as lastActivity
+        FROM users u
+        LEFT JOIN activity_logs a ON u.id = a.user_id AND a.created_at >= ?
+        WHERE u.status = 'active'
+        GROUP BY u.id, u.name, u.email, u.role
+        ORDER BY totalActivities DESC
+      `;
+
+      const userStats = await new Promise((resolve, reject) => {
+        localDB.db.all(userStatsQuery, [dateFilter], (err, rows) => {
+          if (err) reject(err);
+          else {
+            const formatted = rows.map(row => ({
+              userId: row.userId,
+              user: {
+                id: row.userId,
+                name: row.name,
+                email: row.email,
+                role: row.role
+              },
+              totalActivities: row.totalActivities,
+              uniqueActions: row.uniqueActions,
+              lastActivity: row.lastActivity
+            }));
+            resolve(formatted);
+          }
+        });
+      });
+
+      // Get system-wide statistics
+      const systemStatsQuery = `
+        SELECT 
+          (SELECT COUNT(*) FROM users WHERE status = 'active') as totalUsers,
+          (SELECT COUNT(*) FROM activity_logs) as totalActivities,
+          (SELECT COUNT(*) FROM activity_logs WHERE created_at >= ?) as recentActivities
+      `;
+
+      const systemStats = await new Promise((resolve, reject) => {
+        localDB.db.get(systemStatsQuery, [dateFilter], (err, row) => {
+          if (err) reject(err);
+          else resolve({
+            totalUsers: row.totalUsers,
+            totalActivities: row.totalActivities,
+            totalEmissions: 0, // Would need emissions table
+            recentActivities: row.recentActivities
+          });
+        });
+      });
+
+      console.log('✅ User summary loaded from SQLite');
+
       return res.json({
         success: true,
         data: {
-          userStats: [
-            {
-              userId: 'demo_admin',
-              user: {
-                id: 'demo_admin',
-                name: 'Demo Admin',
-                email: 'demo@example.com',
-                role: 'admin'
-              },
-              totalActivities: 15,
-              lastActivity: new Date(),
-              uniqueActions: 5
-            },
-            {
-              userId: 'demo_contributor',
-              user: {
-                id: 'demo_contributor',
-                name: 'Demo Contributor',
-                email: 'contributor@example.com',
-                role: 'contributor'
-              },
-              totalActivities: 8,
-              lastActivity: new Date(Date.now() - 3600000),
-              uniqueActions: 3
-            }
-          ],
+          userStats,
           emissionStats: [],
-          systemStats: {
-            totalUsers: 4,
-            totalEmissions: 10,
-            totalActivities: 23,
-            recentActivities: 8
-          },
-          timeframe: req.query.timeframe || '7days'
+          systemStats,
+          timeframe
         }
       });
     }
@@ -290,7 +361,6 @@ const getUserActivitySummary = async (req, res) => {
         dateFilter.$gte = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     }
 
-    // Get user activity statistics
     const userStats = await Activity.aggregate([
       { $match: { createdAt: dateFilter } },
       {
@@ -327,7 +397,6 @@ const getUserActivitySummary = async (req, res) => {
       { $sort: { totalActivities: -1 } }
     ]);
 
-    // Get emission statistics by user
     const emissionStats = await Emission.aggregate([
       { $match: { createdAt: dateFilter } },
       {
@@ -350,23 +419,12 @@ const getUserActivitySummary = async (req, res) => {
       { $sort: { totalEmissions: -1 } }
     ]);
 
-    // Get system-wide statistics
     const systemStats = {
       totalUsers: await User.countDocuments({ status: 'active' }),
       totalEmissions: await Emission.countDocuments(),
       totalActivities: await Activity.countDocuments(),
       recentActivities: await Activity.countDocuments({ createdAt: dateFilter })
     };
-
-    // Log this admin activity
-    await logAdminActivity(
-      req.user.id,
-      'viewed_user_summary',
-      'user',
-      null,
-      `Viewed user activity summary for ${timeframe}`,
-      req
-    );
 
     res.json({
       success: true,
@@ -391,75 +449,102 @@ const getUserActivitySummary = async (req, res) => {
 // @access  Private (Admin)
 const getAdminDashboard = async (req, res) => {
   try {
-    // Check if MongoDB is connected
+    console.log('📊 getAdminDashboard called');
+    
     if (!isMongoConnected()) {
-      // Return demo dashboard data
-      const demoDashboard = {
-        userStats: {
-          total: 4,
-          active: 4,
-          inactive: 0,
-          newToday: 0,
-          newThisWeek: 1
-        },
-        activityStats: {
-          total: 100,
-          today: 12,
-          thisWeek: 45,
-          thisMonth: 100
-        },
-        emissionStats: {
-          total: 50,
-          pending: 3,
-          verified: 45,
-          rejected: 2,
-          thisWeek: 8
-        },
-        topUsers: [
-          {
-            user: {
-              id: 'demo_user1',
-              name: 'John Doe',
-              email: 'john@example.com',
-              role: 'contributor'
-            },
-            activityCount: 25
-          },
-          {
-            user: {
-              id: 'demo_user2',
-              name: 'Jane Smith',
-              email: 'jane@example.com',
-              role: 'analyst'
-            },
-            activityCount: 18
-          }
-        ],
-        criticalActivities: [
-          {
-            _id: 'critical1',
-            user: {
-              name: 'Demo User',
-              email: 'user@example.com',
-              role: 'contributor'
-            },
-            action: 'created_emission',
-            actionDisplay: 'Created High Emission',
-            resourceType: 'emission',
-            resourceId: 'emission1',
-            details: 'Created high-impact emission record: 1500 CO₂e',
-            createdAt: new Date(),
-            severity: 'high',
-            ipAddress: '127.0.0.1'
-          }
-        ],
-        securityAlerts: [],
-        lastUpdated: new Date()
+      console.log('🗄️  Using SQLite database for dashboard...');
+      
+      const now = new Date();
+      const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      // User statistics
+      const userStatsQuery = `
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+          SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as newToday,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as newThisWeek
+        FROM users
+      `;
+
+      const userStats = await new Promise((resolve, reject) => {
+        localDB.db.get(userStatsQuery, [last24Hours, last7Days], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+
+      // Activity statistics
+      const activityStatsQuery = `
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as today,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as thisWeek,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as thisMonth
+        FROM activity_logs
+      `;
+
+      const activityStats = await new Promise((resolve, reject) => {
+        localDB.db.get(activityStatsQuery, [last24Hours, last7Days, last30Days], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+
+      // Emission statistics (if emissions table exists)
+      let emissionStats = {
+        total: 0,
+        pending: 0,
+        verified: 0,
+        rejected: 0,
+        thisWeek: 0
       };
+
+      try {
+        const emissionStatsQuery = `
+          SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'pending' OR status = 'submitted' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) as verified,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+            SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as thisWeek
+          FROM emissions
+        `;
+
+        emissionStats = await new Promise((resolve, reject) => {
+          localDB.db.get(emissionStatsQuery, [last7Days], (err, row) => {
+            if (err) {
+              // Table might not exist, use default values
+              resolve(emissionStats);
+            } else {
+              resolve(row || emissionStats);
+            }
+          });
+        });
+      } catch (err) {
+        console.log('Emissions table not found, using default values');
+      }
+
+      console.log('✅ Dashboard data loaded from SQLite:', {
+        userStats,
+        activityStats,
+        emissionStats
+      });
 
       return res.json({
         success: true,
-        data: demoDashboard
+        data: {
+          userStats,
+          activityStats,
+          emissionStats,
+          topUsers: [],
+          criticalActivities: [],
+          securityAlerts: [],
+          lastUpdated: now
+        }
       });
     }
 
@@ -470,7 +555,6 @@ const getAdminDashboard = async (req, res) => {
     const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // User statistics
     const userStats = {
       total: await User.countDocuments(),
       active: await User.countDocuments({ status: 'active' }),
@@ -479,7 +563,6 @@ const getAdminDashboard = async (req, res) => {
       newThisWeek: await User.countDocuments({ createdAt: { $gte: last7Days } })
     };
 
-    // Activity statistics
     const activityStats = {
       total: await Activity.countDocuments(),
       today: await Activity.countDocuments({ createdAt: { $gte: last24Hours } }),
@@ -487,7 +570,6 @@ const getAdminDashboard = async (req, res) => {
       thisMonth: await Activity.countDocuments({ createdAt: { $gte: last30Days } })
     };
 
-    // Emission statistics
     const emissionStats = {
       total: await Emission.countDocuments(),
       pending: await Emission.countDocuments({ status: 'submitted' }),
@@ -496,7 +578,6 @@ const getAdminDashboard = async (req, res) => {
       thisWeek: await Emission.countDocuments({ createdAt: { $gte: last7Days } })
     };
 
-    // Top active users
     const topUsers = await Activity.aggregate([
       { $match: { createdAt: { $gte: last7Days } } },
       { $group: { _id: '$user', activityCount: { $sum: 1 } } },
@@ -524,7 +605,6 @@ const getAdminDashboard = async (req, res) => {
       }
     ]);
 
-    // Recent critical activities (high-impact actions)
     const criticalActivities = await Activity.find({
       action: { 
         $in: ['deleted_emission', 'admin_created_user', 'admin_updated_user_role', 'admin_deleted_user'] 
@@ -535,7 +615,6 @@ const getAdminDashboard = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
-    // Security alerts (failed logins, suspicious activities)
     const securityAlerts = await Activity.aggregate([
       {
         $match: {
@@ -547,7 +626,7 @@ const getAdminDashboard = async (req, res) => {
         }
       },
       { $group: { _id: '$user', count: { $sum: 1 } } },
-      { $match: { count: { $gte: 3 } } }, // 3+ failed attempts or admin actions
+      { $match: { count: { $gte: 3 } } },
       {
         $lookup: {
           from: 'users',
@@ -557,16 +636,6 @@ const getAdminDashboard = async (req, res) => {
         }
       }
     ]);
-
-    // Log dashboard access
-    await logAdminActivity(
-      req.user.id,
-      'viewed_admin_dashboard',
-      'system',
-      null,
-      'Accessed admin dashboard',
-      req
-    );
 
     res.json({
       success: true,
@@ -628,28 +697,8 @@ const classifyActivitySeverity = (action) => {
   return 'medium';
 };
 
-const extractBrowser = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Chrome')) return 'Chrome';
-  if (userAgent.includes('Firefox')) return 'Firefox';
-  if (userAgent.includes('Safari')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  return 'Other';
-};
-
-const extractOS = (userAgent) => {
-  if (!userAgent) return 'Unknown';
-  if (userAgent.includes('Windows')) return 'Windows';
-  if (userAgent.includes('Mac')) return 'MacOS';
-  if (userAgent.includes('Linux')) return 'Linux';
-  if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
-  return 'Other';
-};
-
 module.exports = {
   getAllActivities,
   getUserActivitySummary,
   getAdminDashboard
-  // Note: Removed getAuditLogs function completely
 };
