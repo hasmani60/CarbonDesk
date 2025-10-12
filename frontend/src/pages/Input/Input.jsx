@@ -1,4 +1,4 @@
-// pages/Input/Input.jsx - Fine-Grained RBAC Implementation
+// pages/Input/Input.jsx - Fine-Grained RBAC Implementation with TaskWidget Integration
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, ChevronDown, ChevronUp, Info, Lock, Shield, AlertTriangle } from 'lucide-react';
@@ -9,6 +9,7 @@ import { emissionFactors } from '../../data/complete_emission_factors_db';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
+import TaskWidget from '../../components/TaskWidget/TaskWidget';
 import { saveEmission } from '../../utils/localStorage';
 import toast from 'react-hot-toast';
 
@@ -438,6 +439,40 @@ const Input = () => {
     }
   };
 
+  // Task Widget Integration - Handle task clicks to navigate to relevant scope/activity
+  const handleTaskClick = (task) => {
+    if (!task) return;
+    
+    // Check if user can access the task's scope
+    if (task.scope && canAccessScope(task.scope.toString())) {
+      // Switch to the task's scope
+      handleScopeChange(task.scope.toString());
+      
+      // If the task has a specific activity, expand it
+      if (task.activity && isActivityAccessible(task.activity)) {
+        // Wait for activities to load, then expand
+        setTimeout(() => {
+          setExpandedActivities(prev => ({
+            ...prev,
+            [task.activity]: true
+          }));
+          
+          // Scroll to the activity
+          const activityElement = document.getElementById(`activity-${task.activity}`);
+          if (activityElement) {
+            activityElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 300);
+        
+        toast.success(`Switched to Scope ${task.scope} for task: ${task.activity}`);
+      } else {
+        toast.info(`Viewing Scope ${task.scope} tasks`);
+      }
+    } else {
+      toast.error(`You don't have access to Scope ${task.scope} for this task`);
+    }
+  };
+
   // Filter activities based on search query
   const filteredActivities = activities.filter(activity =>
     activity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -557,6 +592,16 @@ const Input = () => {
         ]}
       />
 
+      {/* Task Widget for Contributors - Show tasks to help them complete assigned work */}
+      {user?.role === 'contributor' && (
+        <TaskWidget 
+          maxTasks={3}
+          showQuickActions={true}
+          onTaskClick={handleTaskClick}
+          className="mb-6"
+        />
+      )}
+
       {user?.role === 'contributor' && user?.restrictions && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-2">
@@ -627,7 +672,11 @@ const Input = () => {
                 const hasActivityAccess = isActivityAccessible(activity.name);
                 
                 return (
-                  <div key={index} className="border rounded-lg hover:shadow-md transition-shadow">
+                  <div 
+                    key={index} 
+                    id={`activity-${activity.name}`}
+                    className="border rounded-lg hover:shadow-md transition-shadow"
+                  >
                     <button
                       onClick={() => hasActivityAccess ? toggleActivityExpansion(activity.name) : null}
                       disabled={!hasActivityAccess}

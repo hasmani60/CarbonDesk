@@ -150,7 +150,10 @@ app.get('/health', (req, res) => {
       rbacSupport: true,
       strictRBAC: true,
       multiTenant: true,
-      companyOperations: true
+      companyOperations: true,
+      taskManagement: true,        // NEW FEATURE
+      taskAssignment: true,        // NEW FEATURE
+      workflowTracking: true
     }
   };
   
@@ -371,6 +374,25 @@ emissionRouter.delete('/:id',
 );
 
 app.use('/api/emissions', authenticateToken, emissionRouter);
+
+// ============================================
+// TASK MANAGEMENT ROUTES (NEW)
+// ============================================
+
+const taskRouter = express.Router();
+
+// Import task routes
+const taskRoutes = require('./routes/tasks');
+
+// Apply middleware stack, then mount the routes
+app.use('/api/tasks', 
+  authenticateToken,              // 1. Authenticate user
+  addOrganisationContext,         // 2. Add organisation context  
+  requireOrganisation,            // 3. Ensure user belongs to organisation
+  taskRoutes                      // 4. Apply task routes (which have role-based auth)
+);
+
+console.log('✅ Task management routes registered: /api/tasks');
 
 // ============================================
 // DASHBOARD ROUTES (WITH ORG CONTEXT & RBAC)
@@ -706,6 +728,7 @@ const PORT = process.env.PORT || 5001;
 const startServer = async () => {
   try {
     await localDB.init();
+    await localDB.createTasksTable();
     await connectDB();
     
     const server = app.listen(PORT, '0.0.0.0', () => {
@@ -723,6 +746,9 @@ const startServer = async () => {
       console.log(`   🔒 Strict RBAC: Enforced`);
       console.log(`   📋 Admin Monitoring: Enabled`);
       console.log(`   📝 Activity Logging: Enhanced`);
+      console.log(`   📋 Task Management: Enabled`);        // NEW
+      console.log(`   👥 Task Assignment: Enabled`);        // NEW
+      console.log(`   🔄 Workflow Tracking: Enabled`);      // NEW
       console.log(`   🗄️  Database: Local SQLite (Primary)`);
       console.log('');
       console.log(`🔐 COMPANY OPERATIONS (HIDDEN)`);
@@ -732,6 +758,12 @@ const startServer = async () => {
       console.log(`📌 DEFAULT CREDENTIALS:`);
       console.log(`   🔴 Company: admin@carbontrack-company.com / CompanyAdmin2025!`);
       console.log(`   🟢 Demo Admin: demo@example.com / password123`);
+      console.log('');
+      console.log(`📋 TASK MANAGEMENT ENDPOINTS:`);           // NEW SECTION
+      console.log(`   POST /api/tasks - Create task (Admin)`);
+      console.log(`   GET /api/tasks - Get tasks (Role-based)`);
+      console.log(`   PATCH /api/tasks/:id - Update task`);
+      console.log(`   GET /api/tasks/stats - Task statistics`);
       console.log('');
       console.log(`💚 Status: Ready`);
       console.log('🚀 ================================');

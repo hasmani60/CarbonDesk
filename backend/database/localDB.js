@@ -360,6 +360,7 @@ class LocalDatabase {
             .then(() => this.createMultiTenantTables())
             .then(() => this.createEmissionsTable())
             .then(() => this.createMACCTable())  // ← ADD THIS LINE
+            .then(() => this.createTasksTable())
             .then(resolve)
             .catch(reject);
         }
@@ -1239,6 +1240,563 @@ class LocalDatabase {
     });
   }
 
+  /**
+ * ===============================================
+ * TASK MANAGEMENT DATABASE METHODS
+ * ===============================================
+ */
+
+async createTasksTable() {
+  return new Promise((resolve, reject) => {
+    console.log('📋 Creating tasks table...');
+
+    const createTasksTable = `
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assigned_to INTEGER NOT NULL,
+        assigned_by INTEGER NOT NULL,
+        assigned_to_name TEXT,
+        assigned_by_name TEXT,
+        scope INTEGER NOT NULL,
+        activity TEXT NOT NULL,
+        source TEXT,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        deadline TEXT NOT NULL,
+        comments TEXT,
+        status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'medium',
+        organisation_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        
+        FOREIGN KEY (assigned_to) REFERENCES users(id),
+        FOREIGN KEY (assigned_by) REFERENCES users(id),
+        FOREIGN KEY (organisation_id) REFERENCES organisations(id) ON DELETE CASCADE
+      )
+    `;
+
+    const createIndexes = [
+      'CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_assigned_by ON tasks(assigned_by)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_organisation ON tasks(organisation_id)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope)'
+    ];
+
+    this.db.serialize(() => {
+      this.db.run(createTasksTable, (err) => {
+        if (err && !err.message.includes('already exists')) {
+          console.error('Error creating tasks table:', err);
+          reject(err);
+          return;
+        }
+      });
+
+      // Create indexes
+      createIndexes.forEach((indexQuery, i) => {
+        this.db.run(indexQuery, (err) => {
+          if (err && !err.message.includes('already exists')) {
+            console.error(`Error creating task index ${i}:`, err);
+          }
+        });
+      });
+
+      console.log('✅ Tasks table created successfully');
+      resolve();
+    });
+  });
+}
+
+/**
+ * Create a new task
+ */
+async createTask(taskData) {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('📋 Creating task:', JSON.stringify(taskData, null, 2));
+      
+      const query = `
+        INSERT INTO tasks (
+          assigned_to, assigned_by, assigned_to_name, assigned_by_name,
+          scope, activity, source, start_date, end_date, deadline,
+          comments, status, priority, organisation_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      
+      const values = [
+        taskData.assigned_to,
+        taskData.assigned_by,
+        taskData.assigned_to_name,
+        taskData.assigned_by_name,
+        taskData.scope,
+        taskData.activity,
+        taskData.source || null,
+        taskData.start_date,
+        taskData.end_date,
+        taskData.deadline,
+        taskData.comments || null,
+        taskData.status || 'pending',
+        taskData.priority || 'medium',
+        taskData.organisation_id
+      ];
+      
+      this.db.run(query, values, function(err) {
+        if (err) {
+          console.error('📋 Task creation error:', err);
+          reject(err);
+        } else {
+          const taskId = this.lastID;
+          console.log(`✅ Task created with ID: ${taskId}`);
+          
+          const createdTask = {
+            id: taskId,
+            ...taskData
+          };
+          
+          resolve(createdTask);
+        }
+      });
+    } catch (error) {
+      console.error('📋 Task creation exception:', error);
+      reject(error);
+    }
+  });
+}
+
+/**
+ * Get tasks for a specific user (contributor view)
+ */
+// backend/database/localDB.js
+// EXTRACT: Replace the getUserTasks function with this fixed version
+
+/**
+ * Get tasks for a specific user (contributor view)
+ */
+async getUserTasks(userId, filters = {}) {
+  return new Promise((resolve, reject) => {
+    // FIXED: Simplified query without nested subqueries that cause column reference issues
+    let query = `
+      SELECT t.id,
+             t.assigned_to,
+             t.assigned_by,
+             t.assigned_to_name,
+             t.assigned_by_name,
+             t.scope,
+             t.activity,
+             t.source,
+             t.start_date,
+             t.end_date,
+             t.deadline,
+             t.comments,
+             t.status,
+             t.priority,
+             t.organisation_id,
+             t.created_at,
+             t.updated_at,
+             t.completed_at,
+             assigner.name as assigned_by_name_fresh,
+             assignee.name as assigned_to_name_fresh
+      FROM tasks t
+      LEFT JOIN users assigner ON t.assigned_by = assigner.id
+      LEFT JOIN users assignee ON t.assigned_to = assignee.id
+      WHERE t.assigned_to = ?
+    `;
+    const params = [userId];
+
+    // Add filters
+    if (filters.status && filters.status !== 'all') {
+      query += ' AND t.status = ?';
+      params.push(filters.status);
+    }
+
+    if (filters.organisation_id) {
+      query += ' AND t.organisation_id = ?';
+      params.push(filters.organisation_id);
+    }
+
+    if (filters.scope && filters.scope !== 'all') {
+      query += ' AND t.scope = ?';
+      params.push(parseInt(filters.scope));
+    }
+
+    query += ' ORDER BY t.deadline ASC, t.created_at DESC';
+
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(filters.limit);
+    }
+
+    console.log('📋 Getting user tasks for user:', userId);
+    console.log('📋 Query:', query);
+    console.log('📋 Params:', params);
+
+    this.db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('❌ Error fetching user tasks:', err);
+        reject(err);
+      } else {
+        console.log(`📋 Found ${rows?.length || 0} tasks for user ${userId}`);
+        
+        if (!rows) {
+          resolve([]);
+          return;
+        }
+
+        // Add computed fields and standardize column names
+        const tasksWithStatus = rows.map(row => ({
+          id: row.id,
+          assigned_to: row.assigned_to,
+          assigned_by: row.assigned_by,
+          assigned_to_name: row.assigned_to_name_fresh || row.assigned_to_name,
+          assigned_by_name: row.assigned_by_name_fresh || row.assigned_by_name,
+          scope: row.scope,
+          activity: row.activity,
+          source: row.source,
+          start_date: row.start_date,
+          end_date: row.end_date,
+          deadline: row.deadline,
+          comments: row.comments,
+          status: row.status,
+          priority: row.priority,
+          organisation_id: row.organisation_id,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          completed_at: row.completed_at,
+          // Add computed fields
+          display_status: this.computeTaskStatus(row),
+          days_until_deadline: this.getDaysUntilDeadline(row.deadline)
+        }));
+        
+        resolve(tasksWithStatus);
+      }
+    });
+  });
+}
+
+/**
+ * Get all tasks (admin view)
+ */
+async getAllTasks(filters = {}) {
+  return new Promise((resolve, reject) => {
+    // FIXED: Simplified query without nested subqueries
+    let query = `
+      SELECT t.id,
+             t.assigned_to,
+             t.assigned_by,
+             t.assigned_to_name,
+             t.assigned_by_name,
+             t.scope,
+             t.activity,
+             t.source,
+             t.start_date,
+             t.end_date,
+             t.deadline,
+             t.comments,
+             t.status,
+             t.priority,
+             t.organisation_id,
+             t.created_at,
+             t.updated_at,
+             t.completed_at,
+             assigner.name as assigned_by_name_fresh,
+             assignee.name as assigned_to_name_fresh,
+             assignee.email as assigned_to_email
+      FROM tasks t
+      LEFT JOIN users assigner ON t.assigned_by = assigner.id
+      LEFT JOIN users assignee ON t.assigned_to = assignee.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    // Organisation filter (critical for multi-tenant)
+    if (filters.organisation_id) {
+      query += ' AND t.organisation_id = ?';
+      params.push(filters.organisation_id);
+    }
+
+    // Status filter
+    if (filters.status && filters.status !== 'all') {
+      query += ' AND t.status = ?';
+      params.push(filters.status);
+    }
+
+    // Scope filter
+    if (filters.scope && filters.scope !== 'all') {
+      query += ' AND t.scope = ?';
+      params.push(parseInt(filters.scope));
+    }
+
+    // Date range filter
+    if (filters.start_date) {
+      query += ' AND DATE(t.deadline) >= DATE(?)';
+      params.push(filters.start_date);
+    }
+
+    if (filters.end_date) {
+      query += ' AND DATE(t.deadline) <= DATE(?)';
+      params.push(filters.end_date);
+    }
+
+    // Search filter
+    if (filters.search) {
+      query += ` AND (
+        t.activity LIKE ? OR 
+        t.comments LIKE ? OR 
+        assignee.name LIKE ? OR
+        t.source LIKE ?
+      )`;
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    query += ' ORDER BY t.deadline ASC, t.created_at DESC';
+
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(filters.limit);
+    }
+
+    console.log('📋 Getting all tasks');
+    console.log('📋 Filters:', JSON.stringify(filters));
+    console.log('📋 Query:', query);
+    console.log('📋 Params:', params);
+
+    this.db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('❌ Error fetching all tasks:', err);
+        reject(err);
+      } else {
+        console.log(`📋 Found ${rows?.length || 0} tasks`);
+        
+        if (!rows) {
+          resolve([]);
+          return;
+        }
+
+        // Add computed fields and standardize column names
+        const tasksWithStatus = rows.map(row => ({
+          id: row.id,
+          assigned_to: row.assigned_to,
+          assigned_by: row.assigned_by,
+          assigned_to_name: row.assigned_to_name_fresh || row.assigned_to_name,
+          assigned_by_name: row.assigned_by_name_fresh || row.assigned_by_name,
+          assigned_to_email: row.assigned_to_email,
+          scope: row.scope,
+          activity: row.activity,
+          source: row.source,
+          start_date: row.start_date,
+          end_date: row.end_date,
+          deadline: row.deadline,
+          comments: row.comments,
+          status: row.status,
+          priority: row.priority,
+          organisation_id: row.organisation_id,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          completed_at: row.completed_at,
+          // Add computed fields
+          display_status: this.computeTaskStatus(row),
+          days_until_deadline: this.getDaysUntilDeadline(row.deadline)
+        }));
+        
+        resolve(tasksWithStatus);
+      }
+    });
+  });
+}
+
+/**
+ * Get task by ID
+ */
+async getTaskById(taskId) {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT t.*, 
+             assigner.name as assigned_by_name,
+             assignee.name as assigned_to_name,
+             assignee.email as assigned_to_email
+      FROM tasks t
+      LEFT JOIN users assigner ON t.assigned_by = assigner.id
+      LEFT JOIN users assignee ON t.assigned_to = assignee.id
+      WHERE t.id = ?
+    `;
+    
+    this.db.get(query, [taskId], (err, row) => {
+      if (err) {
+        console.error('Error fetching task by ID:', err);
+        reject(err);
+      } else {
+        if (row) {
+          row.display_status = this.computeTaskStatus(row);
+          row.days_until_deadline = this.getDaysUntilDeadline(row.deadline);
+        }
+        resolve(row);
+      }
+    });
+  });
+}
+
+/**
+ * Update task
+ */
+async updateTask(taskId, updates) {
+  return new Promise((resolve, reject) => {
+    const fields = [];
+    const values = [];
+
+    // Build dynamic update query
+    Object.keys(updates).forEach(key => {
+      if (key !== 'id') {
+        fields.push(`${key} = ?`);
+        values.push(updates[key]);
+      }
+    });
+
+    // Add completion timestamp if status is being changed to completed
+    if (updates.status === 'completed' && !updates.completed_at) {
+      fields.push('completed_at = CURRENT_TIMESTAMP');
+    }
+
+    if (fields.length === 0) {
+      return resolve();
+    }
+
+    values.push(taskId);
+    const query = `
+      UPDATE tasks 
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `;
+
+    this.db.run(query, values, function(err) {
+      if (err) {
+        console.error('Error updating task:', err);
+        reject(err);
+      } else {
+        console.log(`✅ Task ${taskId} updated successfully`);
+        resolve({ changes: this.changes });
+      }
+    });
+  });
+}
+
+/**
+ * Delete task
+ */
+async deleteTask(taskId) {
+  return new Promise((resolve, reject) => {
+    const query = 'DELETE FROM tasks WHERE id = ?';
+    
+    this.db.run(query, [taskId], function(err) {
+      if (err) {
+        console.error('Error deleting task:', err);
+        reject(err);
+      } else {
+        console.log(`✅ Task ${taskId} deleted successfully`);
+        resolve({ changes: this.changes });
+      }
+    });
+  });
+}
+
+/**
+ * Get task statistics
+ */
+async getTaskStats(organisationId, userId = null) {
+  return new Promise((resolve, reject) => {
+    let query = `
+      SELECT 
+        COUNT(*) as total_tasks,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_tasks,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+        SUM(CASE WHEN DATE(deadline) < DATE('now') AND status != 'completed' THEN 1 ELSE 0 END) as overdue_tasks,
+        SUM(CASE WHEN scope = 1 THEN 1 ELSE 0 END) as scope1_tasks,
+        SUM(CASE WHEN scope = 2 THEN 1 ELSE 0 END) as scope2_tasks,
+        SUM(CASE WHEN scope = 3 THEN 1 ELSE 0 END) as scope3_tasks
+      FROM tasks
+      WHERE organisation_id = ?
+    `;
+    const params = [organisationId];
+
+    if (userId) {
+      query += ' AND assigned_to = ?';
+      params.push(userId);
+    }
+    
+    this.db.get(query, params, (err, row) => {
+      if (err) {
+        console.error('Error fetching task stats:', err);
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+}
+
+/**
+ * Get tasks due soon (for notifications)
+ */
+async getTasksDueSoon(days = 3, organisationId = null) {
+  return new Promise((resolve, reject) => {
+    let query = `
+      SELECT t.*, 
+             assignee.name as assigned_to_name,
+             assignee.email as assigned_to_email
+      FROM tasks t
+      LEFT JOIN users assignee ON t.assigned_to = assignee.id
+      WHERE t.status IN ('pending', 'in_progress')
+        AND DATE(t.deadline) BETWEEN DATE('now') AND DATE('now', '+' || ? || ' days')
+    `;
+    const params = [days];
+
+    if (organisationId) {
+      query += ' AND t.organisation_id = ?';
+      params.push(organisationId);
+    }
+
+    query += ' ORDER BY t.deadline ASC';
+    
+    this.db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('Error fetching tasks due soon:', err);
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+}
+
+/**
+ * Utility: Compute task display status
+ */
+computeTaskStatus(task) {
+  if (task.status === 'completed') return 'completed';
+  if (task.status === 'cancelled') return 'cancelled';
+  
+  const deadline = new Date(task.deadline);
+  const now = new Date();
+  
+  if (deadline < now) return 'overdue';
+  return task.status;
+}
+
+/**
+ * Utility: Get days until deadline
+ */
+getDaysUntilDeadline(deadline) {
+  const deadlineDate = new Date(deadline);
+  const now = new Date();
+  const diffTime = deadlineDate - now;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+}
+
   // ============================================
   // DATABASE CONNECTION MANAGEMENT
   // ============================================
@@ -1255,6 +1813,8 @@ class LocalDatabase {
     }
   }
 }
+
+
 
 // Create singleton instance
 const localDB = new LocalDatabase();

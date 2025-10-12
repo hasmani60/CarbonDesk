@@ -1,4 +1,4 @@
-// Dashboard.jsx - Organization-Filtered Dashboard with Real Data Only
+// Dashboard.jsx - Organization-Filtered Dashboard with Real Data Only + TaskWidget Integration
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye, Database, AlertCircle } from 'lucide-react';
@@ -9,6 +9,7 @@ import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/
 import { getEmissions, getEmissionsStats, getTotalEmissions } from '../../utils/localStorage';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
+import TaskWidget from '../../components/TaskWidget/TaskWidget';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -77,7 +78,7 @@ const Dashboard = () => {
       setLoading(true);
       setError(null);
       
-      console.log('🔄 Fetching dashboard data for organisation:', user?.organisation_id);
+      console.log('📄 Fetching dashboard data for organisation:', user?.organisation_id);
       
       // Load user's emission data (already filtered by organisation)
       const allEmissions = getEmissions();
@@ -455,6 +456,15 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Task Widget for Contributors and Analysts */}
+      {['contributor', 'analyst'].includes(user?.role) && (
+        <TaskWidget 
+          maxTasks={5}
+          showQuickActions={true}
+          className="mb-6"
+        />
       )}
 
       {/* Key Metrics Summary */}

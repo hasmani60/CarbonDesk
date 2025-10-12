@@ -63,6 +63,10 @@ const UserManagement = () => {
     totalItems: 0,
     itemsPerPage: 10
   });
+  
+  // Rate limiting
+  const [lastRequestTime, setLastRequestTime] = useState(0);
+  const MIN_REQUEST_INTERVAL = 2000;
 
   const getRestrictionsDisplay = (userItem) => {
     if (!userItem.restrictions) {
@@ -124,28 +128,50 @@ const UserManagement = () => {
 
   useEffect(() => {
     if (isAdmin()) {
-      loadUsers();
-      loadUserStats();
-      loadRBACOptions();
-      loadActivitySummary();
-      loadRecentActivities();
+      // Debounce to prevent rapid requests
+      const debounceTimeout = setTimeout(() => {
+        loadUsers();
+        loadUserStats();
+        loadRBACOptions();
+        loadActivitySummary();
+        loadRecentActivities();
+      }, 500);
+      
+      return () => clearTimeout(debounceTimeout);
     }
-  }, [searchQuery, filters, pagination.currentPage]);
+  }, [searchQuery, filters.role, filters.status, pagination.currentPage]);
 
   useEffect(() => {
+    let updateTimeout;
     const handleActivityUpdate = (event) => {
       console.log('New activity logged:', event.detail);
-      loadRecentActivities();
-      loadActivitySummary();
+      // Debounce activity updates
+      clearTimeout(updateTimeout);
+      updateTimeout = setTimeout(() => {
+        loadRecentActivities();
+        loadActivitySummary();
+      }, 1000);
     };
 
     window.addEventListener('user-activity-logged', handleActivityUpdate);
-    return () => window.removeEventListener('user-activity-logged', handleActivityUpdate);
+    return () => {
+      clearTimeout(updateTimeout);
+      window.removeEventListener('user-activity-logged', handleActivityUpdate);
+    };
   }, []);
 
   const loadUsers = async () => {
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastRequestTime < MIN_REQUEST_INTERVAL) {
+      console.log('⏱️ Rate limited: skipping request');
+      return;
+    }
+    
     try {
       setLoading(true);
+      setLastRequestTime(now);
+      
       const response = await adminAPI.getAllUsers({
         search: searchQuery,
         role: filters.role !== 'all' ? filters.role : undefined,
@@ -180,7 +206,11 @@ const UserManagement = () => {
       }
     } catch (error) {
       console.error('Error loading users:', error);
-      toast.error('Failed to load users');
+      if (error.response?.status === 429) {
+        toast.error('Too many requests. Please wait a moment...');
+      } else {
+        toast.error('Failed to load users');
+      }
       setUsers([]);
     } finally {
       setLoading(false);

@@ -44,6 +44,12 @@ const AdminMonitor = () => {
     totalItems: 0,
     itemsPerPage: 20
   });
+  
+  // Rate limiting state
+  const [lastRequestTime, setLastRequestTime] = useState(0);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const MIN_REQUEST_INTERVAL = 2000; // 2 seconds between requests
+  const loadDataTimeoutRef = useState(null)[0];
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Eye, description: 'System overview and key metrics' },
@@ -57,35 +63,81 @@ const AdminMonitor = () => {
       return;
     }
     
-    loadData();
+    // Debounced initial load - prevent React.StrictMode double call
+    const initialLoadTimeout = setTimeout(() => {
+      loadData();
+    }, 300);
     
-    // Listen for real-time updates
-    const handleDataUpdate = () => setTimeout(loadData, 500);
+    // Listen for real-time updates with debouncing
+    let updateTimeout;
+    const handleDataUpdate = () => {
+      clearTimeout(updateTimeout);
+      updateTimeout = setTimeout(() => loadData(), 1000); // 1 second debounce
+    };
     
     window.addEventListener('emission-added', handleDataUpdate);
     window.addEventListener('user-activity-logged', handleDataUpdate);
     
-    const refreshInterval = setInterval(loadData, 30000);
+    // Increase refresh interval to reduce load
+    const refreshInterval = setInterval(loadData, 60000); // Changed from 30s to 60s
     
     return () => {
+      clearTimeout(initialLoadTimeout);
+      clearTimeout(updateTimeout);
       window.removeEventListener('emission-added', handleDataUpdate);
       window.removeEventListener('user-activity-logged', handleDataUpdate);
       clearInterval(refreshInterval);
     };
-  }, [user]);
+  }, [user]); // Only depend on user, not other state
 
   useEffect(() => {
     if (isAdmin()) {
-      loadData();
+      // Debounce filter/tab changes to prevent rapid requests
+      const debounceTimeout = setTimeout(() => {
+        loadData();
+      }, 500); // 500ms debounce
+      
+      return () => clearTimeout(debounceTimeout);
     }
-  }, [activeTab, filters, pagination.currentPage, searchQuery]);
+  }, [activeTab, filters.timeframe, filters.userId, filters.action, pagination.currentPage]);
+
+  // Separate useEffect for search query with longer debounce
+  useEffect(() => {
+    if (isAdmin() && activeTab === 'activities') {
+      const searchDebounceTimeout = setTimeout(() => {
+        loadData();
+      }, 800); // 800ms debounce for search
+      
+      return () => clearTimeout(searchDebounceTimeout);
+    }
+  }, [searchQuery]);
 
   const loadData = async () => {
     if (!isAdmin()) return;
 
+    // Rate limiting check
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      console.log(`⏱️ Rate limited: waiting ${MIN_REQUEST_INTERVAL - timeSinceLastRequest}ms`);
+      setIsRateLimited(true);
+      
+      // Schedule the request for later
+      if (loadDataTimeoutRef) clearTimeout(loadDataTimeoutRef);
+      loadDataTimeoutRef = setTimeout(() => {
+        setIsRateLimited(false);
+        loadData();
+      }, MIN_REQUEST_INTERVAL - timeSinceLastRequest);
+      
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
+      setIsRateLimited(false);
+      setLastRequestTime(now);
       
       console.log('🔐 Loading admin data from backend SQLite database...');
       
@@ -104,8 +156,19 @@ const AdminMonitor = () => {
       setLastUpdate(new Date());
     } catch (error) {
       console.error('❌ Admin data load error:', error);
-      setError(error.message || 'Failed to load admin data. Please try again.');
-      toast.error('Failed to load admin data');
+      
+      // Check if it's a 429 error
+      if (error.response?.status === 429 || error.message?.includes('429')) {
+        setError('Too many requests. Please wait a moment before refreshing.');
+        toast.error('Rate limit reached. Slowing down requests...');
+        setIsRateLimited(true);
+        
+        // Wait longer before allowing next request
+        setTimeout(() => setIsRateLimited(false), 5000);
+      } else {
+        setError(error.message || 'Failed to load admin data. Please try again.');
+        toast.error('Failed to load admin data');
+      }
     } finally {
       setLoading(false);
     }
@@ -420,10 +483,12 @@ const AdminMonitor = () => {
 
             <button
               onClick={loadData}
-              className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+              disabled={isRateLimited}
+              className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isRateLimited ? 'Please wait...' : 'Refresh data'}
             >
-              <RefreshCw className="w-4 h-4" />
-              <span>Refresh</span>
+              <RefreshCw className={`w-4 h-4 ${isRateLimited ? 'animate-spin' : ''}`} />
+              <span>{isRateLimited ? 'Please wait...' : 'Refresh'}</span>
             </button>
           </div>
         </div>
