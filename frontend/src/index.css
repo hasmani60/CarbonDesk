@@ -1,51 +1,94 @@
-/* index.css - Main CSS file */
+/* index.css - Carbon Accounting Professional Theme */
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  /* Professional Green Conservation Theme */
+  --background: 142 20% 97%;              /* Soft sage white */
+  --foreground: 150 30% 15%;              /* Deep forest green text */
+  --card: 0 0% 100%;                      /* Pure white cards */
+  --card-foreground: 150 25% 20%;         /* Dark green card text */
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222.2 84% 4.9%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 222.2 84% 4.9%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
+  --popover-foreground: 150 25% 20%;
+  
+  /* Primary: Professional Forest Green */
+  --primary: 152 55% 35%;                 /* Forest green */
+  --primary-foreground: 0 0% 100%;        /* White text on primary */
+  
+  /* Secondary: Earthy Sage */
+  --secondary: 142 25% 88%;               /* Light sage */
+  --secondary-foreground: 150 30% 25%;    /* Dark green text */
+  
+  /* Muted: Soft natural tones */
+  --muted: 142 20% 92%;                   /* Very light sage */
+  --muted-foreground: 150 15% 45%;        /* Medium green-gray */
+  
+  /* Accent: Vibrant eco-green */
+  --accent: 142 65% 45%;                  /* Bright conservation green */
+  --accent-foreground: 0 0% 100%;
+  
+  /* Destructive: Natural warning red */
+  --destructive: 0 65% 50%;
+  --destructive-foreground: 0 0% 100%;
+  
+  /* Borders & Inputs */
+  --border: 142 20% 88%;                  /* Soft sage border */
+  --input: 142 20% 95%;                   /* Light input bg */
+  --ring: 152 55% 35%;                    /* Focus ring matches primary */
   --radius: 0.5rem;
+  
+  /* Custom conservation colors */
+  --eco-primary: 152 55% 35%;             /* Primary forest green */
+  --eco-light: 142 40% 92%;               /* Light sage background */
+  --eco-accent: 142 70% 50%;              /* Bright green accent */
+  --eco-dark: 150 45% 25%;                /* Deep forest */
+  --eco-muted: 142 15% 65%;               /* Muted green-gray */
+  
+  /* Chart colors - Professional green palette */
+  --chart-1: 152 55% 35%;                 /* Forest green */
+  --chart-2: 142 65% 45%;                 /* Bright eco green */
+  --chart-3: 168 60% 42%;                 /* Teal green */
+  --chart-4: 142 40% 60%;                 /* Sage green */
+  --chart-5: 150 35% 50%;                 /* Deep sea green */
+  --chart-6: 142 25% 70%;                 /* Light sage */
 }
 
 .dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  /* Dark mode: Deep forest night theme */
+  --background: 150 25% 12%;              /* Deep forest night */
+  --foreground: 142 20% 95%;              /* Light sage text */
+  --card: 150 20% 15%;                    /* Dark forest card */
+  --card-foreground: 142 20% 95%;
+  --popover: 150 20% 15%;
+  --popover-foreground: 142 20% 95%;
+  
+  --primary: 142 60% 55%;                 /* Brighter green for dark mode */
+  --primary-foreground: 150 30% 10%;
+  
+  --secondary: 150 15% 20%;               /* Dark sage */
+  --secondary-foreground: 142 20% 85%;
+  
+  --muted: 150 15% 20%;
+  --muted-foreground: 142 15% 65%;
+  
+  --accent: 142 65% 50%;
+  --accent-foreground: 150 30% 10%;
+  
+  --destructive: 0 60% 45%;
+  --destructive-foreground: 142 20% 95%;
+  
+  --border: 150 15% 25%;
+  --input: 150 15% 20%;
+  --ring: 142 60% 55%;
+  
+  /* Dark mode chart colors */
+  --chart-1: 142 60% 55%;
+  --chart-2: 142 70% 60%;
+  --chart-3: 168 65% 52%;
+  --chart-4: 142 45% 65%;
+  --chart-5: 150 40% 55%;
+  --chart-6: 142 30% 75%;
 }
 
 * {
@@ -56,25 +99,32 @@ body {
   color: hsl(var(--foreground));
   background: hsl(var(--background));
   font-feature-settings: "rlig" 1, "calt" 1;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Green theme */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
+  background: hsl(var(--muted));
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
+  background: hsl(var(--eco-muted));
+  border-radius: 4px;
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: hsl(var(--primary));
 }
 
 /* Custom animations */
@@ -98,6 +148,28 @@ body {
   }
 }
 
+@keyframes slideDown {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-in-out;
 }
@@ -106,17 +178,270 @@ body {
   animation: slideUp 0.3s ease-out;
 }
 
-/* Custom table styles */
-.table-hover-row:hover {
-  background-color: rgba(16, 185, 129, 0.05);
+.animate-slideDown {
+  animation: slideDown 0.3s ease-out;
 }
 
-/* Loading spinner */
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Sidebar specific animations */
+@keyframes sidebarSlideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.sidebar-enter {
+  animation: sidebarSlideIn 0.3s ease-out;
+}
+
+/* Sidebar hover menu */
+.sidebar-hover-menu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 0.5rem;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid hsl(var(--border));
+  min-width: 160px;
+  z-index: 1000;
+  animation: slideInFromLeft 0.2s ease-out;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Hover menu arrow */
+.hover-menu-arrow {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-left: 1px solid hsl(var(--border));
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* Ensure hover menu stays visible when hovering over it */
+.sidebar-nav-item:hover .sidebar-hover-menu,
+.sidebar-hover-menu:hover {
+  display: block;
+}
+
+/* Smooth hover transitions for menu items */
+.hover-menu-item {
+  transition: all 0.15s ease-in-out;
+}
+
+.hover-menu-item:hover {
+  transform: translateX(2px);
+}
+
+/* Active indicator dot */
+.active-dot {
+  width: 6px;
+  height: 6px;
+  background: hsl(var(--primary));
+  border-radius: 50%;
+  margin-left: auto;
+}
+
+/* Prevent menu from being cut off */
+nav {
+  overflow: visible !important;
+}
+
+nav ul {
+  overflow: visible !important;
+}
+
+nav li {
+  overflow: visible !important;
+}
+
+/* Header alignment fixes */
+header {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+}
+
+header > div {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/* Notification bell alignment */
+.notification-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  position: relative;
+}
+
+/* Notification badge positioning - Top-right corner (no overlap) */
+.notification-badge,
+header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
+  position: absolute;
+  top: 0 !important;
+  right: 0 !important;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: white;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  border-radius: 9999px;
+  border: 1px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 20;
+  transform: translate(25%, -25%) !important;
+  transform-origin: center;
+}
+
+/* Ensure badge container doesn't affect layout */
+header button:has([class*="lucide-bell"]) {
+  position: relative;
+  overflow: visible;
+}
+
+/* Badge for single digit - perfect circle */
+header button span[class*="absolute"][class*="top-0"][class*="right-0"]:not(:has(*)) {
+  min-width: 14px;
+  width: 14px;
+  padding: 0;
+}
+
+/* Ensure badge doesn't overlap bell icon */
+header button .lucide-bell {
+  position: relative;
+  z-index: 1;
+}
+
+/* Badge pop animation */
+@keyframes badgePop {
+  0% {
+    transform: translate(25%, -25%) scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: translate(25%, -25%) scale(1.2);
+  }
+  100% {
+    transform: translate(25%, -25%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Apply animation on appearance */
+header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
+  animation: badgePop 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* User profile alignment */
+.user-profile-section {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* Ensure all header icons are same size and aligned */
+header button,
+header a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Notification dropdown positioning */
+.notification-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 1000;
+}
+
+/* User avatar circle - perfect centering */
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Perfect icon centering in collapsed sidebar */
+.sidebar-icon-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 42px;
+}
+
+/* Ensure nav items are perfectly centered when collapsed */
+nav a, nav button {
+  display: flex;
+  align-items: center;
+}
+
+/* Fix for collapsed sidebar icons - force center alignment */
+.w-20 nav a,
+.w-20 nav button {
+  justify-content: center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.w-20 nav a svg,
+.w-20 nav button svg {
+  margin: 0 auto;
+}
+
+/* Custom table styles with green theme */
+.table-hover-row {
+  transition: all 0.2s ease;
+}
+
+.table-hover-row:hover {
+  background-color: hsl(var(--eco-light));
+  border-left: 3px solid hsl(var(--primary));
+}
+
+/* Loading spinner - Green theme */
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid #f3f3f3;
-  border-top: 2px solid #10b981;
+  border: 2px solid hsl(var(--muted));
+  border-top: 2px solid hsl(var(--primary));
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -126,130 +451,186 @@ body {
   100% { transform: rotate(360deg); }
 }
 
-/* Custom focus styles */
-.focus-emerald:focus {
+/* Custom focus styles - Green theme */
+.focus-green:focus {
   outline: none;
-  border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
 }
 
-/* Card hover effects */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  transition: all 0.2s ease;
+}
+
+/* Card hover effects - Professional elevation */
 .card-hover {
-  transition: all 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid hsl(var(--border));
 }
 
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px hsl(var(--primary) / 0.15),
+              0 4px 8px -4px hsl(var(--primary) / 0.1);
+  border-color: hsl(var(--primary) / 0.3);
 }
 
-/* Status badge styles */
+/* Status badge styles - Green conservation theme */
 .status-active {
-  background-color: #dcfce7;
-  color: #166534;
+  background: linear-gradient(135deg, hsl(142 60% 92%), hsl(142 60% 88%));
+  color: hsl(150 60% 25%);
+  border: 1px solid hsl(142 50% 80%);
+  font-weight: 600;
 }
 
 .status-inactive {
-  background-color: #fee2e2;
-  color: #991b1b;
+  background: linear-gradient(135deg, hsl(0 60% 95%), hsl(0 60% 92%));
+  color: hsl(0 60% 35%);
+  border: 1px solid hsl(0 50% 85%);
+  font-weight: 600;
 }
 
 .status-pending {
-  background-color: #fef3c7;
-  color: #92400e;
+  background: linear-gradient(135deg, hsl(45 90% 95%), hsl(45 90% 90%));
+  color: hsl(45 70% 30%);
+  border: 1px solid hsl(45 80% 80%);
+  font-weight: 600;
 }
 
-/* Notification dot animation */
+.status-completed {
+  background: linear-gradient(135deg, hsl(152 60% 92%), hsl(152 60% 88%));
+  color: hsl(152 60% 25%);
+  border: 1px solid hsl(152 50% 80%);
+  font-weight: 600;
+}
+
+/* Notification dot animation - Green pulse */
 .notification-pulse {
   animation: pulse 2s infinite;
+  background: hsl(var(--primary));
 }
 
 @keyframes pulse {
   0% {
     transform: scale(1);
     opacity: 1;
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.7);
   }
   50% {
-    transform: scale(1.1);
-    opacity: 0.8;
+    transform: scale(1.05);
+    opacity: 0.9;
+    box-shadow: 0 0 0 6px hsl(var(--primary) / 0);
   }
   100% {
     transform: scale(1);
     opacity: 1;
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
   }
 }
 
-/* Chart container styles */
+/* Chart container styles - Professional green gradient */
 .chart-container {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(135deg, 
+    hsl(var(--background)), 
+    hsl(var(--eco-light)));
+  border-radius: 12px;
+  padding: 1.5rem;
 }
 
-/* Responsive utilities */
-@media (max-width: 640px) {
-  .mobile-stack {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .mobile-full {
-    width: 100%;
-  }
+/* Button styles - Green theme */
+.btn-primary {
+  background: linear-gradient(135deg, 
+    hsl(var(--primary)), 
+    hsl(152 60% 40%));
+  color: hsl(var(--primary-foreground));
+  border: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.2);
 }
 
-/* Print styles */
-@media print {
-  .no-print {
-    display: none !important;
-  }
-  
-  .print-break {
-    page-break-before: always;
-  }
+.btn-primary:hover {
+  background: linear-gradient(135deg, 
+    hsl(152 60% 30%), 
+    hsl(152 65% 35%));
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.3);
+  transform: translateY(-2px);
 }
 
-/* Toast notification styles */
-.Toastify__toast {
-  border-radius: 8px;
+.btn-secondary {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+  border: 1px solid hsl(var(--border));
+  transition: all 0.3s ease;
 }
 
-.Toastify__toast--success {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+.btn-secondary:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--primary));
 }
 
-.Toastify__toast--error {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+/* Card styles - Professional design */
+.professional-card {
+  background: hsl(var(--card));
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
+  transition: all 0.3s ease;
 }
 
-.Toastify__toast--warning {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+.professional-card:hover {
+  box-shadow: 0 8px 16px hsl(var(--primary) / 0.1);
 }
 
-.Toastify__toast--info {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+/* Gradient backgrounds */
+.gradient-green {
+  background: linear-gradient(135deg, 
+    hsl(152 55% 45%), 
+    hsl(142 65% 50%));
 }
 
-/* Additional CSS fixes for index.css to prevent text cutoff and improve UI display */
-
-/* Ensure text doesn't get cut off */
-.text-cutoff-fix {
-  white-space: nowrap;
-  overflow: visible;
-  text-overflow: visible;
+.gradient-eco-light {
+  background: linear-gradient(135deg, 
+    hsl(142 30% 95%), 
+    hsl(142 35% 92%));
 }
 
-/* Better tooltip positioning */
-.tooltip {
-  position: relative;
-  z-index: 9999;
-  max-width: 300px;
-  word-wrap: break-word;
+.gradient-forest {
+  background: linear-gradient(135deg, 
+    hsl(150 45% 25%), 
+    hsl(152 50% 30%));
+}
+
+/* Text colors - Green theme */
+.text-eco-primary {
+  color: hsl(var(--eco-primary));
+}
+
+.text-eco-dark {
+  color: hsl(var(--eco-dark));
+}
+
+.text-eco-muted {
+  color: hsl(var(--eco-muted));
+}
+
+/* Background colors */
+.bg-eco-light {
+  background-color: hsl(var(--eco-light));
+}
+
+.bg-eco-primary {
+  background-color: hsl(var(--eco-primary));
 }
 
 /* Improved pie chart labels */
 .recharts-pie-label-text {
-  font-size: 12px !important;
-  fill: #374151 !important;
-  font-weight: 500;
+  font-size: 13px !important;
+  fill: hsl(var(--foreground)) !important;
+  font-weight: 600 !important;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
 }
 
 /* Better notification card styling */
@@ -258,9 +639,17 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  background: hsl(var(--card));
+  border-left: 4px solid hsl(var(--primary));
+  transition: all 0.2s ease;
 }
 
-.notification-card .notification-content {
+.notification-card:hover {
+  background: hsl(var(--eco-light));
+  border-left-width: 6px;
+}
+
+.notification-content {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
@@ -281,14 +670,20 @@ body {
   transform: translate(-50%, -50%);
   pointer-events: none;
   text-align: center;
+  font-weight: 700;
+  color: hsl(var(--eco-dark));
 }
 
-/* Better legend styling */
+/* Better legend styling - Professional green theme */
 .chart-legend {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 1rem;
+  gap: 8px;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: hsl(var(--background));
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
 }
 
 .legend-item {
@@ -296,29 +691,41 @@ body {
   align-items: center;
   justify-content: space-between;
   font-size: 0.875rem;
-  min-height: 20px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.legend-item:hover {
+  background: hsl(var(--eco-light));
 }
 
 .legend-color {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-right: 8px;
+  margin-right: 10px;
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .legend-text {
   flex-grow: 1;
-  margin-right: 8px;
+  margin-right: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: hsl(var(--foreground));
+  font-weight: 500;
 }
 
 .legend-value {
-  font-weight: 600;
-  color: #6b7280;
+  font-weight: 700;
+  color: hsl(var(--eco-primary));
   white-space: nowrap;
+  font-size: 0.9rem;
 }
 
 /* Responsive chart adjustments */
@@ -334,53 +741,206 @@ body {
   .legend-item {
     font-size: 0.75rem;
   }
+  
+  .chart-container {
+    padding: 1rem;
+  }
 }
 
-/* Notification badge improvements */
+/* Notification badge improvements - Green theme */
 .notification-badge {
   animation: pulse 2s infinite;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, hsl(0 70% 55%), hsl(0 75% 60%));
+  box-shadow: 0 0 0 3px hsl(0 70% 55% / 0.3);
 }
 
 /* Better hover states for interactive elements */
-.interactive-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease-in-out;
+.interactive-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
 }
 
-/* Tooltip improvements */
+.interactive-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px hsl(var(--primary) / 0.15);
+}
+
+/* Tooltip improvements - Green theme */
 .recharts-tooltip-wrapper {
   z-index: 1000 !important;
 }
 
 .recharts-tooltip-content {
-  background: white !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
-  padding: 8px 12px !important;
+  background: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 16px hsl(var(--foreground) / 0.1) !important;
+  padding: 12px 16px !important;
 }
 
 .recharts-tooltip-label {
-  color: #111827 !important;
-  font-weight: 600 !important;
-  margin-bottom: 4px !important;
+  color: hsl(var(--eco-dark)) !important;
+  font-weight: 700 !important;
+  margin-bottom: 6px !important;
+  font-size: 0.9rem !important;
 }
 
-/* Loading state improvements */
+.recharts-tooltip-item {
+  color: hsl(var(--foreground)) !important;
+  font-weight: 500 !important;
+}
+
+/* Loading state improvements - Green theme */
 .loading-spinner {
   animation: spin 1s linear infinite;
-  border-color: #e5e7eb;
-  border-top-color: #10b981;
+  border-color: hsl(var(--muted));
+  border-top-color: hsl(var(--primary));
+  border-width: 3px;
 }
 
-/* Form input improvements to prevent cutoff */
+/* Form input improvements - Green theme */
 input, select, textarea {
   line-height: 1.5 !important;
-  min-height: 40px;
-  padding-top: 8px !important;
-  padding-bottom: 8px !important;
+  min-height: 44px;
+  padding: 10px 14px !important;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--input));
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+}
+
+/* Fix for inputs with left icons */
+input[type="date"],
+input[type="email"],
+input[type="password"],
+input[type="text"].pl-10,
+input.pl-10 {
+  padding-left: 2.75rem !important;
+  padding-right: 1rem !important;
+}
+
+/* Fix for inputs with right icons (like password toggle) */
+input.pr-10,
+input.pr-12 {
+  padding-right: 2.75rem !important;
+}
+
+/* Fix for inputs with both left and right icons */
+input.pl-10.pr-10,
+input.pl-10.pr-12 {
+  padding-left: 2.75rem !important;
+  padding-right: 2.75rem !important;
+}
+
+/* Fix for date inputs specifically - ALLOW CALENDAR INTERACTION */
+input[type="date"] {
+  padding-left: 2.75rem !important;
+  padding-right: 2.75rem !important; /* Space for calendar icon */
+  position: relative;
+  cursor: pointer;
+}
+
+/* Ensure date picker calendar icon is clickable */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 0.75rem;
+  cursor: pointer;
+  opacity: 0.6;
+  width: 20px;
+  height: 20px;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+/* Firefox date picker */
+input[type="date"]::-moz-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+input[type="date"]::-moz-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Ensure the calendar icon wrapper in forms doesn't block clicks */
+.relative input[type="date"] + svg,
+.relative > svg.lucide-calendar {
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Make sure date input is interactive */
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Ensure date input wrapper allows clicks */
+.relative:has(input[type="date"]) {
+  position: relative;
+  cursor: pointer;
+}
+
+/* Fix for date inputs in forms - ensure clickable */
+form input[type="date"] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+input::placeholder, select::placeholder, textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Icon positioning fixes */
+.relative input + svg,
+.relative svg + input {
+  pointer-events: none;
+}
+
+/* Ensure icons don't interfere with input */
+.relative > svg {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Exception: Allow clicks through decorative calendar icon */
+.relative > svg.lucide-calendar {
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Fix for button icons inside input containers */
+.relative > button {
+  z-index: 20;
+  pointer-events: auto;
+}
+
+/* Ensure date input is always interactive */
+input[type="date"] {
+  z-index: 5;
+  pointer-events: auto !important;
+}
+
+/* Ensure wrapper doesn't block date input */
+.relative:has(input[type="date"]) {
+  pointer-events: auto;
+}
+
+.relative:has(input[type="date"]) > input[type="date"] {
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 /* Better button spacing */
@@ -393,41 +953,59 @@ input, select, textarea {
 .button-group button {
   flex-shrink: 0;
   min-width: max-content;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
 }
 
-/* Scope card improvements */
+/* Scope card improvements - Green theme */
 .scope-card {
-  min-height: 400px;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
+  background: hsl(var(--card));
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.05);
 }
 
 .scope-chart-container {
   flex-grow: 1;
   position: relative;
-  min-height: 200px;
+  min-height: 220px;
 }
 
 .scope-legend {
   margin-top: auto;
-  padding-top: 1rem;
+  padding-top: 1.25rem;
 }
 
 /* Analytics card improvements */
 .analytics-card {
-  min-height: 350px;
+  min-height: 380px;
+  background: hsl(var(--card));
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.05);
 }
 
 .analytics-card .chart-container {
-  height: 280px;
+  height: 300px;
 }
 
-/* Notification dropdown improvements */
+/* Notification dropdown improvements - Green theme */
 .notification-dropdown {
-  max-height: 400px;
+  max-height: 450px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
+  scrollbar-color: hsl(var(--primary)) hsl(var(--muted));
+  background: hsl(var(--card));
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 24px hsl(var(--foreground) / 0.12);
 }
 
 .notification-dropdown::-webkit-scrollbar {
@@ -435,17 +1013,17 @@ input, select, textarea {
 }
 
 .notification-dropdown::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: hsl(var(--muted));
   border-radius: 3px;
 }
 
 .notification-dropdown::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: hsl(var(--primary));
   border-radius: 3px;
 }
 
 .notification-dropdown::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: hsl(var(--eco-dark));
 }
 
 /* Text truncation with title hover */
@@ -460,17 +1038,114 @@ input, select, textarea {
   white-space: normal;
   position: relative;
   z-index: 10;
-  background: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: hsl(var(--card));
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.15);
+}
+
+/* Header gradient - Professional green */
+.header-gradient {
+  background: linear-gradient(135deg, 
+    hsl(152 55% 35%), 
+    hsl(142 60% 40%),
+    hsl(152 50% 38%));
+}
+
+/* Dashboard stats cards - Green theme */
+.stat-card {
+  background: linear-gradient(135deg, 
+    hsl(var(--card)), 
+    hsl(var(--eco-light)));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px hsl(var(--primary) / 0.12);
+  border-color: hsl(var(--primary));
+}
+
+.stat-icon {
+  background: linear-gradient(135deg, 
+    hsl(var(--primary)), 
+    hsl(142 65% 45%));
+  color: white;
+  padding: 12px;
+  border-radius: 10px;
+  display: inline-flex;
+  box-shadow: 0 4px 8px hsl(var(--primary) / 0.2);
+}
+
+/* Toast notification styles - Green theme */
+.Toastify__toast {
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.Toastify__toast--success {
+  background: linear-gradient(135deg, hsl(142 60% 45%), hsl(142 65% 50%)) !important;
+  border: 1px solid hsl(142 55% 40%);
+}
+
+.Toastify__toast--error {
+  background: linear-gradient(135deg, hsl(0 65% 50%), hsl(0 70% 55%)) !important;
+  border: 1px solid hsl(0 60% 45%);
+}
+
+.Toastify__toast--warning {
+  background: linear-gradient(135deg, hsl(45 85% 55%), hsl(45 90% 60%)) !important;
+  border: 1px solid hsl(45 80% 50%);
+}
+
+.Toastify__toast--info {
+  background: linear-gradient(135deg, hsl(210 70% 50%), hsl(210 75% 55%)) !important;
+  border: 1px solid hsl(210 65% 45%);
+}
+
+/* Badge styles - Green conservation theme */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.badge-success {
+  background: linear-gradient(135deg, hsl(142 60% 92%), hsl(142 60% 88%));
+  color: hsl(150 60% 25%);
+  border: 1px solid hsl(142 50% 80%);
+}
+
+.badge-warning {
+  background: linear-gradient(135deg, hsl(45 90% 92%), hsl(45 90% 88%));
+  color: hsl(45 70% 30%);
+  border: 1px solid hsl(45 80% 75%);
+}
+
+.badge-danger {
+  background: linear-gradient(135deg, hsl(0 60% 92%), hsl(0 60% 88%));
+  color: hsl(0 60% 35%);
+  border: 1px solid hsl(0 50% 80%);
+}
+
+.badge-info {
+  background: linear-gradient(135deg, hsl(210 60% 92%), hsl(210 60% 88%));
+  color: hsl(210 60% 30%);
+  border: 1px solid hsl(210 50% 80%);
 }
 
 /* Better mobile responsiveness */
 @media (max-width: 640px) {
   .mobile-stack {
     flex-direction: column !important;
-    gap: 0.5rem !important;
+    gap: 0.75rem !important;
   }
   
   .mobile-full {
@@ -483,14 +1158,36 @@ input, select, textarea {
   
   .scope-card {
     min-height: 350px;
+    padding: 1rem;
   }
   
   .analytics-card {
-    min-height: 300px;
+    min-height: 320px;
+    padding: 1rem;
   }
   
   .analytics-card .chart-container {
-    height: 220px;
+    height: 240px;
+  }
+  
+  .stat-card {
+    padding: 1rem;
+  }
+  
+  input, select, textarea {
+    min-height: 42px;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+/* Tablet responsiveness */
+@media (max-width: 1024px) {
+  .chart-container {
+    padding: 1.25rem;
+  }
+  
+  .scope-card, .analytics-card {
+    min-height: 360px;
   }
 }
 
@@ -506,10 +1203,64 @@ input, select, textarea {
   
   .chart-container {
     break-inside: avoid;
+    box-shadow: none !important;
   }
   
   .scope-card, .analytics-card {
     break-inside: avoid;
     margin-bottom: 1rem;
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
   }
+  
+  body {
+    background: white !important;
+  }
+  
+  .professional-card {
+    box-shadow: none !important;
+  }
+}
+
+/* Accessibility improvements */
+.focus-visible:focus-visible {
+  outline: 3px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .professional-card {
+    border-width: 2px;
+  }
+  
+  .btn-primary {
+    border: 2px solid hsl(var(--primary));
+  }
+  
+  .legend-color {
+    border-width: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Custom selection color - Green theme */
+::selection {
+  background: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
+}
+
+::-moz-selection {
+  background: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
 }

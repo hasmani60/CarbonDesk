@@ -1,4 +1,4 @@
-// Updated Header.jsx with integrated notification system
+// Updated Header.jsx with proper alignment
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { Bell, User, Settings, X } from 'lucide-react';
@@ -47,9 +47,9 @@ const Header = () => {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b px-6 py-4">
-      <div className="flex items-center justify-between">
-        {/* Page Title will be handled by individual pages */}
+    <header className="bg-white shadow-sm border-b">
+      <div className="flex items-center justify-between px-6 py-3">
+        {/* Left side - Page Title (handled by individual pages) */}
         <div className="flex-1"></div>
         
         {/* Right side - User actions */}
@@ -58,12 +58,13 @@ const Header = () => {
           <div className="relative">
             <button
               onClick={() => setShowNotifications(!showNotifications)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors relative"
+              className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
+              aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
             >
               <Bell className="w-5 h-5" />
-              {/* Notification badge */}
+              {/* Notification badge - Top-right corner with clear separation */}
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                <span className="absolute top-0 right-0 min-w-[14px] h-[14px] px-0.5 bg-red-500 text-white text-[8px] leading-none rounded-full flex items-center justify-center font-bold shadow-lg border border-white translate-x-1/4 -translate-y-1/4">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -71,12 +72,12 @@ const Header = () => {
             
             {/* Notification dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-hidden">
-                <div className="p-4 border-b flex items-center justify-between">
+              <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border z-50 max-h-96 overflow-hidden">
+                <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white">
                   <div className="flex items-center space-x-2">
-                    <h3 className="text-lg font-semibold">Notifications</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
                     {unreadCount > 0 && (
-                      <span className="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded-full">
+                      <span className="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded-full font-medium">
                         {unreadCount} new
                       </span>
                     )}
@@ -85,14 +86,14 @@ const Header = () => {
                     {unreadCount > 0 && (
                       <button
                         onClick={handleMarkAllRead}
-                        className="text-emerald-600 text-sm hover:text-emerald-700"
+                        className="text-emerald-600 text-sm hover:text-emerald-700 font-medium transition-colors"
                       >
                         Mark all read
                       </button>
                     )}
                     <button
                       onClick={() => setShowNotifications(false)}
-                      className="text-gray-400 hover:text-gray-600"
+                      className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded transition-colors"
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -101,7 +102,7 @@ const Header = () => {
                 
                 <div className="max-h-80 overflow-y-auto">
                   {notifications && notifications.length > 0 ? (
-                    <div className="divide-y">
+                    <div className="divide-y divide-gray-100">
                       {notifications.slice(0, 10).map((notification) => (
                         <div
                           key={notification._id}
@@ -111,18 +112,18 @@ const Header = () => {
                           }`}
                         >
                           <div className="flex items-start space-x-3">
-                            <div className="flex-shrink-0 text-lg">
+                            <div className="flex-shrink-0 text-2xl">
                               {getNotificationIcon(notification.type)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center justify-between mb-1">
                                 <p className={`text-sm font-medium ${
                                   !notification.read ? 'text-gray-900' : 'text-gray-600'
                                 }`}>
                                   {notification.title}
                                 </p>
                                 {!notification.read && (
-                                  <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                                  <div className="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0 ml-2"></div>
                                 )}
                               </div>
                               <p className="text-sm text-gray-600 mt-1 line-clamp-2">
@@ -132,12 +133,12 @@ const Header = () => {
                                 <div className="flex items-center space-x-2">
                                   {notification.user && (
                                     <>
-                                      <div className="w-5 h-5 bg-emerald-600 rounded-full flex items-center justify-center">
+                                      <div className="w-5 h-5 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-full flex items-center justify-center">
                                         <span className="text-white text-xs font-medium">
                                           {notification.user.avatar}
                                         </span>
                                       </div>
-                                      <span className="text-xs text-gray-500">
+                                      <span className="text-xs text-gray-500 font-medium">
                                         {notification.user.name}
                                       </span>
                                     </>
@@ -145,7 +146,7 @@ const Header = () => {
                                 </div>
                                 <div className="flex items-center space-x-2 text-xs text-gray-500">
                                   {notification.deadline && (
-                                    <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+                                    <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-medium">
                                       {notification.deadline}
                                     </span>
                                   )}
@@ -159,15 +160,16 @@ const Header = () => {
                     </div>
                   ) : (
                     <div className="p-8 text-center text-gray-500">
-                      <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">No notifications yet</p>
+                      <Bell className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-600">No notifications yet</p>
+                      <p className="text-xs text-gray-500 mt-1">We'll notify you when something important happens</p>
                     </div>
                   )}
                 </div>
                 
                 {notifications && notifications.length > 10 && (
-                  <div className="p-4 border-t text-center">
-                    <button className="text-emerald-600 text-sm hover:text-emerald-700">
+                  <div className="p-4 border-t bg-gray-50 text-center">
+                    <button className="text-emerald-600 text-sm hover:text-emerald-700 font-medium transition-colors">
                       View all notifications
                     </button>
                   </div>
@@ -177,14 +179,14 @@ const Header = () => {
           </div>
 
           {/* User Profile */}
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center">
-              <span className="text-white font-medium text-sm">
+          <div className="flex items-center space-x-3 pl-3 border-l border-gray-200">
+            <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white font-semibold text-sm">
                 {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
               </span>
             </div>
             <div className="hidden md:block">
-              <p className="text-sm font-medium text-gray-900">
+              <p className="text-sm font-semibold text-gray-900">
                 {user?.name || 'User'}
               </p>
               <p className="text-xs text-gray-500">

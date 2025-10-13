@@ -1,65 +1,80 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-    content: [
-      "./index.html",
-      "./src/**/*.{js,ts,jsx,tsx}",
-    ],
-    theme: {
-      extend: {
-        colors: {
-          border: "hsl(var(--border))",
-          input: "hsl(var(--input))",
-          ring: "hsl(var(--ring))",
-          background: "hsl(var(--background))",
-          foreground: "hsl(var(--foreground))",
-          primary: {
-            DEFAULT: "hsl(var(--primary))",
-            foreground: "hsl(var(--primary-foreground))",
-          },
-          secondary: {
-            DEFAULT: "hsl(var(--secondary))",
-            foreground: "hsl(var(--secondary-foreground))",
-          },
-          destructive: {
-            DEFAULT: "hsl(var(--destructive))",
-            foreground: "hsl(var(--destructive-foreground))",
-          },
-          muted: {
-            DEFAULT: "hsl(var(--muted))",
-            foreground: "hsl(var(--muted-foreground))",
-          },
-          accent: {
-            DEFAULT: "hsl(var(--accent))",
-            foreground: "hsl(var(--accent-foreground))",
-          },
-          popover: {
-            DEFAULT: "hsl(var(--popover))",
-            foreground: "hsl(var(--popover-foreground))",
-          },
-          card: {
-            DEFAULT: "hsl(var(--card))",
-            foreground: "hsl(var(--card-foreground))",
-          },
-          // Custom colors based on the green theme in screenshots
-          emerald: {
-            50: '#ecfdf5',
-            100: '#d1fae5',
-            200: '#a7f3d0',
-            300: '#6ee7b7',
-            400: '#34d399',
-            500: '#10b981',
-            600: '#059669',
-            700: '#047857',
-            800: '#065f46',
-            900: '#064e3b',
-          },
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // Primary Brand Colors (from Figma)
+        'primary-teal': '#006C54',
+        'primary-dark': '#0A3124',
+        'accent-cyan': '#79FFE1',
+        'accent-warm': '#E9B376',
+        'accent-warm-dark': '#D58745',
+        
+        // Background Colors
+        'background-light': '#FAFAFA',
+        'background-cream': '#E3EDDF',
+        
+        // Surface Colors
+        'surface-gray': '#F0F0F0',
+        'surface-gray-light': '#EFEFEF',
+        'surface-neutral': '#EBEFEB',
+        
+        // Text Colors
+        'text-primary': '#0A3124',
+        'text-secondary': '#263238',
+        'text-muted': '#ABCA9E',
+        
+        // Border Colors
+        'border-light': '#E6E6E6',
+        'border-neutral': '#F1F1F1',
+        
+        // Legacy emerald mapping (maintains compatibility)
+        emerald: {
+          50: '#E3EDDF',
+          100: '#ABCA9E',
+          200: '#79FFE1',
+          300: '#79FFE1',
+          400: '#79FFE1',
+          500: '#006C54',
+          600: '#006C54',
+          700: '#0A3124',
+          800: '#0A3124',
+          900: '#0A3124',
         },
-        borderRadius: {
-          lg: "var(--radius)",
-          md: "calc(var(--radius) - 2px)",
-          sm: "calc(var(--radius) - 4px)",
-        },
+        
+        // Scope colors updated to match new palette
+        'scope-1': '#006C54',
+        'scope-2': '#263238',
+        'scope-3': '#D58745',
+      },
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        inter: ['Inter', 'sans-serif'],
+      },
+      fontWeight: {
+        light: '300',
+        normal: '400',
+        medium: '500',
+        semibold: '600',
+        bold: '700',
+        extrabold: '800',
+      },
+      borderRadius: {
+        lg: '0.5rem',
+        md: '0.375rem',
+        sm: '0.25rem',
+      },
+      boxShadow: {
+        'teal-sm': '0 1px 2px 0 rgba(0, 108, 84, 0.05)',
+        'teal-md': '0 4px 6px -1px rgba(0, 108, 84, 0.1)',
+        'teal-lg': '0 10px 15px -3px rgba(0, 108, 84, 0.1)',
+        'teal-xl': '0 20px 25px -5px rgba(0, 108, 84, 0.1)',
       },
     },
-    plugins: [],
-  }
+  },
+  plugins: [],
+}

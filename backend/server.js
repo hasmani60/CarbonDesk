@@ -1,4 +1,4 @@
-// backend/server.js - Fixed Server with Correct Middleware Order
+// backend/server.js - Fixed Server with Increased Rate Limits
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -45,28 +45,30 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ============================================
-// RATE LIMITING
+// RATE LIMITING - INCREASED LIMITS TO PREVENT 429 ERRORS
 // ============================================
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Increased from 200 to 1000 requests per 15 minutes
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
 });
 
 const adminLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500, // Increased from 100 to 500 requests per 15 minutes
   message: { error: 'Too many admin requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const companyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Increased from 50 to 200 requests per 15 minutes
   message: { error: 'Too many company operations requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -138,9 +140,14 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    version: '2.0.0',
+    version: '2.0.1',
     database: 'Local SQLite Database (Active)',
     port: process.env.PORT || 5001,
+    rateLimits: {
+      general: '1000 requests per 15 minutes',
+      admin: '500 requests per 15 minutes',
+      company: '200 requests per 15 minutes'
+    },
     features: {
       multiUser: true,
       adminMonitoring: true,
@@ -151,9 +158,10 @@ app.get('/health', (req, res) => {
       strictRBAC: true,
       multiTenant: true,
       companyOperations: true,
-      taskManagement: true,        // NEW FEATURE
-      taskAssignment: true,        // NEW FEATURE
-      workflowTracking: true
+      taskManagement: true,
+      taskAssignment: true,
+      workflowTracking: true,
+      increasedRateLimits: true
     }
   };
   
@@ -734,11 +742,16 @@ const startServer = async () => {
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend v2.0`);
+      console.log(`📊 Carbon Accounting Backend v2.0.1`);
       console.log(`🌐 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API Base: http://localhost:${PORT}/api`);
       console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+      console.log('');
+      console.log(`⚡ RATE LIMITS (UPDATED):`);
+      console.log(`   📊 General: 1000 req/15min (increased from 200)`);
+      console.log(`   🔐 Admin: 500 req/15min (increased from 100)`);
+      console.log(`   🏢 Company: 200 req/15min (increased from 50)`);
       console.log('');
       console.log(`✨ FEATURES:`);
       console.log(`   👥 Multi-User Support: Enabled`);
@@ -746,9 +759,9 @@ const startServer = async () => {
       console.log(`   🔒 Strict RBAC: Enforced`);
       console.log(`   📋 Admin Monitoring: Enabled`);
       console.log(`   📝 Activity Logging: Enhanced`);
-      console.log(`   📋 Task Management: Enabled`);        // NEW
-      console.log(`   👥 Task Assignment: Enabled`);        // NEW
-      console.log(`   🔄 Workflow Tracking: Enabled`);      // NEW
+      console.log(`   📋 Task Management: Enabled`);
+      console.log(`   👥 Task Assignment: Enabled`);
+      console.log(`   🔄 Workflow Tracking: Enabled`);
       console.log(`   🗄️  Database: Local SQLite (Primary)`);
       console.log('');
       console.log(`🔐 COMPANY OPERATIONS (HIDDEN)`);
@@ -759,13 +772,13 @@ const startServer = async () => {
       console.log(`   🔴 Company: admin@carbontrack-company.com / CompanyAdmin2025!`);
       console.log(`   🟢 Demo Admin: demo@example.com / password123`);
       console.log('');
-      console.log(`📋 TASK MANAGEMENT ENDPOINTS:`);           // NEW SECTION
+      console.log(`📋 TASK MANAGEMENT ENDPOINTS:`);
       console.log(`   POST /api/tasks - Create task (Admin)`);
       console.log(`   GET /api/tasks - Get tasks (Role-based)`);
       console.log(`   PATCH /api/tasks/:id - Update task`);
       console.log(`   GET /api/tasks/stats - Task statistics`);
       console.log('');
-      console.log(`💚 Status: Ready`);
+      console.log(`💚 Status: Ready (429 Errors Fixed)`);
       console.log('🚀 ================================');
       console.log('');
     });

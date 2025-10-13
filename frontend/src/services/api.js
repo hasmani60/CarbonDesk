@@ -1,4 +1,4 @@
-// services/api.js - Updated API service with Advanced Analytics
+// services/api.js - Updated API service with 429 Retry Logic and Advanced Analytics
 import axios from 'axios';
 
 // Base API configuration
@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 // Create axios instance with default configuration
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000, // Increased from 15000 to 30000 (30 seconds)
   headers: {
     'Content-Type': 'application/json'
   }
@@ -26,7 +26,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// Response interceptor with 429 retry logic and error handling
 apiClient.interceptors.response.use(
   (response) => {
     console.log('API Response:', response.status, response.data);
@@ -37,9 +37,68 @@ apiClient.interceptors.response.use(
       return Promise.reject(new Error(response.data.message || 'Request failed'));
     }
   },
-  (error) => {
+  async (error) => {
+    const config = error.config;
+    
+    // ============================================
+    // HANDLE 429 RATE LIMIT ERRORS WITH RETRY
+    // ============================================
+    if (error.response?.status === 429) {
+      // Initialize retry count if not present
+      if (!config._retryCount) {
+        config._retryCount = 0;
+      }
+      
+      // Retry up to 3 times with exponential backoff
+      if (config._retryCount < 3) {
+        config._retryCount += 1;
+        
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, config._retryCount) * 1000;
+        
+        console.warn(
+          `⚠️ Rate limited (429). Retrying in ${delay}ms... (Attempt ${config._retryCount}/3)`
+        );
+        
+        // Show user-friendly notification if available
+        if (window.showNotification) {
+          window.showNotification(
+            `Too many requests. Retrying in ${delay / 1000} seconds...`,
+            'warning'
+          );
+        }
+        
+        // Wait for the delay period
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Retry the request
+        return apiClient(config);
+      } else {
+        // Max retries reached
+        console.error('❌ Rate limit retry failed after 3 attempts');
+        
+        if (window.showNotification) {
+          window.showNotification(
+            'Too many requests. Please wait a moment and try again.',
+            'error'
+          );
+        }
+        
+        return Promise.reject({
+          message: 'Too many requests. Please wait a moment before trying again.',
+          status: 'RATE_LIMITED',
+          retryAfter: error.response?.headers['retry-after'] || 60
+        });
+      }
+    }
+    
+    // ============================================
+    // HANDLE OTHER ERRORS
+    // ============================================
+    
     console.error('API Error:', error.response?.status, error.response?.data || error.message);
     
+    // Network errors
     if (!error.response) {
       console.error('Network error - backend may not be running');
       return Promise.reject({
@@ -48,6 +107,7 @@ apiClient.interceptors.response.use(
       });
     }
 
+    // 401 Unauthorized - redirect to login
     if (error.response?.status === 401) {
       if (!window.location.pathname.includes('/login')) {
         console.log('401 error - removing token and redirecting to login');
@@ -56,10 +116,27 @@ apiClient.interceptors.response.use(
       }
     }
     
+    // 403 Forbidden - access denied
     if (error.response?.status === 403) {
       return Promise.reject({
         message: error.response.data?.message || 'Access denied. Insufficient permissions.',
         status: 'ACCESS_DENIED'
+      });
+    }
+    
+    // 408 Request Timeout
+    if (error.response?.status === 408 || error.code === 'ECONNABORTED') {
+      return Promise.reject({
+        message: 'Request timeout. Please try again.',
+        status: 'TIMEOUT'
+      });
+    }
+    
+    // 500 Internal Server Error
+    if (error.response?.status === 500) {
+      return Promise.reject({
+        message: error.response.data?.message || 'Internal server error. Please try again later.',
+        status: 'SERVER_ERROR'
       });
     }
     
