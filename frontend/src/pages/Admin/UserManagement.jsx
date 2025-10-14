@@ -1,4 +1,4 @@
-// pages/Admin/UserManagement.jsx - Updated to match Input.jsx RBAC structure
+// pages/Admin/UserManagement.jsx - Updated with Real Backend Data for Stats
 import { useState, useEffect } from 'react';
 import { 
   Users, 
@@ -52,6 +52,15 @@ const UserManagement = () => {
   const [rbacOptions, setRBACOptions] = useState(null);
   const [activitySummary, setActivitySummary] = useState(null);
   const [recentActivities, setRecentActivities] = useState([]);
+  
+  const [dashboardStats, setDashboardStats] = useState({
+    totalUsers: 0,
+    totalActivities: 0,
+    recentActivities: 0,
+    criticalActivities: 0,
+    loading: true
+  });
+  
   const [filters, setFilters] = useState({
     role: 'all',
     status: 'all',
@@ -64,7 +73,6 @@ const UserManagement = () => {
     itemsPerPage: 10
   });
   
-  // Rate limiting
   const [lastRequestTime, setLastRequestTime] = useState(0);
   const MIN_REQUEST_INTERVAL = 2000;
 
@@ -126,9 +134,78 @@ const UserManagement = () => {
     );
   };
 
+  const loadDashboardStats = async () => {
+    try {
+      setDashboardStats(prev => ({ ...prev, loading: true }));
+      
+      const dashboardData = await adminAPI.getDashboard();
+      const activitiesResponse = await adminAPI.getAllActivities({
+        page: 1,
+        limit: 1000
+      });
+      
+      const activities = activitiesResponse.data || activitiesResponse || [];
+      
+      const now = new Date();
+      const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const recentCount = activities.filter(activity => {
+        const activityDate = new Date(activity.timestamp || activity.createdAt);
+        return activityDate >= last24Hours;
+      }).length;
+      
+      const criticalActions = [
+        'deleted_emission',
+        'admin_deleted_user',
+        'admin_updated_user_role',
+        'admin_created_user',
+        'security_',
+        'failed_login'
+      ];
+      
+      const criticalCount = activities.filter(activity => 
+        criticalActions.some(critical => 
+          activity.action?.toLowerCase().includes(critical.toLowerCase())
+        )
+      ).length;
+      
+      setDashboardStats({
+        totalUsers: dashboardData.userStats?.total || 0,
+        totalActivities: dashboardData.activityStats?.total || 0,
+        recentActivities: recentCount,
+        criticalActivities: criticalCount,
+        loading: false
+      });
+      
+      console.log('📊 Dashboard stats loaded:', {
+        totalUsers: dashboardData.userStats?.total || 0,
+        totalActivities: dashboardData.activityStats?.total || 0,
+        recentActivities: recentCount,
+        criticalActivities: criticalCount
+      });
+      
+    } catch (error) {
+      console.error('Error loading dashboard stats:', error);
+      
+      const localSummary = getActivitySummaryForAdmin();
+      
+      setDashboardStats({
+        totalUsers: localSummary.totalUsers || 0,
+        totalActivities: localSummary.totalActivities || 0,
+        recentActivities: localSummary.recentActivities || 0,
+        criticalActivities: localSummary.criticalActivities || 0,
+        loading: false
+      });
+      
+      if (error.response?.status !== 429) {
+        toast.error('Failed to load dashboard statistics');
+      }
+    }
+  };
+
   useEffect(() => {
     if (isAdmin()) {
-      // Debounce to prevent rapid requests
+      loadDashboardStats();
+      
       const debounceTimeout = setTimeout(() => {
         loadUsers();
         loadUserStats();
@@ -145,11 +222,11 @@ const UserManagement = () => {
     let updateTimeout;
     const handleActivityUpdate = (event) => {
       console.log('New activity logged:', event.detail);
-      // Debounce activity updates
       clearTimeout(updateTimeout);
       updateTimeout = setTimeout(() => {
         loadRecentActivities();
         loadActivitySummary();
+        loadDashboardStats();
       }, 1000);
     };
 
@@ -161,7 +238,6 @@ const UserManagement = () => {
   }, []);
 
   const loadUsers = async () => {
-    // Rate limiting check
     const now = Date.now();
     if (now - lastRequestTime < MIN_REQUEST_INTERVAL) {
       console.log('⏱️ Rate limited: skipping request');
@@ -219,8 +295,20 @@ const UserManagement = () => {
 
   const loadUserStats = async () => {
     try {
-      const stats = await adminAPI.getUserStats();
-      setUserStats(stats.data || stats);
+      const dashboardData = await adminAPI.getDashboard();
+      
+      setUserStats({
+        overview: {
+          totalUsers: dashboardData.userStats?.total || 0,
+          activeUsers: dashboardData.userStats?.active || 0,
+          inactiveUsers: dashboardData.userStats?.inactive || 0,
+          suspendedUsers: 0,
+          adminUsers: 0,
+          analystUsers: 0,
+          contributorUsers: 0,
+          viewerUsers: 0
+        }
+      });
     } catch (error) {
       console.error('Error loading user stats:', error);
       setUserStats({
@@ -239,14 +327,12 @@ const UserManagement = () => {
   };
 
   const loadRBACOptions = () => {
-    // Get all activities from the complete emission factors database - EXACTLY as Input.jsx does
     const activitiesPerScope = {};
     
     ['1', '2', '3'].forEach(scope => {
       const scopeKey = `scope${scope}`;
       const scopeData = emissionFactors[scopeKey];
       if (scopeData) {
-        // Get category names (NOT individual sources)
         activitiesPerScope[scope] = Object.keys(scopeData);
       }
     });
@@ -259,7 +345,7 @@ const UserManagement = () => {
         { value: 2, label: 'Scope 2 - Indirect Emissions (Energy)', description: 'Indirect emissions from purchased energy' },
         { value: 3, label: 'Scope 3 - Indirect Emissions (Value Chain)', description: 'All other indirect emissions from value chain activities' }
       ],
-      activities: activitiesPerScope, // This now matches Input.jsx exactly
+      activities: activitiesPerScope,
       roles: [
         { value: 'admin', label: 'Administrator', description: 'Full system access' },
         { value: 'analyst', label: 'Analyst', description: 'Data analysis and reporting' },
@@ -322,7 +408,6 @@ const UserManagement = () => {
         restrictedPages: userData.restrictedPages || []
       };
       
-      // DEBUG: Log what we're sending
       console.log('===========================================');
       console.log('CREATING USER WITH RESTRICTIONS:');
       console.log('User Data:', dataToSend);
@@ -333,7 +418,6 @@ const UserManagement = () => {
       
       const response = await adminAPI.createUser(dataToSend);
       
-      // DEBUG: Log the response
       console.log('===========================================');
       console.log('CREATE USER RESPONSE:');
       console.log('Success:', response.success !== false);
@@ -347,6 +431,7 @@ const UserManagement = () => {
         loadUsers();
         loadUserStats();
         loadActivitySummary();
+        loadDashboardStats();
       } else {
         throw new Error(response.message || 'Unknown error');
       }
@@ -366,6 +451,7 @@ const UserManagement = () => {
       loadUsers();
       loadUserStats();
       loadActivitySummary();
+      loadDashboardStats();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update user role');
     }
@@ -378,6 +464,7 @@ const UserManagement = () => {
       loadUsers();
       loadUserStats();
       loadActivitySummary();
+      loadDashboardStats();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update user status');
     }
@@ -394,6 +481,7 @@ const UserManagement = () => {
       loadUsers();
       loadUserStats();
       loadActivitySummary();
+      loadDashboardStats();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete user');
     }
@@ -543,7 +631,6 @@ const UserManagement = () => {
         }
       />
 
-      {/* Activity Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center">
@@ -553,7 +640,11 @@ const UserManagement = () => {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Users</p>
               <p className="text-2xl font-bold text-gray-900">
-                {userStats?.overview?.totalUsers || 0}
+                {dashboardStats.loading ? (
+                  <span className="text-gray-400">–</span>
+                ) : (
+                  dashboardStats.totalUsers
+                )}
               </p>
             </div>
           </div>
@@ -567,7 +658,11 @@ const UserManagement = () => {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Activities</p>
               <p className="text-2xl font-bold text-gray-900">
-                {activitySummary?.totalActivities || 0}
+                {dashboardStats.loading ? (
+                  <span className="text-gray-400">–</span>
+                ) : (
+                  dashboardStats.totalActivities
+                )}
               </p>
             </div>
           </div>
@@ -581,7 +676,11 @@ const UserManagement = () => {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Recent (24h)</p>
               <p className="text-2xl font-bold text-gray-900">
-                {activitySummary?.recentActivities || 0}
+                {dashboardStats.loading ? (
+                  <span className="text-gray-400">–</span>
+                ) : (
+                  dashboardStats.recentActivities
+                )}
               </p>
             </div>
           </div>
@@ -595,14 +694,17 @@ const UserManagement = () => {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Critical Activities</p>
               <p className="text-2xl font-bold text-gray-900">
-                {activitySummary?.criticalActivities || 0}
+                {dashboardStats.loading ? (
+                  <span className="text-gray-400">–</span>
+                ) : (
+                  dashboardStats.criticalActivities
+                )}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Recent Activities Panel */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b">
           <div className="flex items-center justify-between">
@@ -611,7 +713,10 @@ const UserManagement = () => {
               Recent User Activities
             </h3>
             <button 
-              onClick={loadRecentActivities}
+              onClick={() => {
+                loadRecentActivities();
+                loadDashboardStats();
+              }}
               className="flex items-center space-x-2 text-sm text-emerald-600 hover:text-emerald-700"
             >
               <RefreshCw className="w-4 h-4" />
@@ -659,7 +764,6 @@ const UserManagement = () => {
         </div>
       </div>
 
-      {/* Filters and Search */}
       <div className="bg-white rounded-lg shadow p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -708,7 +812,6 @@ const UserManagement = () => {
         </div>
       </div>
 
-      {/* Users Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
@@ -852,7 +955,6 @@ const UserManagement = () => {
         )}
       </div>
 
-      {/* Create User Modal */}
       {showUserModal && rbacOptions && (
         <CreateUserModal
           onSubmit={handleCreateUser}
@@ -862,7 +964,6 @@ const UserManagement = () => {
         />
       )}
 
-      {/* User Activities Modal */}
       {showActivitiesModal && selectedUser && (
         <UserActivitiesModal
           user={selectedUser}
@@ -878,7 +979,6 @@ const UserManagement = () => {
   );
 };
 
-// User Activities Modal Component
 const UserActivitiesModal = ({ user, activities, onClose }) => {
   const [filteredActivities, setFilteredActivities] = useState(activities);
   const [activityFilter, setActivityFilter] = useState('all');
@@ -992,7 +1092,6 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
   );
 };
 
-// Create User Modal Component - MATCHING INPUT.JSX EXACTLY
 const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -1011,7 +1110,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
   const [accessPreview, setAccessPreview] = useState('');
   const [activitySearchTerm, setActivitySearchTerm] = useState({});
 
-  // Get activities per scope from the complete emission factors database - MATCHES INPUT.JSX
   const activitiesPerScope = rbacOptions?.activities || {
     1: [],
     2: [],
@@ -1314,7 +1412,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1401,7 +1498,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
           </div>
 
-          {/* RBAC Restrictions for Contributors */}
           {showRestrictions && (
             <div className="border-t pt-6">
               <div className="flex items-center space-x-2 mb-4">
@@ -1422,7 +1518,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 </ul>
               </div>
 
-              {/* Scope-by-Scope Access Control */}
               <div className="space-y-4">
                 {[1, 2, 3].map(scope => (
                   <div key={scope} className="border rounded-lg shadow-sm">
@@ -1529,7 +1624,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           </div>
                         </div>
 
-                        {/* Individual Activity Selection */}
                         {scopeSelectionMode[scope] === 'activity' && (
                           <div className="mt-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
                             <div className="flex items-center justify-between mb-4">
@@ -1546,7 +1640,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               </div>
                             </div>
 
-                            {/* Activity Search */}
                             <div className="mb-4">
                               <div className="relative">
                                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -1563,7 +1656,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               </div>
                             </div>
 
-                            {/* Bulk Action Buttons */}
                             <div className="flex items-center space-x-2 mb-4">
                               <button
                                 type="button"
@@ -1639,7 +1731,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               </div>
                             )}
 
-                            {/* Filtered results info */}
                             {activitySearchTerm[scope] && (
                               <div className="mt-3 text-xs text-blue-600 bg-blue-100 p-2 rounded">
                                 Showing {getFilteredActivities(scope).length} of {activitiesPerScope[scope]?.length || 0} activities
@@ -1651,7 +1742,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           </div>
                         )}
 
-                        {/* Status messages for none mode */}
                         {scopeSelectionMode[scope] === 'none' && (
                           <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                             <div className="flex items-center space-x-2">
@@ -1668,7 +1758,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 ))}
               </div>
 
-              {/* Access Preview */}
               <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
                 <h4 className="font-medium text-emerald-900 mb-2 flex items-center">
                   <Eye className="w-4 h-4 mr-2" />
@@ -1682,7 +1771,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 </div>
               </div>
 
-              {/* Page Access Restrictions (Optional) */}
               <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
                 <h4 className="font-medium text-orange-900 mb-3 flex items-center">
                   <Lock className="w-4 h-4 mr-2" />
@@ -1755,7 +1843,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
           )}
 
-          {/* Submit Buttons */}
           <div className="flex space-x-3 pt-4 sticky bottom-0 bg-white border-t -mx-6 px-6 py-4">
             <button 
               type="submit" 
@@ -1785,7 +1872,6 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </div>
         </form>
 
-        {/* RBAC Information */}
         <div className="p-6 pt-0">
           <div className="p-4 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">

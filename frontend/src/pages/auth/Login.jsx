@@ -1,4 +1,4 @@
-// pages/auth/Login.jsx - Fixed with better error handling
+// pages/auth/Login.jsx - Fixed with automatic redirect to user's accessible page
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -14,6 +14,17 @@ const Login = () => {
     password: ''
   });
   const [errors, setErrors] = useState({});
+
+  // Helper function to get first accessible route for user based on role
+  const getFirstAccessibleRoute = (userRole) => {
+    const roleRouteMap = {
+      admin: '/dashboard',
+      analyst: '/analytics',
+      contributor: '/input',
+      viewer: '/dashboard'
+    };
+    return roleRouteMap[userRole] || '/dashboard';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,8 +55,12 @@ const Login = () => {
       console.log('Login result:', result);
 
       if (result && result.success !== false) {
-        console.log('Login successful, navigating to dashboard');
-        navigate('/dashboard');
+        console.log('Login successful, redirecting based on role:', result.user?.role);
+        
+        // Redirect user to their first accessible page based on role
+        const redirectPath = getFirstAccessibleRoute(result.user?.role);
+        console.log('Redirecting to:', redirectPath);
+        navigate(redirectPath);
       }
     } catch (error) {
       console.error('Login error in component:', error);
