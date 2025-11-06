@@ -2,16 +2,17 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const localDB = require('../database/localDB');
+const logger = require('../utils/logger');
 
 // Generate JWT Token with role information and restrictions
 const generateToken = (user) => {
-  console.log('🔑 Generating token for user:', {
+  logger.debug('Generating token for user', {
     id: user.id,
     email: user.email,
     role: user.role,
     organisation_id: user.organisation_id
   });
-  
+
   return jwt.sign(
     { 
       id: user.id,
@@ -83,7 +84,7 @@ const register = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
 
-    console.log('User registered successfully:', user.email);
+    logger.info('User registered successfully', { email: user.email, role: user.role });
 
     res.status(201).json({
       success: true,
@@ -102,7 +103,7 @@ const register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    logger.error('Registration error', error);
     res.status(400).json({
       success: false,
       message: error.message || 'Registration failed'
@@ -117,7 +118,7 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log('Login attempt:', { email });
+    logger.audit('Login attempt', { email });
 
     // Validate email and password
     if (!email || !password) {
@@ -137,12 +138,6 @@ const login = async (req, res) => {
       });
     }
 
-    console.log('User found:', {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      organisation_id: user.organisation_id
-    });
 
     // Check if account is active
     if (user.status !== 'active') {
@@ -177,7 +172,7 @@ const login = async (req, res) => {
 
     const token = generateToken(user);
 
-    console.log('Login successful for:', email, 'Organisation:', user.organisation_id);
+    logger.audit('Login successful', { email, organisationId: user.organisation_id });
 
     // CRITICAL: Return complete user data with organisation context
     return res.json({
@@ -201,7 +196,7 @@ const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', error);
     res.status(500).json({
       success: false,
       message: 'Login failed. Please try again.'
@@ -224,7 +219,6 @@ const verifyToken = async (req, res) => {
       });
     }
 
-    console.log('Token verified for user:', user.email, 'Org:', user.organisation_id);
 
     return res.json({
       success: true,
@@ -240,7 +234,7 @@ const verifyToken = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Token verification error:', error);
+    logger.error('Token verification error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -269,7 +263,7 @@ const logout = async (req, res) => {
       message: 'Logged out successfully'
     });
   } catch (error) {
-    console.error('Logout error:', error);
+    logger.error('Logout error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -318,7 +312,7 @@ const updateProfile = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Profile update error:', error);
+    logger.error('Profile update error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -378,7 +372,7 @@ const changePassword = async (req, res) => {
       message: 'Password changed successfully'
     });
   } catch (error) {
-    console.error('Password change error:', error);
+    logger.error('Password change error', error);
     res.status(400).json({
       success: false,
       message: error.message

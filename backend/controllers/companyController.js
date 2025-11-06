@@ -125,6 +125,13 @@ const createOrganisation = async (req, res) => {
       max_storage_gb,
       notes,
       
+      // NEW: Organisation Details Section
+      registered_name,
+      cin_number,
+      registered_address,
+      gst_number,
+      current_employees,
+      
       // Super Admin details
       super_admin_name,
       super_admin_email,
@@ -141,6 +148,21 @@ const createOrganisation = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Organisation name, industry type, and contact email are required'
+      });
+    }
+
+    // NEW: Validate organisation details
+    if (!registered_address) {
+      return res.status(400).json({
+        success: false,
+        message: 'Registered address is required'
+      });
+    }
+
+    if (!current_employees || current_employees < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current number of employees is required and must be at least 1'
       });
     }
 
@@ -174,7 +196,7 @@ const createOrganisation = async (req, res) => {
       });
     }
 
-    // Step 1: Create Organisation
+    // Step 1: Create Organisation with new fields
     const organisation = await localDB.createOrganisation({
       name,
       display_name: display_name || name,
@@ -187,6 +209,14 @@ const createOrganisation = async (req, res) => {
       subscription_tier: subscription_tier || 'standard',
       max_users: max_users || 50,
       max_storage_gb: max_storage_gb || 10,
+      
+      // NEW: Organisation Details
+      registered_name: registered_name || name,
+      cin_number: cin_number || null,
+      registered_address,
+      gst_number: gst_number || null,
+      current_employees: parseInt(current_employees),
+      
       created_by: req.companyOperator.email,
       notes: notes || `Created by ${req.companyOperator.name}`
     });
@@ -215,8 +245,10 @@ const createOrganisation = async (req, res) => {
       actor_name: req.companyOperator.name,
       details: {
         organisation_name: name,
+        registered_name: registered_name || name,
         super_admin_email: super_admin_email,
-        subscription_tier: subscription_tier || 'standard'
+        subscription_tier: subscription_tier || 'standard',
+        current_employees: current_employees
       },
       ip_address: req.ip,
       user_agent: req.get('User-Agent')
@@ -232,10 +264,12 @@ const createOrganisation = async (req, res) => {
           id: organisation.id,
           name: organisation.name,
           display_name: organisation.display_name,
+          registered_name: organisation.registered_name,
           industry_type: organisation.industry_type,
           contact_email: organisation.contact_email,
           subscription_tier: organisation.subscription_tier || 'standard',
-          max_users: organisation.max_users || 50
+          max_users: organisation.max_users || 50,
+          current_employees: organisation.current_employees
         },
         super_admin: {
           id: superAdmin.id,
@@ -254,6 +288,7 @@ const createOrganisation = async (req, res) => {
     });
   }
 };
+
 
 // @desc    Get all organisations
 // @route   GET /api/company/organisations

@@ -1,13 +1,12 @@
 // middleware/auth.js - Updated authentication middleware with strict RBAC enforcement
 const jwt = require('jsonwebtoken');
 const localDB = require('../database/localDB');
+const logger = require('../utils/logger');
 
 const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-
-    console.log('Auth middleware - Token received:', token ? 'Yes' : 'No');
 
     if (!token) {
       return res.status(401).json({
@@ -18,7 +17,6 @@ const authenticateToken = async (req, res, next) => {
 
     // Verify the JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    console.log('Auth middleware - Token decoded:', decoded);
 
     if (!decoded || !decoded.id) {
       return res.status(401).json({
@@ -29,7 +27,6 @@ const authenticateToken = async (req, res, next) => {
 
     // Get user from local database
     const user = await localDB.findUserById(decoded.id);
-    console.log('Auth middleware - Database user found:', !!user);
 
     if (!user) {
       return res.status(401).json({
@@ -53,16 +50,15 @@ const authenticateToken = async (req, res, next) => {
       email: user.email,
       role: user.role,
       status: user.status,
-      organisation_id: user.organisation_id, // CRITICAL: Added this line
+      organisation_id: user.organisation_id,
       restrictions: user.restrictions || null
     };
-    
-    console.log('Auth middleware - User set:', req.user);
+
     return next();
 
   } catch (error) {
-    console.error('Auth middleware error:', error.message);
-    
+    logger.error('Auth middleware error', error);
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
@@ -101,7 +97,6 @@ const authorizeRoles = (...roles) => {
       });
     }
 
-    console.log(`Auth middleware - Role authorized: ${req.user.role} for required roles: ${roles.join(', ')}`);
     next();
   };
 };
@@ -122,7 +117,6 @@ const requireAdmin = (req, res, next) => {
     });
   }
 
-  console.log('Auth middleware - Admin access granted for:', req.user.email);
   next();
 };
 
@@ -365,7 +359,7 @@ const authorizeResourceModification = (resourceUserIdField = 'user') => {
       
       next();
     } catch (error) {
-      console.error('Resource authorization error:', error);
+      logger.error('Resource authorization error', error);
       return res.status(500).json({
         success: false,
         message: 'Authorization check failed'

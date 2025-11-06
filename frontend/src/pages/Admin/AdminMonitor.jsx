@@ -1,5 +1,5 @@
-// AdminMonitor.jsx - Uses Backend SQLite Database via API
-import { useState, useEffect } from 'react';
+// AdminMonitor.jsx - Uses Backend SQLite Database via API with Organisation Filtering
+import { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
   Activity, 
@@ -11,7 +11,8 @@ import {
   TrendingUp,
   Shield,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
@@ -21,7 +22,7 @@ import toast from 'react-hot-toast';
 
 const AdminMonitor = () => {
   const { user, isAdmin } = useAuth();
-  const { logActivity } = useActivity();
+  const { logActivity, getRecentActivities, getActivitySummaryForAdmin } = useActivity();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,7 +50,7 @@ const AdminMonitor = () => {
   const [lastRequestTime, setLastRequestTime] = useState(0);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const MIN_REQUEST_INTERVAL = 2000; // 2 seconds between requests
-  const loadDataTimeoutRef = useState(null)[0];
+  const loadDataTimeoutRef = useRef(null);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Eye, description: 'System overview and key metrics' },
@@ -62,6 +63,19 @@ const AdminMonitor = () => {
       toast.error('Admin access required');
       return;
     }
+    
+    console.log('🏢 AdminMonitor initialized for user:', {
+      userId: user?.id,
+      userName: user?.name,
+      organisationId: user?.organisation_id || user?.organizationId,
+      organisationName: user?.organisation?.name
+    });
+    
+    // Log page view activity
+    logActivity('page_view', 'page', null, 'Viewed Admin Monitor page', {
+      pageName: 'Admin Monitor',
+      tab: activeTab
+    });
     
     // Debounced initial load - prevent React.StrictMode double call
     const initialLoadTimeout = setTimeout(() => {
@@ -92,6 +106,12 @@ const AdminMonitor = () => {
 
   useEffect(() => {
     if (isAdmin()) {
+      // Log tab change activity
+      logActivity('page_view', 'page', null, `Viewed ${activeTab} tab in Admin Monitor`, {
+        pageName: 'Admin Monitor',
+        tab: activeTab
+      });
+      
       // Debounce filter/tab changes to prevent rapid requests
       const debounceTimeout = setTimeout(() => {
         loadData();
@@ -104,6 +124,14 @@ const AdminMonitor = () => {
   // Separate useEffect for search query with longer debounce
   useEffect(() => {
     if (isAdmin() && activeTab === 'activities') {
+      if (searchQuery) {
+        // Log search activity
+        logActivity('search', 'search', null, `Searched activities: "${searchQuery}"`, {
+          context: 'Admin Monitor Activities',
+          query: searchQuery
+        });
+      }
+      
       const searchDebounceTimeout = setTimeout(() => {
         loadData();
       }, 800); // 800ms debounce for search
@@ -124,8 +152,8 @@ const AdminMonitor = () => {
       setIsRateLimited(true);
       
       // Schedule the request for later
-      if (loadDataTimeoutRef) clearTimeout(loadDataTimeoutRef);
-      loadDataTimeoutRef = setTimeout(() => {
+      if (loadDataTimeoutRef.current) clearTimeout(loadDataTimeoutRef.current);
+      loadDataTimeoutRef.current = setTimeout(() => {
         setIsRateLimited(false);
         loadData();
       }, MIN_REQUEST_INTERVAL - timeSinceLastRequest);
@@ -177,14 +205,182 @@ const AdminMonitor = () => {
   const loadDashboard = async () => {
     try {
       console.log('📊 Fetching dashboard from backend...');
+      console.log('🏢 Current user organisation:', user?.organisation_id || user?.organizationId);
+      
       const response = await adminAPI.getDashboard();
       
       // Handle both response formats
-      const dashboardData = response.data || response;
+      let dashboardData = response.data || response;
+      
+      // Get organisation-specific users from backend
+      const usersResponse = await adminAPI.getAllUsers({
+        limit: 1000
+      });
+      
+      const usersData = usersResponse.data || usersResponse || [];
+      const totalUsersInOrg = usersData.length;
+      
+      console.log('👥 Users in current organisation:', totalUsersInOrg);
+      
+      // Count active users in organisation
+      const activeUsersInOrg = usersData.filter(u => u.status === 'active').length;
+      
+      // Get organisation-filtered activities from ActivityContext
+      const allActivities = getRecentActivities(1000, {}); // Already filtered by organisation
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const thisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Calculate organisation-specific activity stats
+      const todayActivities = allActivities.filter(activity => {
+        const activityDate = new Date(activity.timestamp || activity.createdAt);
+        return activityDate >= today;
+      }).length;
+      
+      const thisWeekActivities = allActivities.filter(activity => {
+        const activityDate = new Date(activity.timestamp || activity.createdAt);
+        return activityDate >= thisWeek;
+      }).length;
+      
+      // Calculate new users today and this week
+      const newToday = usersData.filter(u => {
+        const createdDate = new Date(u.createdAt || u.created_at);
+        return createdDate >= today;
+      }).length;
+      
+      const newThisWeek = usersData.filter(u => {
+        const createdDate = new Date(u.createdAt || u.created_at);
+        return createdDate >= thisWeek;
+      }).length;
+      
+      // Get organisation-specific emissions data
+      let emissionStats = {
+        total: 0,
+        thisWeek: 0,
+        pending: 0
+      };
+      
+      try {
+        // Try to fetch emissions from backend API
+        // Assuming there's an endpoint to get all emissions
+        console.log('📊 Fetching emissions data...');
+        
+        // Method 1: Try to get emissions from a dedicated endpoint
+        let emissions = [];
+        
+        // Check if there's a getAllEmissions or getEmissions method
+        if (typeof adminAPI.getAllEmissions === 'function') {
+          const emissionsResponse = await adminAPI.getAllEmissions({
+            limit: 10000
+          });
+          emissions = emissionsResponse.data || emissionsResponse || [];
+        } else if (typeof adminAPI.getEmissions === 'function') {
+          const emissionsResponse = await adminAPI.getEmissions({
+            limit: 10000
+          });
+          emissions = emissionsResponse.data || emissionsResponse || [];
+        } else {
+          // Method 2: Parse from activities if no dedicated endpoint
+          console.log('📊 Calculating emissions from activities...');
+          const emissionActivities = allActivities.filter(activity => 
+            activity.action?.includes('emission') && 
+            activity.resourceType === 'emission'
+          );
+          
+          // Extract unique emission IDs
+          const uniqueEmissionIds = new Set();
+          emissionActivities.forEach(activity => {
+            if (activity.resourceId) {
+              uniqueEmissionIds.add(activity.resourceId);
+            }
+          });
+          
+          // Use unique emission count as total
+          emissionStats.total = uniqueEmissionIds.size;
+          
+          // Count emissions this week from activities
+          const thisWeekEmissionActivities = emissionActivities.filter(activity => {
+            const activityDate = new Date(activity.timestamp || activity.createdAt);
+            return activityDate >= thisWeek && 
+                   (activity.action === 'emission_created' || activity.action === 'created_emission');
+          });
+          
+          const thisWeekEmissionIds = new Set();
+          thisWeekEmissionActivities.forEach(activity => {
+            if (activity.resourceId) {
+              thisWeekEmissionIds.add(activity.resourceId);
+            }
+          });
+          
+          emissionStats.thisWeek = thisWeekEmissionIds.size;
+          
+          console.log('📊 Emissions calculated from activities:', emissionStats);
+        }
+        
+        // If we got emissions from API, calculate stats
+        if (emissions.length > 0) {
+          console.log('📊 Processing', emissions.length, 'emissions from API');
+          
+          // Total emissions in organisation
+          emissionStats.total = emissions.length;
+          
+          // Emissions this week
+          emissionStats.thisWeek = emissions.filter(emission => {
+            const emissionDate = new Date(emission.createdAt || emission.created_at || emission.date);
+            return emissionDate >= thisWeek;
+          }).length;
+          
+          // Pending emissions (if status field exists)
+          emissionStats.pending = emissions.filter(emission => 
+            emission.status === 'pending' || emission.verification_status === 'pending'
+          ).length;
+          
+          console.log('📊 Emissions stats from API:', emissionStats);
+        }
+        
+      } catch (emissionError) {
+        console.warn('⚠️ Could not fetch emissions data:', emissionError.message);
+        console.log('📊 Using emission stats from backend dashboard data');
+        
+        // Fallback to backend dashboard data if available
+        if (dashboardData.emissionStats) {
+          emissionStats = dashboardData.emissionStats;
+        }
+      }
+      
+      // Override stats with organisation-filtered data
+      dashboardData = {
+        ...dashboardData,
+        userStats: {
+          total: totalUsersInOrg,
+          active: activeUsersInOrg,
+          inactive: totalUsersInOrg - activeUsersInOrg,
+          newToday: newToday,
+          newThisWeek: newThisWeek
+        },
+        activityStats: {
+          ...dashboardData.activityStats,
+          today: todayActivities,
+          thisWeek: thisWeekActivities,
+          total: allActivities.length
+        },
+        emissionStats: emissionStats
+      };
+      
+      // Dashboard data is now fully organisation-scoped
+      console.log('✅ Dashboard data loaded (Organisation-Scoped):', {
+        userStats: dashboardData.userStats,
+        activityStats: dashboardData.activityStats,
+        emissionStats: dashboardData.emissionStats,
+        organisationId: user?.organisation_id || user?.organizationId,
+        totalUsersInOrg: totalUsersInOrg,
+        totalActivitiesFromContext: allActivities.length
+      });
       
       setAdminData(prev => ({ ...prev, dashboard: dashboardData }));
       setDataSource('backend');
-      console.log('✅ Dashboard data loaded from SQLite database:', dashboardData);
+      console.log('✅ Dashboard data loaded from SQLite database');
     } catch (error) {
       console.error('❌ Dashboard API error:', error);
       throw new Error('Failed to load dashboard data from database');
@@ -194,89 +390,241 @@ const AdminMonitor = () => {
   const loadActivities = async () => {
     try {
       console.log('📊 Fetching activities from backend...');
+      console.log('🏢 Current user organisation:', user?.organisation_id || user?.organizationId);
       
-      // Build query parameters
-      const params = {
-        page: pagination.currentPage,
-        limit: pagination.itemsPerPage
-      };
-      
-      if (filters.userId && filters.userId !== 'all') {
-        params.userId = filters.userId;
-      }
+      // Build filters for getRecentActivities
+      const activityFilters = {};
       
       if (filters.action && filters.action !== 'all') {
-        params.action = filters.action;
-      }
-      
-      if (searchQuery) {
-        params.search = searchQuery;
+        activityFilters.action = filters.action;
       }
       
       // Map timeframe to date range
       const now = new Date();
-      switch (filters.timeframe) {
-        case '24hours':
-          params.startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-          break;
-        case '7days':
-          params.startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          break;
-        case '30days':
-          params.startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-          break;
-        // 'all' - no date filter
+      if (filters.timeframe === '24hours') {
+        activityFilters.startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+        activityFilters.endDate = now.toISOString();
+      } else if (filters.timeframe === '7days') {
+        activityFilters.startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        activityFilters.endDate = now.toISOString();
+      } else if (filters.timeframe === '30days') {
+        activityFilters.startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        activityFilters.endDate = now.toISOString();
+      }
+      // 'all' - no date filter
+      
+      // Get organisation-filtered activities from ActivityContext
+      let filteredActivities = getRecentActivities(10000, activityFilters); // Already filtered by organisation
+      
+      // Apply search query filter if provided
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        filteredActivities = filteredActivities.filter(activity => {
+          return (
+            activity.user?.name?.toLowerCase().includes(query) ||
+            activity.user?.email?.toLowerCase().includes(query) ||
+            activity.action?.toLowerCase().includes(query) ||
+            activity.details?.toLowerCase().includes(query)
+          );
+        });
       }
       
-      const response = await adminAPI.getAllActivities(params);
-      
-      // Handle response format
-      const activitiesData = response.data || response;
-      const paginationData = response.pagination;
-      
-      setAdminData(prev => ({ ...prev, activities: activitiesData || [] }));
-      
-      if (paginationData) {
-        setPagination(prev => ({
-          ...prev,
-          totalPages: paginationData.totalPages,
-          totalItems: paginationData.totalItems
-        }));
+      // Apply user filter if provided
+      if (filters.userId && filters.userId !== 'all') {
+        filteredActivities = filteredActivities.filter(activity => 
+          activity.user?.id === filters.userId
+        );
       }
+      
+      console.log(`✅ Filtered activities: ${filteredActivities.length} activities from organisation`);
+      
+      // Manual pagination
+      const totalItems = filteredActivities.length;
+      const totalPages = Math.ceil(totalItems / pagination.itemsPerPage);
+      const startIndex = (pagination.currentPage - 1) * pagination.itemsPerPage;
+      const endIndex = startIndex + pagination.itemsPerPage;
+      const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
+      
+      setAdminData(prev => ({ ...prev, activities: paginatedActivities }));
+      
+      setPagination(prev => ({
+        ...prev,
+        totalPages: totalPages,
+        totalItems: totalItems
+      }));
       
       setDataSource('backend');
-      console.log(`✅ Loaded ${activitiesData?.length || 0} activities from SQLite database`);
+      console.log(`✅ Loaded ${paginatedActivities.length} of ${totalItems} activities (page ${pagination.currentPage} of ${totalPages})`);
     } catch (error) {
-      console.error('❌ Activities API error:', error);
-      throw new Error('Failed to load activities from database');
+      console.error('❌ Activities load error:', error);
+      throw new Error('Failed to load activities');
     }
   };
 
   const loadUserSummary = async () => {
     try {
       console.log('📊 Fetching user summary from backend...');
+      console.log('🏢 Current user organisation:', user?.organisation_id || user?.organizationId);
       
-      const params = {
-        timeframe: filters.timeframe
+      // Get organisation-specific users from backend
+      const usersResponse = await adminAPI.getAllUsers({
+        limit: 1000
+      });
+      
+      const usersData = usersResponse.data || usersResponse || [];
+      const totalUsersInOrg = usersData.length;
+      
+      console.log('👥 Users in current organisation:', totalUsersInOrg);
+      
+      // Get organisation-filtered activities from ActivityContext
+      const allActivities = getRecentActivities(10000, {}); // Already filtered by organisation
+      
+      // Calculate stats per user
+      const userActivityMap = {};
+      
+      allActivities.forEach(activity => {
+        const userId = activity.user?.id;
+        if (userId) {
+          if (!userActivityMap[userId]) {
+            userActivityMap[userId] = {
+              userId: userId,
+              user: activity.user,
+              totalActivities: 0,
+              uniqueActions: new Set(),
+              lastActivity: null
+            };
+          }
+          
+          userActivityMap[userId].totalActivities += 1;
+          userActivityMap[userId].uniqueActions.add(activity.action);
+          
+          const activityTime = new Date(activity.timestamp || activity.createdAt);
+          if (!userActivityMap[userId].lastActivity || activityTime > new Date(userActivityMap[userId].lastActivity)) {
+            userActivityMap[userId].lastActivity = activity.timestamp || activity.createdAt;
+          }
+        }
+      });
+      
+      // Convert map to array and format
+      const userStats = Object.values(userActivityMap).map(stat => ({
+        ...stat,
+        uniqueActions: stat.uniqueActions.size
+      }));
+      
+      // Sort by total activities descending
+      userStats.sort((a, b) => b.totalActivities - a.totalActivities);
+      
+      // Apply timeframe filter if needed
+      let filteredUserStats = userStats;
+      if (filters.timeframe !== 'all') {
+        const now = new Date();
+        let cutoffDate;
+        
+        switch (filters.timeframe) {
+          case '24hours':
+            cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case '7days':
+            cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case '30days':
+            cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+        }
+        
+        if (cutoffDate) {
+          // Recalculate for timeframe
+          const timeframeActivities = allActivities.filter(a => 
+            new Date(a.timestamp || a.createdAt) >= cutoffDate
+          );
+          
+          const timeframeMap = {};
+          timeframeActivities.forEach(activity => {
+            const userId = activity.user?.id;
+            if (userId) {
+              if (!timeframeMap[userId]) {
+                timeframeMap[userId] = {
+                  userId: userId,
+                  user: activity.user,
+                  totalActivities: 0,
+                  uniqueActions: new Set(),
+                  lastActivity: null
+                };
+              }
+              
+              timeframeMap[userId].totalActivities += 1;
+              timeframeMap[userId].uniqueActions.add(activity.action);
+              
+              const activityTime = new Date(activity.timestamp || activity.createdAt);
+              if (!timeframeMap[userId].lastActivity || activityTime > new Date(timeframeMap[userId].lastActivity)) {
+                timeframeMap[userId].lastActivity = activity.timestamp || activity.createdAt;
+              }
+            }
+          });
+          
+          filteredUserStats = Object.values(timeframeMap).map(stat => ({
+            ...stat,
+            uniqueActions: stat.uniqueActions.size
+          }));
+          
+          filteredUserStats.sort((a, b) => b.totalActivities - a.totalActivities);
+        }
+      }
+      
+      // Calculate system stats
+      const now = new Date();
+      const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const recentActivitiesCount = allActivities.filter(a => 
+        new Date(a.timestamp || a.createdAt) >= last24Hours
+      ).length;
+      
+      // Get total emissions count (from backend)
+      let totalEmissions = 0;
+      try {
+        const dashboardResponse = await adminAPI.getDashboard();
+        const dashboardData = dashboardResponse.data || dashboardResponse;
+        totalEmissions = dashboardData.emissionStats?.total || 0;
+      } catch (err) {
+        console.warn('Could not fetch emissions count:', err);
+      }
+      
+      const summaryData = {
+        userStats: filteredUserStats,
+        systemStats: {
+          totalUsers: totalUsersInOrg,
+          totalActivities: allActivities.length,
+          totalEmissions: totalEmissions,
+          recentActivities: recentActivitiesCount
+        }
       };
       
-      const response = await adminAPI.getUserSummary(params);
-      
-      // Handle response format
-      const summaryData = response.data || response;
+      // User summary is already filtered by organisation
+      console.log('✅ User summary loaded (Organisation-Scoped):', {
+        totalUsers: totalUsersInOrg,
+        userStatsCount: filteredUserStats.length,
+        systemStats: summaryData.systemStats,
+        organisationId: user?.organisation_id || user?.organizationId
+      });
       
       setAdminData(prev => ({ ...prev, userSummary: summaryData }));
       setDataSource('backend');
-      console.log('✅ User summary loaded from SQLite database');
+      console.log('✅ User summary loaded with organisation filtering');
     } catch (error) {
-      console.error('❌ User summary API error:', error);
-      throw new Error('Failed to load user summary from database');
+      console.error('❌ User summary error:', error);
+      throw new Error('Failed to load user summary');
     }
   };
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, currentPage: 1 }));
+    
+    // Log filter change activity
+    logActivity('filter_change', 'filter', null, `Changed ${key} filter to ${value} in Admin Monitor`, {
+      filterKey: key,
+      filterValue: value,
+      context: 'Admin Monitor'
+    });
   };
 
   const formatTimestamp = (timestamp) => {
@@ -336,13 +684,27 @@ const AdminMonitor = () => {
 
     return (
       <div className="space-y-6">
-        {/* Data Source Indicator */}
+        {/* Data Source Indicator with Organisation Scope */}
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <p className="text-sm text-green-800">
-              <strong>Data Source:</strong> Backend SQLite Database (Real-time data from local database)
-            </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <div>
+                <p className="text-sm text-green-800">
+                  <strong>Data Source:</strong> Backend SQLite Database (Real-time data from local database)
+                </p>
+                {user?.organisation?.name && (
+                  <p className="text-xs text-green-700 mt-1">
+                    <strong>Organisation Scope:</strong> Showing data for {user.organisation.name} only
+                  </p>
+                )}
+              </div>
+            </div>
+            {(user?.organisation_id || user?.organizationId) && (
+              <span className="text-xs text-green-600 bg-white px-2 py-1 rounded border border-green-300">
+                Org ID: {user.organisation_id || user.organizationId}
+              </span>
+            )}
           </div>
         </div>
 
@@ -448,12 +810,29 @@ const AdminMonitor = () => {
               ? 'Try adjusting your filters'
               : 'Activities will appear here once users start interacting with the system'}
           </p>
+          {user?.organisation?.name && (
+            <p className="text-xs text-emerald-600 mt-2">
+              Showing activities for: {user.organisation.name}
+            </p>
+          )}
         </div>
       );
     }
 
     return (
       <div className="space-y-6">
+        {/* Organisation Scope Information */}
+        {user?.organisation?.name && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+            <div className="flex items-center space-x-2">
+              <Info className="w-4 h-4 text-emerald-600" />
+              <p className="text-sm text-emerald-800">
+                <strong>Organisation Filter Active:</strong> Displaying activities for <strong>{user.organisation.name}</strong> only
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
@@ -729,7 +1108,9 @@ const AdminMonitor = () => {
               <span>SQLite DB</span>
             </span>
             {user?.organisation?.name && (
-              <span className="text-sm text-gray-600">{user.organisation.name}</span>
+              <span className="text-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-medium">
+                🏢 {user.organisation.name}
+              </span>
             )}
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>

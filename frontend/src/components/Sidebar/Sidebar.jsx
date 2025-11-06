@@ -1,4 +1,4 @@
-// components/Sidebar/Sidebar.jsx - Retractable Sidebar with Enhanced UX
+// components/Sidebar/Sidebar.jsx - Retractable Sidebar with Sustain360 Logo
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
@@ -16,10 +16,14 @@ import {
   UserCog,
   Crown,
   Users,
-  Menu
+  Menu,
+  Building2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { organizationAPI } from '../../services/api';
 import { useState, useEffect } from 'react';
+// Import the logo - adjust the path based on your project structure
+import Sustain360Logo from '../../assets/Sustain360_Logo.svg';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -30,6 +34,8 @@ const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredSubmenu, setHoveredSubmenu] = useState(null);
+  const [organisationName, setOrganisationName] = useState('');
+  const [loadingOrg, setLoadingOrg] = useState(false);
 
   // Check if mobile
   useEffect(() => {
@@ -44,6 +50,40 @@ const Sidebar = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Fetch organisation name
+  useEffect(() => {
+    const fetchOrganisation = async () => {
+      // If organisation is already in user object, use it
+      if (user?.organisation) {
+        setOrganisationName(user.organisation);
+        return;
+      }
+
+      // Otherwise, fetch from API
+      if (user && !loadingOrg) {
+        setLoadingOrg(true);
+        try {
+          console.log('🏢 Fetching organisation details for sidebar...');
+          const responseData = await organizationAPI.getDetails();
+          
+          // Extract organisation name (prefer display_name, fallback to name)
+          const orgData = responseData.organisation;
+          const orgName = orgData?.display_name || orgData?.name;
+          
+          console.log('✅ Organisation name loaded:', orgName);
+          setOrganisationName(orgName || '');
+        } catch (error) {
+          console.error('❌ Failed to fetch organisation:', error);
+          setOrganisationName('');
+        } finally {
+          setLoadingOrg(false);
+        }
+      }
+    };
+
+    fetchOrganisation();
+  }, [user, loadingOrg]);
 
   // Auto-collapse on mobile when route changes
   useEffect(() => {
@@ -111,7 +151,8 @@ const Sidebar = () => {
       roles: ['admin'],
       submenu: [
         { path: '/admin/monitor', label: 'User Activities', icon: Activity },
-        { path: '/admin/users', label: 'User Management', icon: UserCog }
+        { path: '/admin/users', label: 'User Management', icon: UserCog },
+        { path: '/admin/organisation', label: 'Organisation', icon: Building2 }
       ]
     }
   ];
@@ -227,13 +268,23 @@ const Sidebar = () => {
             </button>
           )}
 
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-lg">C</span>
-            </div>
-            {!isCollapsed && (
-              <div className="flex items-center space-x-2 overflow-hidden">
-                <span className="text-lg font-semibold text-gray-900 whitespace-nowrap">Carbon Track</span>
+          {/* Sustain360 Logo */}
+          <div className="flex items-center justify-center">
+            {!isCollapsed ? (
+              // Full logo when expanded
+              <img 
+                src={Sustain360Logo} 
+                alt="Sustain360" 
+                className="h-10 w-auto object-contain transition-all duration-300"
+              />
+            ) : (
+              // Compact logo icon when collapsed
+              <div className="w-10 h-10 flex items-center justify-center">
+                <img 
+                  src={Sustain360Logo} 
+                  alt="Sustain360" 
+                  className="h-8 w-8 object-contain transition-all duration-300"
+                />
               </div>
             )}
           </div>
@@ -418,6 +469,13 @@ const Sidebar = () => {
                     <UserCog className="w-4 h-4 flex-shrink-0" />
                     <span>Add User</span>
                   </Link>
+                  <Link
+                    to="/admin/organisation"
+                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <Building2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Organisation</span>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -453,17 +511,29 @@ const Sidebar = () => {
                 </div>
               </div>
 
-              {/* User Stats for Contributors and above */}
-              {user?.role && ['admin', 'analyst', 'contributor'].includes(user.role) && (
+              {/* Organisation Name - Fetched from API */}
+              {organisationName && (
                 <div className="mb-3 p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                  <div className="text-xs text-gray-500 space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <span>This Month:</span>
-                      <span className="font-semibold text-gray-700">12 entries</span>
+                  <div className="flex items-center space-x-2">
+                    <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-500 mb-0.5">Organisation</p>
+                      <p className="text-sm font-medium text-gray-900 truncate" title={organisationName}>
+                        {organisationName}
+                      </p>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span>Total CO₂e:</span>
-                      <span className="font-semibold text-emerald-600">2.4K kg</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Loading State */}
+              {loadingOrg && !organisationName && (
+                <div className="mb-3 p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
+                  <div className="flex items-center space-x-2">
+                    <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0 animate-pulse" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-500 mb-0.5">Organisation</p>
+                      <div className="h-4 bg-gray-200 rounded animate-pulse w-32"></div>
                     </div>
                   </div>
                 </div>

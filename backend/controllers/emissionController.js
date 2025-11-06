@@ -4,6 +4,7 @@
 
 const localDB = require('../database/localDB');
 const { scopeQuery, addOrganisationToData } = require('../middleware/organisationScope');
+const logger = require('../utils/logger');
 
 // Import emission factors from new database
 const { emissionFactors } = require('../data/complete_emission_factors_db');
@@ -18,12 +19,12 @@ const { emissionFactors } = require('../data/complete_emission_factors_db');
 const getEmissionFactor = (scope, category, source) => {
   const scopeKey = `scope${scope}`;
   const scopeData = emissionFactors[scopeKey];
-  
+
   if (!scopeData || !scopeData[category] || !scopeData[category][source]) {
-    console.error('Emission factor not found:', { scope, category, source });
+    logger.error('Emission factor not found', { scope, category, source });
     return null;
   }
-  
+
   return scopeData[category][source];
 };
 
@@ -32,9 +33,9 @@ const getEmissionFactor = (scope, category, source) => {
  */
 const calculateEmissions = (quantity, scope, category, source) => {
   const factorData = getEmissionFactor(scope, category, source);
-  
+
   if (!factorData) {
-    console.error('Cannot calculate emissions: factor not found');
+    logger.error('Cannot calculate emissions: factor not found');
     return {
       total: 0,
       co2: 0,
@@ -42,7 +43,7 @@ const calculateEmissions = (quantity, scope, category, source) => {
       n2o: 0
     };
   }
-  
+
   return {
     total: quantity * factorData.factor,
     co2: quantity * (factorData.co2 || 0),
@@ -59,7 +60,7 @@ const calculateEmissions = (quantity, scope, category, source) => {
  */
 const validateOrganisationContext = (req) => {
   if (!req.organisationId) {
-    console.error('❌ CRITICAL: No organisation context', {
+    logger.error('No organisation context', {
       userId: req.user.id,
       userEmail: req.user.email,
       userOrgId: req.user.organisation_id,
@@ -124,7 +125,7 @@ const executeQuery = (query, params = []) => {
   return new Promise((resolve, reject) => {
     localDB.db.all(query, params, (err, rows) => {
       if (err) {
-        console.error('❌ Database query error:', err);
+        logger.error('Database query error', err);
         reject(err);
       } else {
         resolve(rows || []);
@@ -140,7 +141,7 @@ const executeGetQuery = (query, params = []) => {
   return new Promise((resolve, reject) => {
     localDB.db.get(query, params, (err, row) => {
       if (err) {
-        console.error('❌ Database query error:', err);
+        logger.error('Database query error', err);
         reject(err);
       } else {
         resolve(row);
@@ -156,7 +157,7 @@ const executeRun = (query, params = []) => {
   return new Promise((resolve, reject) => {
     localDB.db.run(query, params, function(err) {
       if (err) {
-        console.error('❌ Database run error:', err);
+        logger.error('Database run error', err);
         reject(err);
       } else {
         resolve(this);
@@ -176,15 +177,14 @@ const executeRun = (query, params = []) => {
  */
 const getEmissions = async (req, res) => {
   try {
-    console.log('📊 =================================');
-    console.log('📊 GET EMISSIONS REQUEST');
-    console.log('📊 User:', req.user.email);
-    console.log('📊 Role:', req.user.role);
-    console.log('📊 User Org ID:', req.user.organisation_id);
-    console.log('📊 Request Org ID:', req.organisationId);
-    console.log('📊 Organisation:', req.organisation?.name || 'NONE');
-    console.log('📊 =================================');
-    
+    logger.debug('Get emissions request', {
+      user: req.user.email,
+      role: req.user.role,
+      userOrgId: req.user.organisation_id,
+      requestOrgId: req.organisationId,
+      organisation: req.organisation?.name
+    });
+
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
       return res.status(403).json({
@@ -208,20 +208,20 @@ const getEmissions = async (req, res) => {
     
     // Add ordering
     let orderedQuery = finalQuery + ' ORDER BY date DESC, created_at DESC';
-    
+
     // Add limit
     const limit = parseInt(req.query.limit) || 100;
     orderedQuery += ' LIMIT ?';
     finalParams.push(limit);
-    
-    console.log('🔍 Query:', orderedQuery);
-    console.log('🔍 Params:', finalParams);
-    
+
     // Execute query
     const emissions = await executeQuery(orderedQuery, finalParams);
-    
-    console.log(`✅ Found ${emissions.length} emissions for org: ${req.organisation.name}`);
-    console.log('📊 =================================\n');
+
+    logger.info('Emissions retrieved', {
+      count: emissions.length,
+      organisation: req.organisation.name,
+      organisationId: req.organisationId
+    });
     
     res.json({
       success: true,
@@ -241,7 +241,7 @@ const getEmissions = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get emissions error:', error);
+    logger.error('Get emissions error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch emissions'
@@ -258,7 +258,7 @@ const getEmissionById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    console.log('🔍 Fetching emission:', id, 'for org:', req.organisationId);
+    logger.debug('Fetching emission', { id, organisationId: req.organisationId });
     
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
@@ -282,7 +282,6 @@ const getEmissionById = async (req, res) => {
       });
     }
     
-    console.log('✅ Emission found:', emission.id);
     
     res.json({
       success: true,
@@ -290,7 +289,7 @@ const getEmissionById = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get emission by ID error:', error);
+    logger.error('Get emission by ID error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch emission'
@@ -305,16 +304,15 @@ const getEmissionById = async (req, res) => {
  */
 const createEmission = async (req, res) => {
   try {
-    console.log('➕ =================================');
-    console.log('➕ CREATE EMISSION REQUEST');
-    console.log('➕ User:', req.user.email);
-    console.log('➕ Role:', req.user.role);
-    console.log('➕ Org ID:', req.organisationId);
-    console.log('➕ =================================');
+    logger.debug('Create emission request', {
+      user: req.user.email,
+      role: req.user.role,
+      organisationId: req.organisationId
+    });
     
     // Validate organisation context FIRST
     if (!validateOrganisationContext(req)) {
-      console.error('❌ BLOCKED: User has no organisation');
+      logger.error('User has no organisation');
       return res.status(403).json({
         success: false,
         message: 'Cannot create emissions without organisation membership. Please contact administrator.',
@@ -367,7 +365,7 @@ const createEmission = async (req, res) => {
     
     // CRITICAL: Double-check organisation_id was added
     if (!emissionData.organisation_id) {
-      console.error('❌ CRITICAL: organisation_id missing after addOrganisationToData');
+      logger.error('organisation_id missing after addOrganisationToData');
       return res.status(500).json({
         success: false,
         message: 'Failed to assign organisation to emission. System error.',
@@ -404,18 +402,6 @@ const createEmission = async (req, res) => {
       }
     }
     
-    console.log('📝 Emission data validated:', {
-      organisation_id: emissionData.organisation_id,
-      organisation_name: emissionData.organisation_name,
-      scope: emissionData.scope,
-      category: category,
-      source: source,
-      activity: activity,
-      quantity: quantity,
-      unit: emissionsCalc.unit,
-      factor: emissionsCalc.factor,
-      co2e: emissionsCalc.total.toFixed(4)
-    });
     
     // Insert into database with new fields
     const query = `
@@ -473,7 +459,11 @@ const createEmission = async (req, res) => {
       emission_factor_description: emissionsCalc.description
     };
     
-    console.log(`✅ Emission created successfully: ID=${result.lastID}, Org=${emissionData.organisation_id}, CO2e=${emissionsCalc.total.toFixed(4)}`);
+    logger.info('Emission created successfully', {
+      id: result.lastID,
+      organisationId: emissionData.organisation_id,
+      co2e: emissionsCalc.total.toFixed(4)
+    });
     
     // Log activity
     await localDB.logActivity({
@@ -486,7 +476,6 @@ const createEmission = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
-    console.log('➕ =================================\n');
     
     res.status(201).json({
       success: true,
@@ -506,7 +495,7 @@ const createEmission = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Create emission error:', error);
+    logger.error('Create emission error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create emission'
@@ -524,7 +513,6 @@ const updateEmission = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     
-    console.log('✏️ Updating emission:', id, 'by user:', req.user.email);
     
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
@@ -630,7 +618,6 @@ const updateEmission = async (req, res) => {
       [id, req.organisationId]
     );
     
-    console.log(`✅ Emission ${id} updated successfully`);
     
     // Log activity
     await localDB.logActivity({
@@ -651,7 +638,7 @@ const updateEmission = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Update emission error:', error);
+    logger.error('Update emission error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update emission'
@@ -668,7 +655,6 @@ const deleteEmission = async (req, res) => {
   try {
     const { id } = req.params;
     
-    console.log('🗑️ Deleting emission:', id, 'by user:', req.user.email);
     
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
@@ -712,7 +698,6 @@ const deleteEmission = async (req, res) => {
       });
     }
     
-    console.log(`✅ Emission ${id} deleted successfully`);
     
     // Log activity
     await localDB.logActivity({
@@ -731,7 +716,7 @@ const deleteEmission = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Delete emission error:', error);
+    logger.error('Delete emission error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete emission'
@@ -749,7 +734,6 @@ const verifyEmission = async (req, res) => {
     const { id } = req.params;
     const { verified } = req.body;
     
-    console.log('✅ Verifying emission:', id, 'by:', req.user.email, 'verified:', verified);
     
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
@@ -796,7 +780,6 @@ const verifyEmission = async (req, res) => {
       [id]
     );
     
-    console.log(`✅ Emission ${id} ${verified ? 'verified' : 'unverified'}`);
     
     // Log activity
     await localDB.logActivity({
@@ -816,7 +799,7 @@ const verifyEmission = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Verify emission error:', error);
+    logger.error('Verify emission error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to verify emission'
@@ -831,7 +814,6 @@ const verifyEmission = async (req, res) => {
  */
 const getEmissionStats = async (req, res) => {
   try {
-    console.log('📊 Getting emission stats for org:', req.organisationId);
     
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
@@ -941,7 +923,7 @@ const getEmissionStats = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get stats error:', error);
+    logger.error('Get stats error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch emission statistics'
@@ -980,7 +962,7 @@ const getEmissionCategories = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get categories error:', error);
+    logger.error('Get categories error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch categories'
@@ -1035,7 +1017,7 @@ const getEmissionFactors = async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ Get emission factors error:', error);
+    logger.error('Get emission factors error', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch emission factors'
@@ -1085,7 +1067,7 @@ const getUserAllowedActivities = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get allowed activities error:', error);
+    logger.error('Get allowed activities error', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -1100,7 +1082,6 @@ const getUserAllowedActivities = async (req, res) => {
  */
 const getDiagnostics = async (req, res) => {
   try {
-    console.log('🔍 Running emissions diagnostics for user:', req.user.email);
     
     // Get user info
     const userInfo = await localDB.findUserById(req.user.id);
@@ -1223,7 +1204,7 @@ const getDiagnostics = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Diagnostics error:', error);
+    logger.error('Diagnostics error', error);
     res.status(500).json({
       success: false,
       message: error.message

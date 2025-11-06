@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 // Create axios instance with default configuration
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // Increased from 15000 to 30000 (30 seconds)
+  timeout: 300000, // Increased from 15000 to 30000 (30 seconds)
   headers: {
     'Content-Type': 'application/json'
   }
@@ -511,8 +511,15 @@ export const generatorsAPI = {
 
 // Organization API
 export const organizationAPI = {
+  // Organisation Details (Admin only)
+  getDetails: () => apiClient.get('/organisation/details'),
+  updateDetails: (organisationData) => apiClient.patch('/organisation/details', organisationData),
+  
+  // Boundary Management
   getBoundary: () => apiClient.get('/organization/boundary'),
   updateBoundary: (boundaryData) => apiClient.patch('/organization/boundary', boundaryData),
+  
+  // Settings Management
   getSettings: () => apiClient.get('/organization/settings'),
   updateSettings: (settingsData) => apiClient.patch('/organization/settings', settingsData)
 };

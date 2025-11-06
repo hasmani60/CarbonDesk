@@ -9,6 +9,9 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
+// Import logger
+const logger = require('./utils/logger');
+
 // Import local database
 const localDB = require('./database/localDB');
 
@@ -39,18 +42,24 @@ const {
   logCompanyActivity
 } = require('./middleware/companyAuth');
 
+const organisationRoutes = require('./routes/organisation');
+
 const app = express();
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
 // ============================================
-// RATE LIMITING - INCREASED LIMITS TO PREVENT 429 ERRORS
+// RATE LIMITING - DISABLED IN DEVELOPMENT, ENABLED IN PRODUCTION
 // ============================================
+
+// Disable rate limiting in development
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Increased from 200 to 1000 requests per 15 minutes
+  max: isDevelopment ? 10000 : 1000, // Much higher limit in dev
+  skip: () => isDevelopment, // Skip rate limiting in development
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -60,7 +69,8 @@ const limiter = rateLimit({
 
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // Increased from 100 to 500 requests per 15 minutes
+  max: isDevelopment ? 10000 : 500,
+  skip: () => isDevelopment, // Skip rate limiting in development
   message: { error: 'Too many admin requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -68,7 +78,8 @@ const adminLimiter = rateLimit({
 
 const companyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Increased from 50 to 200 requests per 15 minutes
+  max: isDevelopment ? 10000 : 200,
+  skip: () => isDevelopment, // Skip rate limiting in development
   message: { error: 'Too many company operations requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -92,24 +103,33 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // CORS configuration
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+  : [
       'http://localhost:5173',
       'http://localhost:3000',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:3000',
       process.env.CLIENT_URL
     ].filter(Boolean);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+
+    if (corsOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
-      callback(null, true); // Allow for development - remove in production
+      // In production, reject unauthorized origins
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn('CORS blocked origin', { origin });
+        callback(new Error('Not allowed by CORS'));
+      } else {
+        // In development, allow but log
+        logger.debug('CORS origin not in whitelist (allowed in dev)', { origin });
+        callback(null, true);
+      }
     }
   },
   credentials: true,
@@ -164,9 +184,8 @@ app.get('/health', (req, res) => {
       increasedRateLimits: true
     }
   };
-  
+
   res.status(200).json(healthData);
-  console.log('Health check requested:', healthData);
 });
 
 // ============================================
@@ -184,26 +203,22 @@ const companyController = require('./controllers/companyController');
 // COMPANY OPERATIONS ROUTES (HIDDEN)
 // ============================================
 
-console.log('🏢 Registering Company Operations routes...');
-
 // Company Auth Routes - NO authentication required for login
 const companyAuthRouter = express.Router();
 companyAuthRouter.post('/login', companyController.companyLogin);
 companyAuthRouter.get('/profile', authenticateCompanyOperator, companyController.getCompanyProfile);
 
 app.use('/api/company/auth', companyLimiter, companyAuthRouter);
-console.log('✅ Company auth routes registered: /api/company/auth');
 
 // Company Dashboard Routes - Requires authentication
 const companyDashboardRouter = express.Router();
 companyDashboardRouter.get('/', companyController.getCompanyDashboard);
 
-app.use('/api/company/dashboard', 
-  companyLimiter, 
-  authenticateCompanyOperator, 
+app.use('/api/company/dashboard',
+  companyLimiter,
+  authenticateCompanyOperator,
   companyDashboardRouter
 );
-console.log('✅ Company dashboard routes registered: /api/company/dashboard');
 
 // Company Organisation Routes - Requires authentication
 const companyOrgRouter = express.Router();
@@ -244,12 +259,11 @@ companyOrgRouter.get('/:id/stats',
   companyController.getOrganisationStats
 );
 
-app.use('/api/company/organisations', 
-  companyLimiter, 
-  authenticateCompanyOperator, 
+app.use('/api/company/organisations',
+  companyLimiter,
+  authenticateCompanyOperator,
   companyOrgRouter
 );
-console.log('✅ Company organisation routes registered: /api/company/organisations');
 
 // Test endpoint to verify company routes are working
 app.get('/api/company/test', (req, res) => {
@@ -267,11 +281,18 @@ app.get('/api/company/test', (req, res) => {
     ]
   });
 });
-console.log('✅ Company test route registered: /api/company/test');
 
-console.log('🏢 ================================');
-console.log('🏢 Company Operations routes ready!');
-console.log('🏢 ================================\n');
+
+// ============================================
+// ORGANISATION ROUTES (For Regular Admins)
+// ============================================
+
+app.use('/api/organisation',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  organisationRoutes
+);
 
 
 // ============================================
@@ -393,14 +414,12 @@ const taskRouter = express.Router();
 const taskRoutes = require('./routes/tasks');
 
 // Apply middleware stack, then mount the routes
-app.use('/api/tasks', 
-  authenticateToken,              // 1. Authenticate user
-  addOrganisationContext,         // 2. Add organisation context  
-  requireOrganisation,            // 3. Ensure user belongs to organisation
-  taskRoutes                      // 4. Apply task routes (which have role-based auth)
+app.use('/api/tasks',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  taskRoutes
 );
-
-console.log('✅ Task management routes registered: /api/tasks');
 
 // ============================================
 // DASHBOARD ROUTES (WITH ORG CONTEXT & RBAC)
@@ -426,12 +445,12 @@ app.use('/api/dashboard', authenticateToken, dashboardRouter);
 
 const analysisRouter = require('./routes/analytics');
 
-// Analysis endpoints - uses SAME middleware pattern as your existing routes
-app.use('/api/analysis', 
-  authenticateToken,              // Your existing auth middleware
-  addOrganisationContext,         // Your existing org context middleware
-  requireOrganisation,            // Your existing org requirement middleware
-  authorizeRoles('admin', 'analyst', 'viewer'),  // Your existing RBAC middleware
+// Analysis endpoints
+app.use('/api/analysis',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  authorizeRoles('admin', 'analyst', 'viewer'),
   analysisRouter
 );
 
@@ -614,37 +633,14 @@ app.get('/api/rbac/info', authenticateToken, addOrganisationContext, (req, res) 
   });
 });
 
-// ============================================
-// PLACEHOLDER ROUTES
-// ============================================
-
-app.use('/api/vehicles', authenticateToken, (req, res) => {
-  res.json({ message: 'Vehicles endpoint placeholder' });
-});
-
-app.use('/api/generators', authenticateToken, (req, res) => {
-  res.json({ message: 'Generators endpoint placeholder' });
-});
-
-app.use('/api/organization', authenticateToken, (req, res) => {
-  res.json({ message: 'Organization endpoint placeholder' });
-});
-
-app.use('/api/notifications', authenticateToken, (req, res) => {
-  res.json({ success: true, data: [] });
-});
-
-app.use('/api/export', authenticateToken, authorizeRoles('admin', 'analyst'), (req, res) => {
-  res.json({ message: 'Export endpoint placeholder - Admin/Analyst only' });
-});
 
 // ============================================
 // ERROR HANDLING MIDDLEWARE
 // ============================================
 
 const errorHandlerMiddleware = (err, req, res, next) => {
-  console.error('Error:', err);
-  
+  logger.error('Request error', err);
+
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       success: false,
@@ -652,14 +648,14 @@ const errorHandlerMiddleware = (err, req, res, next) => {
       errors: Object.values(err.errors).map(e => e.message)
     });
   }
-  
+
   if (err.code === 11000) {
     return res.status(400).json({
       success: false,
       message: 'Duplicate key error'
     });
   }
-  
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error'
@@ -692,39 +688,39 @@ app.use(errorHandlerMiddleware);
 const connectDB = async () => {
   try {
     if (!process.env.MONGODB_URI) {
-      console.log('⚠️  MONGODB_URI not set - using local SQLite database');
+      logger.info('MONGODB_URI not set - using local SQLite database');
       return false;
     }
-    
+
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host} (Secondary)`);
+    logger.info('MongoDB Connected', { host: conn.connection.host, mode: 'Secondary' });
     return true;
   } catch (error) {
-    console.log('⚠️  MongoDB not available - using local SQLite database (Primary)');
+    logger.info('MongoDB not available - using local SQLite database (Primary)');
     return false;
   }
 };
 
 const gracefulShutdown = async (signal) => {
-  console.log(`\n${signal} received, shutting down gracefully`);
-  
+  logger.info(`${signal} received, shutting down gracefully`);
+
   try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
-      console.log('MongoDB connection closed');
+      logger.info('MongoDB connection closed');
     }
-    
+
     if (localDB) {
       localDB.close();
-      console.log('Local database connection closed');
+      logger.info('Local database connection closed');
     }
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    logger.error('Error during shutdown', error);
   }
-  
+
   process.exit(0);
 };
 
@@ -738,63 +734,43 @@ const startServer = async () => {
     await localDB.init();
     await localDB.createTasksTable();
     await connectDB();
-    
+
     const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log('');
-      console.log('🚀 ================================');
-      console.log(`📊 Carbon Accounting Backend v2.0.1`);
-      console.log(`🌐 Server running on port ${PORT}`);
-      console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 API Base: http://localhost:${PORT}/api`);
-      console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
-      console.log('');
-      console.log(`⚡ RATE LIMITS (UPDATED):`);
-      console.log(`   📊 General: 1000 req/15min (increased from 200)`);
-      console.log(`   🔐 Admin: 500 req/15min (increased from 100)`);
-      console.log(`   🏢 Company: 200 req/15min (increased from 50)`);
-      console.log('');
-      console.log(`✨ FEATURES:`);
-      console.log(`   👥 Multi-User Support: Enabled`);
-      console.log(`   🏢 Multi-Tenant: Enabled (Organisation Scoping)`);
-      console.log(`   🔒 Strict RBAC: Enforced`);
-      console.log(`   📋 Admin Monitoring: Enabled`);
-      console.log(`   📝 Activity Logging: Enhanced`);
-      console.log(`   📋 Task Management: Enabled`);
-      console.log(`   👥 Task Assignment: Enabled`);
-      console.log(`   🔄 Workflow Tracking: Enabled`);
-      console.log(`   🗄️  Database: Local SQLite (Primary)`);
-      console.log('');
-      console.log(`🔐 COMPANY OPERATIONS (HIDDEN)`);
-      console.log(`   ⚠️  Internal Use Only`);
-      console.log(`   Base URL: http://localhost:${PORT}/api/company`);
-      console.log('');
-      console.log(`📌 DEFAULT CREDENTIALS:`);
-      console.log(`   🔴 Company: admin@carbontrack-company.com / CompanyAdmin2025!`);
-      console.log(`   🟢 Demo Admin: demo@example.com / password123`);
-      console.log('');
-      console.log(`📋 TASK MANAGEMENT ENDPOINTS:`);
-      console.log(`   POST /api/tasks - Create task (Admin)`);
-      console.log(`   GET /api/tasks - Get tasks (Role-based)`);
-      console.log(`   PATCH /api/tasks/:id - Update task`);
-      console.log(`   GET /api/tasks/stats - Task statistics`);
-      console.log('');
-      console.log(`💚 Status: Ready (429 Errors Fixed)`);
-      console.log('🚀 ================================');
-      console.log('');
+      logger.info('Server started successfully', {
+        version: '2.0.1',
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development',
+        apiBase: `http://localhost:${PORT}/api`,
+        healthCheck: `http://localhost:${PORT}/health`,
+        rateLimits: {
+          general: '1000 req/15min',
+          admin: '500 req/15min',
+          company: '200 req/15min'
+        },
+        features: {
+          multiUser: true,
+          multiTenant: true,
+          strictRBAC: true,
+          adminMonitoring: true,
+          activityLogging: true,
+          taskManagement: true,
+          database: 'Local SQLite (Primary)'
+        }
+      });
     });
 
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use.`);
+        logger.error(`Port ${PORT} is already in use`);
         process.exit(1);
       } else {
-        console.error('❌ Server error:', error);
+        logger.error('Server error', error);
         process.exit(1);
       }
     });
 
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    logger.error('Failed to start server', error);
     process.exit(1);
   }
 };

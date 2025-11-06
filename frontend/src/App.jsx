@@ -1,4 +1,3 @@
-
 // frontend/src/App.jsx - Complete App with Multi-Tenant Support
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -9,9 +8,10 @@ import Layout from './layouts/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 
+
 // Auth pages
 import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
+import Contact from './pages/auth/Contact';
 
 // Main app pages
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -19,6 +19,7 @@ import Input from './pages/Input/Input';
 import Monitor from './pages/Monitor/Monitor';
 import Analytics from './pages/Analytics/Analytics';
 import Settings from './pages/Settings/Settings';
+import OrganisationPage from './pages/Organisation/OrganisationPage';
 
 // Admin pages
 import AdminMonitor from './pages/Admin/AdminMonitor';
@@ -65,7 +66,7 @@ function App() {
                 {/* PUBLIC ROUTES                              */}
                 {/* ========================================== */}
                 <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
+                <Route path="/contact" element={<Contact />} />
                 
                 {/* ========================================== */}
                 {/* PROTECTED ROUTES (REGULAR USERS)           */}
@@ -127,6 +128,8 @@ function App() {
                       </ProtectedRoute>
                     } 
                   />
+
+                  
                   
                   {/* ========================================== */}
                   {/* ADMIN ROUTES (ADMIN ONLY)                  */}
@@ -137,6 +140,7 @@ function App() {
                         <Route index element={<Navigate to="/admin/monitor" replace />} />
                         <Route path="monitor" element={<AdminMonitor />} />
                         <Route path="users" element={<UserManagement />} />
+                        <Route path="organisation" element={<OrganisationPage />} />
                         <Route path="system" element={<AdminMonitor />} />
                       </Routes>
                     </AdminRoute>

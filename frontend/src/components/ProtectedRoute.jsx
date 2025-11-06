@@ -26,7 +26,7 @@ const ProtectedRoute = ({ children, requiredRoles = [], requiredPermissions = []
   
   // Define strict role-based page access
   const strictRolePageAccess = {
-    admin: ['dashboard', 'input', 'monitor', 'analytics', 'settings', 'admin'],
+    admin: ['dashboard', 'input', 'monitor', 'analytics', 'settings', 'admin', 'organisation'],
     analyst: ['analytics', 'settings'],
     contributor: ['input', 'settings'],
     viewer: ['dashboard', 'monitor', 'analytics', 'settings']

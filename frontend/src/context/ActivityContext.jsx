@@ -53,8 +53,10 @@ export const ActivityProvider = ({ children }) => {
           id: user.id,
           name: user.name,
           role: user.role,
-          email: user.email
+          email: user.email,
+          organisation_id: user.organisation_id || user.organizationId || null  // ← ADD THIS LINE
         },
+        organisation_id: user.organisation_id || user.organizationId || null,  // ← ADD THIS LINE
         action,
         resourceType,
         resourceId,
@@ -440,9 +442,29 @@ export const ActivityProvider = ({ children }) => {
       let filteredActivities = [...activities]; // Create a copy
 
       // Apply filters
-      if (filters.userId) {
-        filteredActivities = filteredActivities.filter(a => a.user?.id === filters.userId);
+      if (user && (user.organisation_id || user.organizationId)) {
+        const userOrgId = user.organisation_id || user.organizationId;
+        console.log('🏢 Filtering activities by organisation:', userOrgId);
+        
+        filteredActivities = filteredActivities.filter(a => {
+          // Check both user.organisation_id and top-level organisation_id
+          const activityOrgId = a.organisation_id || a.user?.organisation_id;
+          const matches = activityOrgId === userOrgId;
+          
+          if (!matches && activityOrgId) {
+            console.log('🚫 Filtered out activity from different org:', {
+              activityOrg: activityOrgId,
+              userOrg: userOrgId,
+              action: a.action
+            });
+          }
+          
+          return matches;
+        });
+        
+        console.log(`✅ Filtered activities: ${filteredActivities.length} activities from organisation ${userOrgId}`);
       }
+
       if (filters.category) {
         filteredActivities = filteredActivities.filter(a => a.category === filters.category);
       }
@@ -476,12 +498,12 @@ export const ActivityProvider = ({ children }) => {
       console.warn('Failed to get recent activities:', error);
       return [];
     }
-  }, []);
+  }, [user]);
 
   // Get activity summary for admin dashboard
   const getActivitySummaryForAdmin = useCallback(() => {
     try {
-      const activities = JSON.parse(localStorage.getItem('user_activities') || '[]');
+      const activities = getRecentActivities(1000, {}); // Get all recent activities
       const now = new Date();
       const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -545,7 +567,7 @@ export const ActivityProvider = ({ children }) => {
         systemHealth: 'unknown'
       };
     }
-  }, []);
+  }, [getRecentActivities]);
 
   // Enhanced activity statistics
   const getActivityStats = useCallback((timeRange = '7days') => {

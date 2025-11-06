@@ -95,9 +95,71 @@ const Dashboard = () => {
       // Load admin data if user is admin
       if (isAdmin(user?.role)) {
         try {
+          console.log('📊 Loading admin data with organisation filtering...');
+          console.log('🏢 Current user organisation:', user?.organisation_id || user?.organizationId);
+          
+          // Get backend dashboard data
           const adminDashboard = await adminAPI.getDashboard();
-          setAdminData(adminDashboard);
-          console.log('✅ Admin dashboard data loaded from API');
+          
+          // Get organisation-specific users from backend
+          const usersResponse = await adminAPI.getAllUsers({
+            limit: 1000
+          });
+          
+          const usersData = usersResponse.data || usersResponse || [];
+          const totalUsersInOrg = usersData.length;
+          
+          console.log('👥 Users in current organisation:', totalUsersInOrg);
+          
+          // Count active users in organisation
+          const activeUsersInOrg = usersData.filter(u => u.status === 'active').length;
+          
+          // Get organisation-filtered activities from ActivityContext
+          const activitySummary = getActivitySummaryForAdmin();
+          
+          // Calculate emissions this week
+          const now = new Date();
+          const thisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const emissionsThisWeek = allEmissions.filter(e => {
+            const emissionDate = new Date(e.createdAt || e.date);
+            return emissionDate >= thisWeek;
+          }).length;
+          
+          // Calculate pending emissions if status field exists
+          const pendingEmissions = allEmissions.filter(e => 
+            e.status === 'pending' || e.verification_status === 'pending'
+          ).length;
+          
+          // Build organisation-scoped admin data
+          const organisationAdminData = {
+            userStats: {
+              total: totalUsersInOrg,
+              active: activeUsersInOrg,
+              inactive: totalUsersInOrg - activeUsersInOrg
+            },
+            activityStats: {
+              today: activitySummary.recentActivities || userActivityStats?.today || 0,
+              thisWeek: activitySummary.weeklyActivities || userActivityStats?.thisWeek || 0,
+              total: activitySummary.totalActivities || 0
+            },
+            emissionStats: {
+              total: processedData.totalEntries,
+              pending: pendingEmissions,
+              approved: processedData.totalEntries - pendingEmissions,
+              thisWeek: emissionsThisWeek
+            }
+          };
+          
+          setAdminData(organisationAdminData);
+          console.log('✅ Admin dashboard data loaded (Organisation-Scoped):', {
+            totalUsers: totalUsersInOrg,
+            activeUsers: activeUsersInOrg,
+            totalActivities: organisationAdminData.activityStats.total,
+            totalEmissions: organisationAdminData.emissionStats.total,
+            pendingEmissions: pendingEmissions,
+            organisationId: user?.organisation_id || user?.organizationId
+          });
+          
         } catch (error) {
           console.warn('⚠️ Admin dashboard API unavailable, using local data:', error.message);
           
@@ -121,7 +183,7 @@ const Dashboard = () => {
           };
           
           setAdminData(localAdminData);
-          console.log('✅ Admin dashboard data loaded from localStorage:', localAdminData);
+          console.log('✅ Admin dashboard data loaded from localStorage (fallback):', localAdminData);
         }
       }
       

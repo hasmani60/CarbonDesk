@@ -113,28 +113,36 @@ class LocalDatabase {
 
       // Organisations table
       const createOrganisationsTable = `
-        CREATE TABLE IF NOT EXISTS organisations (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          display_name TEXT NOT NULL,
-          industry_type TEXT NOT NULL,
-          location TEXT,
-          contact_email TEXT NOT NULL,
-          contact_phone TEXT,
-          address TEXT,
-          website TEXT,
-          config TEXT,
-          is_active INTEGER DEFAULT 1,
-          subscription_tier TEXT DEFAULT 'standard',
-          max_users INTEGER DEFAULT 50,
-          max_storage_gb INTEGER DEFAULT 10,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          activated_at DATETIME,
-          created_by TEXT,
-          notes TEXT
-        )
-      `;
+  CREATE TABLE IF NOT EXISTS organisations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    industry_type TEXT NOT NULL,
+    location TEXT,
+    contact_email TEXT NOT NULL,
+    contact_phone TEXT,
+    address TEXT,
+    website TEXT,
+    config TEXT,
+    is_active INTEGER DEFAULT 1,
+    subscription_tier TEXT DEFAULT 'standard',
+    max_users INTEGER DEFAULT 50,
+    max_storage_gb INTEGER DEFAULT 10,
+    
+    -- NEW FIELDS: Organisation Details
+    registered_name TEXT,
+    cin_number TEXT,
+    registered_address TEXT NOT NULL,
+    gst_number TEXT,
+    current_employees INTEGER,
+    
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    activated_at DATETIME,
+    created_by TEXT,
+    notes TEXT
+  )
+`;
 
       // Company operators table
       const createCompanyOperatorsTable = `
@@ -852,8 +860,10 @@ class LocalDatabase {
             id, name, display_name, industry_type, 
             location, contact_email, contact_phone, address, website,
             config, is_active, subscription_tier, 
-            max_users, max_storage_gb, created_by, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            max_users, max_storage_gb, 
+            registered_name, cin_number, registered_address, gst_number, current_employees,
+            created_by, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         this.db.run(query, [
@@ -871,6 +881,11 @@ class LocalDatabase {
           orgData.subscription_tier || 'standard',
           orgData.max_users || 50,
           orgData.max_storage_gb || 10,
+          orgData.registered_name || orgData.name,
+          orgData.cin_number || null,
+          orgData.registered_address,
+          orgData.gst_number || null,
+          orgData.current_employees || null,
           orgData.created_by,
           orgData.notes || null
         ], function(err) {
@@ -890,6 +905,7 @@ class LocalDatabase {
       }
     });
   }
+  
 
   async findOrganisationById(orgId) {
     return new Promise((resolve, reject) => {
@@ -1005,10 +1021,13 @@ class LocalDatabase {
 
   async getOrganisationStats(orgId) {
     return new Promise((resolve, reject) => {
+      console.log('📊 getOrganisationStats called for organisation:', orgId);
+      
       const query = `
         SELECT 
           COUNT(*) as totalUsers,
           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeUsers,
+          SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactiveUsers,
           SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admins,
           SUM(CASE WHEN role = 'analyst' THEN 1 ELSE 0 END) as analysts,
           SUM(CASE WHEN role = 'contributor' THEN 1 ELSE 0 END) as contributors,
@@ -1019,13 +1038,54 @@ class LocalDatabase {
       
       this.db.get(query, [orgId], (err, row) => {
         if (err) {
+          console.error('❌ Error fetching organisation stats:', err);
           reject(err);
         } else {
-          resolve(row);
+          console.log('✅ Raw stats from database:', row);
+          
+          // SQLite returns lowercase column names, so we normalize to both formats
+          // This ensures compatibility with both camelCase and snake_case
+          const normalizedStats = {
+            // Total users
+            totalUsers: row.totalUsers || 0,
+            total_users: row.totalUsers || 0,
+            
+            // Active users
+            activeUsers: row.activeUsers || 0,
+            active_users: row.activeUsers || 0,
+            
+            // Inactive users
+            inactiveUsers: row.inactiveUsers || 0,
+            inactive_users: row.inactiveUsers || 0,
+            
+            // Admin users
+            admins: row.admins || 0,
+            adminUsers: row.admins || 0,
+            admin_users: row.admins || 0,
+            
+            // Analyst users
+            analysts: row.analysts || 0,
+            analystUsers: row.analysts || 0,
+            analyst_users: row.analysts || 0,
+            
+            // Contributor users
+            contributors: row.contributors || 0,
+            contributorUsers: row.contributors || 0,
+            contributor_users: row.contributors || 0,
+            
+            // Viewer users
+            viewers: row.viewers || 0,
+            viewerUsers: row.viewers || 0,
+            viewer_users: row.viewers || 0
+          };
+          
+          console.log('✅ Normalized stats being returned:', normalizedStats);
+          resolve(normalizedStats);
         }
       });
     });
   }
+  
 
   // ============================================
   // ORGANISATION SETTINGS METHODS (NEW)

@@ -1,16 +1,8 @@
-// Updated NotificationContext.jsx with emission notification creation
+// NotificationContext.jsx - Real notifications only (clears dummy data)
 import { createContext, useContext, useState, useEffect } from 'react';
 import { notificationAPI } from '../services/api';
 
 const NotificationContext = createContext();
-
-export const useNotifications = () => {
-  const context = useContext(NotificationContext);
-  if (!context) {
-    throw new Error('useNotifications must be used within a NotificationProvider');
-  }
-  return context;
-};
 
 const NOTIFICATIONS_STORAGE_KEY = 'carbon_accounting_notifications';
 
@@ -19,17 +11,43 @@ export const NotificationProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // Load and clean notifications on mount
   useEffect(() => {
-    loadNotifications();
+    loadAndCleanNotifications();
   }, []);
 
-  const loadNotifications = () => {
+  const loadAndCleanNotifications = () => {
     try {
       const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
       if (stored) {
         const parsedNotifications = JSON.parse(stored);
-        setNotifications(parsedNotifications);
-        setUnreadCount(parsedNotifications.filter(n => !n.read).length);
+        
+        // Filter out dummy/sample notifications
+        const realNotifications = parsedNotifications.filter(notification => {
+          // Remove notifications with IDs starting with 'sample_'
+          if (notification._id?.startsWith('sample_')) {
+            return false;
+          }
+          
+          // Remove notifications with type 'deadline_reminder' or 'task_assigned' 
+          // that were created as samples
+          if (notification.user?.name === 'System' && notification.type === 'deadline_reminder') {
+            return false;
+          }
+          if (notification.user?.name === 'Admin User' && notification.type === 'task_assigned') {
+            return false;
+          }
+          
+          return true;
+        });
+        
+        setNotifications(realNotifications);
+        setUnreadCount(realNotifications.filter(n => !n.read).length);
+        
+        // Save cleaned notifications back to localStorage
+        if (realNotifications.length !== parsedNotifications.length) {
+          saveNotifications(realNotifications);
+        }
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -47,8 +65,12 @@ export const NotificationProvider = ({ children }) => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      // For now, we'll use localStorage. In a real app, this would fetch from API
-      loadNotifications();
+      // In production, this would fetch from the API
+      // const response = await notificationAPI.getAll();
+      // setNotifications(response.data);
+      
+      // For now, load from localStorage
+      loadAndCleanNotifications();
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -64,7 +86,7 @@ export const NotificationProvider = ({ children }) => {
       message: `${user.name} added ${emissionData.category} - ${emissionData.activityType || emissionData.subcategory} on ${new Date().toLocaleDateString()}.`,
       user: {
         name: user.name,
-        avatar: user.name.split(' ').map(n => n[0]).join('')
+        avatar: user.name.split(' ').map(n => n[0]).join('').toUpperCase()
       },
       date: new Date().toLocaleDateString(),
       deadline: 'Today',
@@ -131,6 +153,22 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
+  const markAllAsReadAndDelete = async () => {
+    try {
+      // First mark all as read
+      await markAllAsRead();
+      
+      // Then delete all notifications after a short delay for visual feedback
+      setTimeout(() => {
+        setNotifications([]);
+        setUnreadCount(0);
+        saveNotifications([]);
+      }, 300);
+    } catch (error) {
+      console.error('Error marking all as read and deleting:', error);
+    }
+  };
+
   const deleteNotification = async (notificationId) => {
     try {
       const notificationToDelete = notifications.find(n => n._id === notificationId);
@@ -152,62 +190,44 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const addNotification = (notification) => {
-    const newNotification = {
-      ...notification,
-      _id: notification._id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: notification.createdAt || new Date().toISOString(),
-      read: notification.read || false
-    };
-    
-    const updatedNotifications = [newNotification, ...notifications];
-    setNotifications(updatedNotifications);
-    
-    if (!newNotification.read) {
-      setUnreadCount(prev => prev + 1);
-    }
-    
-    saveNotifications(updatedNotifications);
-  };
-
-  // Create sample notifications for demo purposes
-  const createSampleNotifications = () => {
-    const sampleNotifications = [
-      {
-        _id: 'sample_1',
-        type: 'deadline_reminder',
-        title: 'Deadline Reminder',
-        message: 'Monthly emission reporting deadline is approaching. Please submit pending data.',
-        deadline: 'Tomorrow',
-        user: { name: 'System', avatar: 'SY' },
-        date: new Date().toLocaleDateString(),
-        read: false,
-        createdAt: new Date().toISOString()
-      },
-      {
-        _id: 'sample_2',
-        type: 'task_assigned',
-        title: 'Task Assigned',
-        message: 'You have been assigned to verify Scope 1 emissions for Factory A.',
-        deadline: '3 days',
-        user: { name: 'Admin User', avatar: 'AU' },
-        date: new Date(Date.now() - 86400000).toLocaleDateString(),
-        read: false,
-        createdAt: new Date(Date.now() - 86400000).toISOString()
+    try {
+      const newNotification = {
+        ...notification,
+        _id: notification._id || `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        createdAt: notification.createdAt || new Date().toISOString(),
+        read: notification.read || false
+      };
+      
+      const updatedNotifications = [newNotification, ...notifications];
+      setNotifications(updatedNotifications);
+      
+      if (!newNotification.read) {
+        setUnreadCount(prev => prev + 1);
       }
-    ];
-
-    return sampleNotifications;
+      
+      saveNotifications(updatedNotifications);
+      
+      return newNotification;
+    } catch (error) {
+      console.error('Error adding notification:', error);
+      return null;
+    }
   };
 
-  // Initialize with sample notifications if none exist
-  useEffect(() => {
-    if (notifications.length === 0) {
-      const samples = createSampleNotifications();
-      setNotifications(samples);
-      setUnreadCount(samples.filter(n => !n.read).length);
-      saveNotifications(samples);
+  const clearAllNotifications = () => {
+    try {
+      setNotifications([]);
+      setUnreadCount(0);
+      localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
     }
-  }, []);
+  };
+
+  // Get only the last 3 notifications for the notification panel
+  const getRecentNotifications = () => {
+    return notifications.slice(0, 3);
+  };
 
   const value = {
     notifications,
@@ -217,8 +237,11 @@ export const NotificationProvider = ({ children }) => {
     addEmissionNotification,
     markAsRead,
     markAllAsRead,
+    markAllAsReadAndDelete,
     deleteNotification,
-    addNotification
+    addNotification,
+    clearAllNotifications,
+    getRecentNotifications
   };
 
   return (
@@ -226,4 +249,12 @@ export const NotificationProvider = ({ children }) => {
       {children}
     </NotificationContext.Provider>
   );
+};
+
+export const useNotifications = () => {
+  const context = useContext(NotificationContext);
+  if (!context) {
+    throw new Error('useNotifications must be used within a NotificationProvider');
+  }
+  return context;
 };

@@ -138,17 +138,24 @@ const UserManagement = () => {
     try {
       setDashboardStats(prev => ({ ...prev, loading: true }));
       
-      const dashboardData = await adminAPI.getDashboard();
-      const activitiesResponse = await adminAPI.getAllActivities({
-        page: 1,
+      console.log('📊 Loading dashboard stats with organisation filter...');
+      
+      // Get organisation-specific users
+      const usersResponse = await adminAPI.getAllUsers({
         limit: 1000
       });
       
-      const activities = activitiesResponse.data || activitiesResponse || [];
+      const usersData = usersResponse.data || usersResponse || [];
+      const totalUsersInOrg = usersData.length;
+      
+      console.log('👥 Users in current organisation:', totalUsersInOrg);
+      
+      // Get activities (will be filtered by organisation through getRecentActivities)
+      const allActivities = getRecentActivities(1000, {}); // Get more for stats
       
       const now = new Date();
       const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const recentCount = activities.filter(activity => {
+      const recentCount = allActivities.filter(activity => {
         const activityDate = new Date(activity.timestamp || activity.createdAt);
         return activityDate >= last24Hours;
       }).length;
@@ -162,29 +169,29 @@ const UserManagement = () => {
         'failed_login'
       ];
       
-      const criticalCount = activities.filter(activity => 
+      const criticalCount = allActivities.filter(activity => 
         criticalActions.some(critical => 
           activity.action?.toLowerCase().includes(critical.toLowerCase())
         )
       ).length;
       
       setDashboardStats({
-        totalUsers: dashboardData.userStats?.total || 0,
-        totalActivities: dashboardData.activityStats?.total || 0,
+        totalUsers: totalUsersInOrg,
+        totalActivities: allActivities.length, // ← Now organisation-filtered
         recentActivities: recentCount,
         criticalActivities: criticalCount,
         loading: false
       });
       
-      console.log('📊 Dashboard stats loaded:', {
-        totalUsers: dashboardData.userStats?.total || 0,
-        totalActivities: dashboardData.activityStats?.total || 0,
+      console.log('✅ Dashboard stats loaded (Organisation-Scoped):', {
+        totalUsers: totalUsersInOrg,
+        totalActivities: allActivities.length,
         recentActivities: recentCount,
         criticalActivities: criticalCount
       });
       
     } catch (error) {
-      console.error('Error loading dashboard stats:', error);
+      console.error('❌ Error loading dashboard stats:', error);
       
       const localSummary = getActivitySummaryForAdmin();
       
@@ -378,10 +385,17 @@ const UserManagement = () => {
 
   const loadRecentActivities = () => {
     try {
+      console.log('📊 Loading recent activities for User Management...');
+      console.log('👤 Current user:', user?.email, 'Org:', user?.organisation_id);
+      
+      // getRecentActivities will now automatically filter by organisation
       const activities = getRecentActivities(20, {});
+      
+      console.log('✅ Loaded activities (organisation-filtered):', activities.length);
+      
       setRecentActivities(activities);
     } catch (error) {
-      console.error('Error loading recent activities:', error);
+      console.error('❌ Error loading recent activities:', error);
       setRecentActivities([]);
     }
   };
