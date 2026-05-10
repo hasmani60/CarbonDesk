@@ -456,9 +456,28 @@ const changePassword = async (req, res) => {
       user_agent: req.get('User-Agent')
     });
 
+    let mail = { sent: false };
+    try {
+      mail = await emailService.sendPasswordChangedConfirmation(
+        { name: user.name, email: user.email },
+        { ip: req.ip }
+      );
+    } catch (emailErr) {
+      logger.warn('Password-changed confirmation email error', emailErr.message);
+    }
+    if (!mail.sent) {
+      logger.warn('Password-changed confirmation email not sent', {
+        reason: mail.reason,
+        userId: req.user.id
+      });
+    }
+
     return res.json({
       success: true,
-      message: 'Password changed successfully'
+      message: 'Password changed successfully',
+      data: {
+        emailConfirmationSent: mail.sent === true
+      }
     });
   } catch (error) {
     res.status(400).json({
@@ -636,6 +655,19 @@ const resetPassword = async (req, res) => {
       });
     } catch (logErr) {
       logger.warn('Activity log skipped after password reset', logErr.message);
+    }
+
+    let confirmMail = { sent: false };
+    try {
+      confirmMail = await emailService.sendPasswordChangedConfirmation(
+        { name: user.name, email: user.email },
+        { ip: req.ip, via: 'forgot_password_link' }
+      );
+    } catch (emailErr) {
+      logger.warn('Post-reset confirmation email error', emailErr.message);
+    }
+    if (!confirmMail.sent) {
+      logger.warn('Post-reset confirmation email not sent', confirmMail.reason);
     }
 
     return res.json({

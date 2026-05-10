@@ -2,6 +2,8 @@
 const jwt = require('jsonwebtoken');
 const { CompanyOperator, Organisation, OrganisationSettings, User, ActivityLog } = require('../models');
 const bcrypt = require('bcryptjs');
+const emailService = require('../utils/emailService');
+const logger = require('../utils/logger');
 
 const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(12);
@@ -10,6 +12,19 @@ const hashPassword = async (password) => {
 
 const verifyPassword = async (password, hashedPassword) => {
   return bcrypt.compare(password, hashedPassword);
+};
+
+/** Resolve the primary org admin (bootstrap super admin) for password resets. */
+const getBootstrapSuperAdminForOrg = async (orgId) => {
+  const org = await Organisation.findOne({ id: orgId }).lean();
+  if (!org) return null;
+  if (org.bootstrap_admin_user_id) {
+    const byId = await User.findById(org.bootstrap_admin_user_id);
+    if (byId && byId.organisation_id === orgId && byId.role === 'admin') {
+      return byId;
+    }
+  }
+  return User.findOne({ organisation_id: orgId, role: 'admin' }).sort({ created_at: 1 });
 };
 
 const generateCompanyToken = (operator) => {
@@ -206,6 +221,11 @@ const createOrganisation = async (req, res) => {
       organisation_id: orgId // String ID
     });
 
+    await Organisation.findOneAndUpdate(
+      { id: orgId },
+      { $set: { bootstrap_admin_user_id: superAdmin._id.toString() } }
+    );
+
     res.status(201).json({
       success: true,
       message: 'Organisation and Super Admin created successfully',
@@ -285,7 +305,16 @@ const getOrganisationById = async (req, res) => {
     if (!organisation) {
       return res.status(404).json({ success: false, message: 'Organisation not found' });
     }
-    res.json({ success: true, data: organisation });
+    const bootstrapUser = await getBootstrapSuperAdminForOrg(req.params.id);
+    const payload = organisation.toObject();
+    payload.bootstrap_super_admin = bootstrapUser
+      ? {
+          id: bootstrapUser._id.toString(),
+          name: bootstrapUser.name,
+          email: bootstrapUser.email
+        }
+      : null;
+    res.json({ success: true, data: payload });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -331,6 +360,76 @@ const getOrganisationStats = async (req, res) => {
   }
 };
 
+// @desc    Set a new password for the organisation bootstrap super admin (company operations)
+// @route   PATCH /api/company/organisations/:id/super-admin-password
+// @access  Private (company operators with can_manage_orgs)
+const resetSuperAdminPassword = async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    const orgId = req.params.id;
+
+    if (!newPassword || typeof newPassword !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'newPassword is required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long'
+      });
+    }
+
+    const organisation = await Organisation.findOne({ id: orgId });
+    if (!organisation) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+
+    const superAdmin = await getBootstrapSuperAdminForOrg(orgId);
+    if (!superAdmin) {
+      return res.status(404).json({
+        success: false,
+        message: 'No organisation admin account found to update'
+      });
+    }
+
+    superAdmin.password = await hashPassword(newPassword);
+    superAdmin.password_reset_token = null;
+    superAdmin.password_reset_expires = null;
+    await superAdmin.save();
+
+    let mail = { sent: false };
+    try {
+      mail = await emailService.sendPasswordChangedConfirmation(
+        { name: superAdmin.name, email: superAdmin.email },
+        { ip: req.ip }
+      );
+    } catch (emailErr) {
+      logger.warn('Super-admin password reset confirmation email error', emailErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Super admin password updated',
+      data: {
+        super_admin: {
+          id: superAdmin._id.toString(),
+          email: superAdmin.email
+        },
+        emailConfirmationSent: mail.sent === true
+      }
+    });
+  } catch (error) {
+    console.error('resetSuperAdminPassword error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to reset super admin password'
+    });
+  }
+};
+
 const getCompanyProfile = async (req, res) => {
   try {
     const operator = await CompanyOperator.findById(req.companyOperator.id).select('-password');
@@ -363,6 +462,7 @@ module.exports = {
   updateOrganisation,
   deactivateOrganisation,
   getOrganisationStats,
+  resetSuperAdminPassword,
   getCompanyProfile,
   getCompanyDashboard
 };

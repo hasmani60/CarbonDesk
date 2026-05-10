@@ -244,8 +244,18 @@ export const AuthProvider = ({ children }) => {
 
   const changePassword = async ({ currentPassword, newPassword }) => {
     try {
-      await authAPI.changePassword({ currentPassword, newPassword });
-      toast.success('Password updated successfully');
+      const result = await authAPI.changePassword({ currentPassword, newPassword });
+      const emailed =
+        result && typeof result.emailConfirmationSent === 'boolean'
+          ? result.emailConfirmationSent
+          : null;
+      toast.success(
+        emailed === true
+          ? 'Password updated. A confirmation email was sent to your inbox.'
+          : emailed === false
+          ? 'Password updated successfully. (Confirmation email could not be sent — check server email settings.)'
+          : 'Password updated successfully'
+      );
     } catch (error) {
       const message =
         error?.response?.data?.message ||

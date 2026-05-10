@@ -65,7 +65,13 @@ const organisationSchema = new mongoose.Schema({
   current_employees: Number,
   created_by: String,
   notes: String,
-  activated_at: Date
+  activated_at: Date,
+  /** User id (string) of the bootstrap org admin created with the organisation (company ops can reset their password). */
+  bootstrap_admin_user_id: {
+    type: String,
+    default: null,
+    index: true
+  }
 }, {
   _id: false,  // Disable auto _id generation
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }

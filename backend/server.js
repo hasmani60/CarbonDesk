@@ -171,6 +171,85 @@ app.get('/health', (req, res) => {
   res.status(200).json(healthData);
 });
 
+/**
+ * SMTP / forgot-password troubleshooting without Render Shell.
+ * Set RENDER_EMAIL_DIAGNOSTIC_SECRET in Render env (long random string), then POST from your PC:
+ *
+ * curl -X POST "$RENDER_URL/health/email-diagnostic" -H "Content-Type: application/json" \
+ *   -d "{\"secret\":\"$SECRET\",\"email\":\"you@gmail.com\"}"
+ *
+ * Omit "email" to skip DB lookup. Returns 404 if secret missing or wrong.
+ */
+app.post('/health/email-diagnostic', async (req, res) => {
+  try {
+    const expected = process.env.RENDER_EMAIL_DIAGNOSTIC_SECRET;
+    if (
+      !expected ||
+      typeof req.body?.secret !== 'string' ||
+      req.body.secret !== expected
+    ) {
+      return res.status(404).json({ message: 'Not found' });
+    }
+
+    const emailService = require('./utils/emailService');
+    const { User } = require('./models');
+
+    const payload = {
+      smtpConfigured: emailService.isConfigured(),
+      clientUrl: process.env.CLIENT_URL || null,
+      smtpVerifyOk: null,
+      smtpVerifyError: null,
+      user: null
+    };
+
+    if (payload.smtpConfigured) {
+      try {
+        await emailService.getTransporter().verify();
+        payload.smtpVerifyOk = true;
+      } catch (e) {
+        payload.smtpVerifyOk = false;
+        payload.smtpVerifyError =
+          e && e.message ? String(e.message) : 'SMTP verify failed';
+      }
+    }
+
+    const em =
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
+    if (em) {
+      try {
+        if (mongoose.connection.readyState !== 1) {
+          payload.user = { error: 'MongoDB not connected on this instance' };
+        } else {
+          const u = await User.findOne({ email: em })
+            .select('email status')
+            .lean();
+          if (!u) {
+            payload.user = { found: false };
+          } else {
+            payload.user = {
+              found: true,
+              status: u.status,
+              receivesForgotEmail: u.status === 'active'
+            };
+          }
+        }
+      } catch (e) {
+        payload.user = {
+          lookupError:
+            e && e.message ? String(e.message) : 'User lookup failed'
+        };
+      }
+    }
+
+    return res.json({ success: true, data: payload });
+  } catch (e) {
+    logger.error('/health/email-diagnostic', e);
+    return res.status(500).json({ success: false, message: 'Diagnostic failed' });
+  }
+});
+
 // ============================================
 // IMPORT CONTROLLERS
 // ============================================
@@ -214,6 +293,12 @@ companyOrgRouter.get('/',
   companyController.getAllOrganisations
 );
 
+companyOrgRouter.patch('/:id/super-admin-password',
+  canManageOrganisations,
+  logCompanyActivity('org_super_admin_password', 'Reset organisation super admin password'),
+  companyController.resetSuperAdminPassword
+);
+
 companyOrgRouter.get('/:id', 
   companyController.getOrganisationById
 );
@@ -251,7 +336,8 @@ app.get('/api/company/test', (req, res) => {
       'GET /api/company/dashboard',
       'POST /api/company/organisations',
       'GET /api/company/organisations',
-      'GET /api/company/organisations/:id'
+      'GET /api/company/organisations/:id',
+      'PATCH /api/company/organisations/:id/super-admin-password'
     ]
   });
 });
@@ -1074,6 +1160,22 @@ const connectDB = async () => {
     return true;
   } catch (error) {
     logger.error('MongoDB connection failed', error);
+    const uri = process.env.MONGODB_URI || '';
+    const isLocal =
+      /localhost|127\.0\.0\.1|^\s*mongodb:\/\/(localhost|127\.0\.0\.1)/i.test(
+        uri
+      );
+    const refused =
+      String(error?.message || '').includes('ECONNREFUSED') ||
+      String(error?.cause?.message || '').includes('ECONNREFUSED');
+    if (isLocal && refused) {
+      logger.error(
+        'Nothing is listening on local MongoDB (port 27017). Fix one of: ' +
+          '(1) Start MongoDB locally (e.g. brew services start mongodb-community, or Docker), ' +
+          'or (2) Set MONGODB_URI in backend/.env to your MongoDB Atlas connection string ' +
+          '(Network Access must allow your IP: 0.0.0.0/0 for quick tests).'
+      );
+    }
     throw error;
   }
 };

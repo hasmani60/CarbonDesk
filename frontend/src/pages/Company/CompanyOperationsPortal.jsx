@@ -57,6 +57,11 @@ const CompanyOperationsPortal = () => {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgStats, setOrgStats] = useState(null);
   const [showOrgDetail, setShowOrgDetail] = useState(false);
+  const [superAdminNewPassword, setSuperAdminNewPassword] = useState('');
+  const [superAdminConfirmPassword, setSuperAdminConfirmPassword] = useState('');
+  const [resettingSuperAdminPwd, setResettingSuperAdminPwd] = useState(false);
+  const [superAdminPwdErr, setSuperAdminPwdErr] = useState('');
+  const [superAdminPwdMsg, setSuperAdminPwdMsg] = useState('');
 
   // Note: VITE_API_URL should be 'http://localhost:5001' NOT 'http://localhost:5001/api'
   // The /api prefix is added in the routes below
@@ -293,6 +298,56 @@ const CompanyOperationsPortal = () => {
     } catch (error) {
       console.error('Failed to load organisation details:', error);
       alert('Failed to load organisation details');
+    }
+  };
+
+  const resetSuperAdminPwdForm = () => {
+    setSuperAdminNewPassword('');
+    setSuperAdminConfirmPassword('');
+    setSuperAdminPwdErr('');
+    setSuperAdminPwdMsg('');
+  };
+
+  const handleResetSuperAdminPassword = async (e) => {
+    e.preventDefault();
+    setSuperAdminPwdErr('');
+    setSuperAdminPwdMsg('');
+
+    if (superAdminNewPassword !== superAdminConfirmPassword) {
+      setSuperAdminPwdErr('New password and confirmation do not match');
+      return;
+    }
+    if (!superAdminNewPassword || superAdminNewPassword.length < 6) {
+      setSuperAdminPwdErr('Password must be at least 6 characters');
+      return;
+    }
+
+    setResettingSuperAdminPwd(true);
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}/super-admin-password`,
+        { newPassword: superAdminNewPassword },
+        { headers: getAuthHeaders() }
+      );
+
+      if (response.data.success) {
+        const sent = response.data.data?.emailConfirmationSent;
+        setSuperAdminPwdMsg(
+          sent
+            ? 'Password updated. A confirmation email was sent to the super admin.'
+            : 'Password updated.'
+        );
+        setSuperAdminNewPassword('');
+        setSuperAdminConfirmPassword('');
+        await loadOrganisationDetails(selectedOrg.id);
+      }
+    } catch (error) {
+      console.error('Reset super admin password error:', error);
+      setSuperAdminPwdErr(
+        error.response?.data?.message || 'Failed to reset super admin password'
+      );
+    } finally {
+      setResettingSuperAdminPwd(false);
     }
   };
 
@@ -1037,6 +1092,7 @@ const CompanyOperationsPortal = () => {
                   setShowOrgDetail(false);
                   setSelectedOrg(null);
                   setOrgStats(null);
+                  resetSuperAdminPwdForm();
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1091,6 +1147,60 @@ const CompanyOperationsPortal = () => {
                       <p className="text-2xl font-bold text-gray-900">{orgStats.totalUsers || 0}</p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Reset bootstrap super admin password (after org creation) */}
+              {operator?.permissions?.canManageOrgs && selectedOrg.bootstrap_super_admin && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">Super admin password</h4>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Set a new login password for{' '}
+                    <span className="font-medium text-gray-900">
+                      {selectedOrg.bootstrap_super_admin.email}
+                    </span>
+                    {' '}(organisation admin).
+                  </p>
+                  <form onSubmit={handleResetSuperAdminPassword} className="space-y-3 max-w-md">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        New password
+                      </label>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={superAdminNewPassword}
+                        onChange={(e) => setSuperAdminNewPassword(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="At least 6 characters"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Confirm new password
+                      </label>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={superAdminConfirmPassword}
+                        onChange={(e) => setSuperAdminConfirmPassword(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    {superAdminPwdErr && (
+                      <p className="text-sm text-red-600">{superAdminPwdErr}</p>
+                    )}
+                    {superAdminPwdMsg && (
+                      <p className="text-sm text-green-700">{superAdminPwdMsg}</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={resettingSuperAdminPwd}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-400 text-sm"
+                    >
+                      {resettingSuperAdminPwd ? 'Updating…' : 'Update super admin password'}
+                    </button>
+                  </form>
                 </div>
               )}
 

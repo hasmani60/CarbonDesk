@@ -15,7 +15,8 @@
     "init-env": "node scripts/init-env-if-missing.js",
     "check-email": "node scripts/check-email-setup.js",
     "test-email": "node scripts/send-test-email.js",
-    "create-company-operator": "node scripts/create-company-operator.js"
+    "create-company-operator": "node scripts/create-company-operator.js",
+    "diagnose-reset-email": "node scripts/diagnose-reset-email.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

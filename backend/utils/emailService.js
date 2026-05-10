@@ -96,6 +96,28 @@ class EmailService {
     return this.sendMail({ to: user.email, subject, html, text });
   }
 
+  /**
+   * Sent after user changes password while logged in (Settings → Security).
+   * Always sent when SMTP is configured (security alert; not gated by notification toggles).
+   */
+  async sendPasswordChangedConfirmation(user, meta = {}) {
+    const base =
+      process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
+    const loginUrl = `${base}/login`;
+    const ip = meta.ip ? escapeHtml(String(meta.ip)) : 'unknown';
+    const subject = 'Your password was changed';
+    const html = `
+      <p>Hello ${escapeHtml(user.name || 'there')},</p>
+      <p>This confirms that the password for your Carbon Accounting account was just changed.</p>
+      <p style="color:#666;font-size:13px">If you made this change, you can ignore this email.</p>
+      <p style="color:#666;font-size:13px">If you did <strong>not</strong> change your password, contact your organisation administrator immediately.</p>
+      <p style="color:#666;font-size:12px">Request IP: ${ip} · <a href="${loginUrl}">Sign in</a></p>
+    `;
+    const text = `Your Carbon Accounting password was changed. If this was not you, contact your administrator. Sign in: ${loginUrl}`;
+
+    return this.sendMail({ to: user.email, subject, html, text });
+  }
+
   async sendWelcomeEmail(user) {
     return this.sendMail({
       to: user.email,
