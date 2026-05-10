@@ -20,7 +20,6 @@ import {
   Building2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { organizationAPI } from '../../services/api';
 import { useState, useEffect } from 'react';
 // Import the logo - adjust the path based on your project structure
 import Sustain360Logo from '../../assets/Sustain360_Logo.svg';
@@ -28,14 +27,12 @@ import Sustain360Logo from '../../assets/Sustain360_Logo.svg';
 const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, getEffectiveAllowedScopes } = useAuth();
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [isAdminExpanded, setIsAdminExpanded] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredSubmenu, setHoveredSubmenu] = useState(null);
-  const [organisationName, setOrganisationName] = useState('');
-  const [loadingOrg, setLoadingOrg] = useState(false);
 
   // Check if mobile
   useEffect(() => {
@@ -50,40 +47,6 @@ const Sidebar = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-
-  // Fetch organisation name
-  useEffect(() => {
-    const fetchOrganisation = async () => {
-      // If organisation is already in user object, use it
-      if (user?.organisation) {
-        setOrganisationName(user.organisation);
-        return;
-      }
-
-      // Otherwise, fetch from API
-      if (user && !loadingOrg) {
-        setLoadingOrg(true);
-        try {
-          console.log('🏢 Fetching organisation details for sidebar...');
-          const responseData = await organizationAPI.getDetails();
-          
-          // Extract organisation name (prefer display_name, fallback to name)
-          const orgData = responseData.organisation;
-          const orgName = orgData?.display_name || orgData?.name;
-          
-          console.log('✅ Organisation name loaded:', orgName);
-          setOrganisationName(orgName || '');
-        } catch (error) {
-          console.error('❌ Failed to fetch organisation:', error);
-          setOrganisationName('');
-        } finally {
-          setLoadingOrg(false);
-        }
-      }
-    };
-
-    fetchOrganisation();
-  }, [user, loadingOrg]);
 
   // Auto-collapse on mobile when route changes
   useEffect(() => {
@@ -110,10 +73,13 @@ const Sidebar = () => {
         },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],
       analyst: [
+        { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],
       contributor: [
@@ -128,12 +94,14 @@ const Sidebar = () => {
             { path: '/input?scope=3', label: 'Scope 3' }
           ]
         },
+        { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],
       viewer: [
         { path: '/dashboard', icon: Home, label: 'Dashboard' },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ]
     };
@@ -151,8 +119,7 @@ const Sidebar = () => {
       roles: ['admin'],
       submenu: [
         { path: '/admin/monitor', label: 'User Activities', icon: Activity },
-        { path: '/admin/users', label: 'User Management', icon: UserCog },
-        { path: '/admin/organisation', label: 'Organisation', icon: Building2 }
+        { path: '/admin/users', label: 'User Management', icon: UserCog }
       ]
     }
   ];
@@ -167,11 +134,21 @@ const Sidebar = () => {
     if (user.role === 'contributor' && user.restrictions) {
       visibleBase = visibleBase.filter(item => {
         // If contributor has scope restrictions, filter input submenu
-        if (item.path === '/input' && user.restrictions.allowedScopes) {
-          item.submenu = item.submenu.filter(subItem => {
-            const scopeNum = subItem.path.split('scope=')[1];
-            return user.restrictions.allowedScopes.includes(parseInt(scopeNum));
-          });
+        if (item.path === '/input' && user.restrictions) {
+          const effective = getEffectiveAllowedScopes ? getEffectiveAllowedScopes() : [];
+          const hasScopeOrActivityRbac =
+            (Array.isArray(user.restrictions.allowedScopes) &&
+              user.restrictions.allowedScopes.length > 0) ||
+            (Array.isArray(user.restrictions.allowedActivities) &&
+              user.restrictions.allowedActivities.length > 0);
+          if (hasScopeOrActivityRbac && effective.length > 0) {
+            item.submenu = item.submenu.filter((subItem) => {
+              const scopeNum = subItem.path.split('scope=')[1];
+              const sn = parseInt(String(scopeNum), 10);
+              if (!Number.isFinite(sn)) return false;
+              return effective.some((s) => parseInt(String(s), 10) === sn);
+            });
+          }
         }
         
         // If contributor has no access to certain pages
@@ -248,22 +225,22 @@ const Sidebar = () => {
       <div 
         className={`${
           isCollapsed ? 'w-20' : 'w-64'
-        } bg-white shadow-lg flex flex-col transition-all duration-300 ease-in-out relative overflow-visible ${
+        } bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-gray-200 dark:border-slate-800 shadow-glass dark:shadow-glass-dark flex flex-col transition-all duration-300 ease-in-out relative overflow-visible ${
           isMobile ? 'fixed inset-y-0 left-0 z-40' : ''
         }`}
       >
         {/* Logo/Brand Section */}
-        <div className="p-4 border-b relative">
+        <div className="p-4 border-b border-gray-200 dark:border-slate-800 relative">
           {/* Toggle Button - Desktop */}
           {!isMobile && (
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="absolute -right-3 top-6 bg-white border border-gray-200 rounded-full p-1 hover:bg-gray-50 transition-colors shadow-sm z-10"
+              className="absolute -right-3 top-6 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm z-10"
             >
               {isCollapsed ? (
-                <ChevronRight className="w-4 h-4 text-gray-600" />
+                <ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-300" />
               ) : (
-                <ChevronLeft className="w-4 h-4 text-gray-600" />
+                <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-300" />
               )}
             </button>
           )}
@@ -342,10 +319,10 @@ const Sidebar = () => {
                           }
                         }
                       }}
-                      className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                      className={`w-full flex items-center px-3 py-2.5 text-sm font-medium transition-all duration-300 rounded-xl ${
                         isActive(item.path)
-                          ? 'bg-gradient-to-r from-emerald-50 to-emerald-100 text-emerald-800 shadow-sm'
-                          : 'text-gray-600 hover:bg-gray-50'
+                          ? 'bg-gradient-to-r from-emerald-500/10 to-transparent dark:from-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-semibold shadow-[inset_4px_0_0_0_rgba(16,185,129,1)]'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50/80 dark:hover:bg-slate-800/80 hover:text-gray-900 dark:hover:text-gray-200'
                       } ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}
                       title={isCollapsed ? item.label : ''}
                     >
@@ -379,8 +356,8 @@ const Sidebar = () => {
                               to={subItem.path}
                               className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-lg transition-colors ${
                                 isSubmenuActive(subItem.path)
-                                  ? 'bg-emerald-50 text-emerald-700 font-medium'
-                                  : 'text-gray-600 hover:bg-gray-50'
+                                  ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium'
+                                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                               }`}
                             >
                               {subItem.icon && <subItem.icon className="w-4 h-4" />}
@@ -393,10 +370,10 @@ const Sidebar = () => {
 
                     {/* Hover Submenu - Collapsed Sidebar */}
                     {isCollapsed && hoveredSubmenu === item.path && (
-                      <div className="absolute left-full top-0 ml-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 px-1 min-w-[160px] z-50 animate-scaleIn">
+                      <div className="absolute left-full top-0 ml-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-2 px-1 min-w-[160px] z-50 animate-scaleIn">
                         {/* Arrow pointing to sidebar */}
                         <div className="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                          <div className="w-2 h-2 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
+                          <div className="w-2 h-2 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 transform rotate-45"></div>
                         </div>
                         
                         {/* Menu Title */}
@@ -414,8 +391,8 @@ const Sidebar = () => {
                               to={subItem.path}
                               className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md transition-colors ${
                                 isSubmenuActive(subItem.path)
-                                  ? 'bg-emerald-50 text-emerald-700 font-medium'
-                                  : 'text-gray-700 hover:bg-gray-50'
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium'
+                                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'
                               }`}
                             >
                               {subItem.icon && <subItem.icon className="w-4 h-4 flex-shrink-0" />}
@@ -432,10 +409,10 @@ const Sidebar = () => {
                 ) : (
                   <Link
                     to={item.path}
-                    className={`flex items-center py-2.5 text-sm font-medium rounded-lg transition-all ${
+                    className={`flex items-center py-2.5 text-sm font-medium transition-all duration-300 rounded-xl ${
                       isActive(item.path)
-                        ? 'bg-gradient-to-r from-emerald-50 to-emerald-100 text-emerald-800 shadow-sm'
-                        : 'text-gray-600 hover:bg-gray-50'
+                        ? 'bg-gradient-to-r from-emerald-500/10 to-transparent dark:from-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-semibold shadow-[inset_4px_0_0_0_rgba(16,185,129,1)]'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50/80 dark:hover:bg-slate-800/80 hover:text-gray-900 dark:hover:text-gray-200'
                     } ${isCollapsed ? 'justify-center px-0' : 'px-3 space-x-3'}`}
                     title={isCollapsed ? item.label : ''}
                   >
@@ -470,8 +447,8 @@ const Sidebar = () => {
                     <span>Add User</span>
                   </Link>
                   <Link
-                    to="/admin/organisation"
-                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                    to="/organisation"
+                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
                   >
                     <Building2 className="w-4 h-4 flex-shrink-0" />
                     <span>Organisation</span>
@@ -492,7 +469,7 @@ const Sidebar = () => {
         </nav>
 
         {/* User Profile Section */}
-        <div className={`p-4 border-t bg-gradient-to-br from-gray-50 to-white ${isCollapsed ? 'px-2' : ''}`}>
+        <div className={`p-4 border-t border-gray-200 dark:border-slate-800 bg-gradient-to-br from-gray-50/50 to-white/50 dark:from-slate-900 dark:to-slate-950 ${isCollapsed ? 'px-2' : ''}`}>
           {!isCollapsed ? (
             <>
               <div className="flex items-center space-x-3 mb-3">
@@ -502,42 +479,14 @@ const Sidebar = () => {
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                     {user?.name || 'User'}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                     {user?.email || 'user@example.com'}
                   </p>
                 </div>
               </div>
-
-              {/* Organisation Name - Fetched from API */}
-              {organisationName && (
-                <div className="mb-3 p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                  <div className="flex items-center space-x-2">
-                    <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs text-gray-500 mb-0.5">Organisation</p>
-                      <p className="text-sm font-medium text-gray-900 truncate" title={organisationName}>
-                        {organisationName}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Loading State */}
-              {loadingOrg && !organisationName && (
-                <div className="mb-3 p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                  <div className="flex items-center space-x-2">
-                    <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0 animate-pulse" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs text-gray-500 mb-0.5">Organisation</p>
-                      <div className="h-4 bg-gray-200 rounded animate-pulse w-32"></div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           ) : (
             <div className="flex justify-center mb-3">

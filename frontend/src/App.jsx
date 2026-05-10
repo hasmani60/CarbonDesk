@@ -1,17 +1,19 @@
 // frontend/src/App.jsx - Complete App with Multi-Tenant Support
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import ThemeToaster from './components/ThemeToaster';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ActivityProvider } from './context/ActivityContext';
 import Layout from './layouts/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
+import { ThemeProvider } from './context/ThemeContext';
 
 
 // Auth pages
 import Login from './pages/auth/Login';
 import Contact from './pages/auth/Contact';
+import VerifyEmail from './pages/auth/VerifyEmail';
 
 // Main app pages
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -35,13 +37,14 @@ function App() {
     <AuthProvider>
       <NotificationProvider>
         <ActivityProvider>
-          <Router 
+          <ThemeProvider>
+            <Router 
             future={{
               v7_startTransition: true,
               v7_relativeSplatPath: true
             }}
           >
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
               <Routes>
                 {/* ========================================== */}
                 {/* HIDDEN COMPANY PORTAL ROUTE               */}
@@ -66,6 +69,7 @@ function App() {
                 {/* PUBLIC ROUTES                              */}
                 {/* ========================================== */}
                 <Route path="/login" element={<Login />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
                 <Route path="/contact" element={<Contact />} />
                 
                 {/* ========================================== */}
@@ -99,11 +103,11 @@ function App() {
                     } 
                   />
                   
-                  {/* Monitor - Admin, Viewer */}
+                  {/* Monitor - Admin, Analyst (review), Viewer */}
                   <Route 
                     path="monitor" 
                     element={
-                      <ProtectedRoute requiredRoles={['admin', 'viewer']}>
+                      <ProtectedRoute requiredRoles={['admin', 'analyst', 'viewer']}>
                         <Monitor />
                       </ProtectedRoute>
                     } 
@@ -129,7 +133,14 @@ function App() {
                     } 
                   />
 
-                  
+                  <Route
+                    path="organisation"
+                    element={
+                      <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
+                        <OrganisationPage />
+                      </ProtectedRoute>
+                    }
+                  />
                   
                   {/* ========================================== */}
                   {/* ADMIN ROUTES (ADMIN ONLY)                  */}
@@ -140,7 +151,7 @@ function App() {
                         <Route index element={<Navigate to="/admin/monitor" replace />} />
                         <Route path="monitor" element={<AdminMonitor />} />
                         <Route path="users" element={<UserManagement />} />
-                        <Route path="organisation" element={<OrganisationPage />} />
+                        <Route path="organisation" element={<Navigate to="/organisation" replace />} />
                         <Route path="system" element={<AdminMonitor />} />
                       </Routes>
                     </AdminRoute>
@@ -156,43 +167,10 @@ function App() {
               {/* ========================================== */}
               {/* TOAST NOTIFICATIONS                        */}
               {/* ========================================== */}
-              <Toaster 
-                position="top-right" 
-                toastOptions={{
-                  duration: 4000,
-                  style: {
-                    background: '#363636',
-                    color: '#fff',
-                  },
-                  success: {
-                    duration: 3000,
-                    style: {
-                      background: '#10b981',
-                    },
-                    iconTheme: {
-                      primary: '#fff',
-                      secondary: '#10b981',
-                    },
-                  },
-                  error: {
-                    duration: 5000,
-                    style: {
-                      background: '#ef4444',
-                    },
-                    iconTheme: {
-                      primary: '#fff',
-                      secondary: '#ef4444',
-                    },
-                  },
-                  loading: {
-                    style: {
-                      background: '#3b82f6',
-                    },
-                  },
-                }}
-              />
+              <ThemeToaster />
             </div>
           </Router>
+          </ThemeProvider>
         </ActivityProvider>
       </NotificationProvider>
     </AuthProvider>

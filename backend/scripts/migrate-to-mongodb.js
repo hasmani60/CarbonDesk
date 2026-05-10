@@ -1,4 +1,5 @@
-// backend/scripts/migrate-to-mongodb.js - SQLite to MongoDB Migration Script
+// backend/scripts/migrate-to-mongodb.js — One-time SQLite → MongoDB migration for production cutover.
+// Prerequisites: MONGODB_URI set; backup Mongo + SQLite before running. Safe to re-run: upserts orgs/settings; users matched by email; emissions/tasks may duplicate if you run twice — use a fresh Mongo or delete collections first.
 require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
 const mongoose = require('mongoose');
@@ -26,6 +27,8 @@ const logger = {
 class MigrationManager {
   constructor() {
     this.sqliteDb = null;
+    /** SQLite users.id → Mongo User._id */
+    this.sqliteUserIdToMongo = new Map();
     this.stats = {
       users: 0,
       organisations: 0,
@@ -58,6 +61,9 @@ class MigrationManager {
 
   async connectMongoDB() {
     try {
+      if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI is not set in .env');
+      }
       logger.info('Connecting to MongoDB...');
       await mongoose.connect(process.env.MONGODB_URI, {
         maxPoolSize: 10,
@@ -79,6 +85,18 @@ class MigrationManager {
     });
   }
 
+  coerceDate(val) {
+    if (val == null || val === '') return undefined;
+    const d = val instanceof Date ? val : new Date(val);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+
+  normalizeEmissionStatus(s) {
+    const allowed = ['draft', 'submitted', 'verified', 'rejected'];
+    if (s && allowed.includes(s)) return s;
+    return 'draft';
+  }
+
   async migrateOrganisations() {
     try {
       logger.info('Migrating organisations...');
@@ -86,32 +104,35 @@ class MigrationManager {
 
       for (const org of orgs) {
         try {
-          await Organisation.create({
+          const doc = {
+            _id: org.id,
             id: org.id,
             name: org.name,
             display_name: org.display_name,
             industry_type: org.industry_type,
-            location: org.location,
+            location: org.location || undefined,
             contact_email: org.contact_email,
-            contact_phone: org.contact_phone,
-            address: org.address,
-            website: org.website,
+            contact_phone: org.contact_phone || undefined,
+            address: org.address || undefined,
+            website: org.website || undefined,
             config: org.config ? JSON.parse(org.config) : null,
             is_active: org.is_active === 1,
             subscription_tier: org.subscription_tier || 'standard',
             max_users: org.max_users || 50,
             max_storage_gb: org.max_storage_gb || 10,
-            registered_name: org.registered_name,
-            cin_number: org.cin_number,
-            registered_address: org.registered_address,
-            gst_number: org.gst_number,
-            current_employees: org.current_employees,
-            created_by: org.created_by,
-            notes: org.notes,
-            activated_at: org.activated_at,
-            created_at: org.created_at,
-            updated_at: org.updated_at
-          });
+            registered_name: org.registered_name || undefined,
+            cin_number: org.cin_number || undefined,
+            registered_address: org.registered_address || undefined,
+            gst_number: org.gst_number || undefined,
+            current_employees: org.current_employees ?? undefined,
+            created_by: org.created_by ? String(org.created_by) : undefined,
+            notes: org.notes || undefined,
+            activated_at: this.coerceDate(org.activated_at),
+            created_at: this.coerceDate(org.created_at),
+            updated_at: this.coerceDate(org.updated_at)
+          };
+
+          await Organisation.replaceOne({ _id: org.id }, doc, { upsert: true });
           this.stats.organisations++;
         } catch (error) {
           logger.error(`Failed to migrate organisation ${org.id}:`, error.message);
@@ -133,7 +154,6 @@ class MigrationManager {
 
       for (const user of users) {
         try {
-          // Parse restrictions if they exist
           let restrictions = null;
           if (user.restrictions) {
             try {
@@ -143,19 +163,30 @@ class MigrationManager {
             }
           }
 
-          await User.create({
-            name: user.name,
-            email: user.email,
-            password: user.password, // Already hashed in SQLite
-            role: user.role,
-            status: user.status,
-            organisation_id: user.organisation_id,
-            restrictions: restrictions,
-            last_login: user.last_login,
-            created_at: user.created_at,
-            updated_at: user.updated_at
-          });
-          this.stats.users++;
+          const email = String(user.email || '').toLowerCase().trim();
+          let doc = await User.findOne({ email });
+
+          if (!doc) {
+            doc = await User.create({
+              name: user.name,
+              email,
+              password: user.password,
+              role: user.role || 'contributor',
+              status: user.status || 'active',
+              organisation_id: user.organisation_id ? String(user.organisation_id) : '',
+              restrictions,
+              last_login: this.coerceDate(user.last_login),
+              created_at: this.coerceDate(user.created_at),
+              updated_at: this.coerceDate(user.updated_at)
+            });
+            this.stats.users++;
+          } else {
+            logger.warn(`User ${email} already in MongoDB — linking SQLite id ${user.id} to existing _id`);
+          }
+
+          if (user.id != null && doc && doc._id) {
+            this.sqliteUserIdToMongo.set(String(user.id), doc._id);
+          }
         } catch (error) {
           logger.error(`Failed to migrate user ${user.email}:`, error.message);
           this.stats.errors.push({ type: 'user', id: user.email, error: error.message });
@@ -176,24 +207,33 @@ class MigrationManager {
 
       for (const emission of emissions) {
         try {
+          const scopeNum = parseInt(emission.scope, 10);
+          const dateVal = this.coerceDate(emission.date) || new Date();
+          const mappedCreator = emission.created_by != null
+            ? this.sqliteUserIdToMongo.get(String(emission.created_by))
+            : null;
+          const created_by = mappedCreator
+            ? mappedCreator.toString()
+            : (emission.created_by != null ? String(emission.created_by) : undefined);
+
           await Emission.create({
-            scope: emission.scope,
-            category: emission.category,
-            activity: emission.activity,
-            quantity: emission.quantity,
-            unit: emission.unit,
-            co2e: emission.co2e,
-            date: emission.date,
-            status: emission.status,
-            notes: emission.notes,
-            verified_by: emission.verified_by,
-            verified_at: emission.verified_at,
-            organisation_id: emission.organisation_id,
-            organisation_name: emission.organisation_name,
-            created_by: emission.created_by,
-            created_by_name: emission.created_by_name,
-            created_at: emission.created_at,
-            updated_at: emission.updated_at
+            scope: Number.isFinite(scopeNum) ? scopeNum : 1,
+            category: emission.category || undefined,
+            activity: emission.activity || 'unknown',
+            quantity: emission.quantity != null ? Number(emission.quantity) : 0,
+            unit: emission.unit || 'kg',
+            co2e: emission.co2e != null ? Number(emission.co2e) : 0,
+            date: dateVal,
+            status: this.normalizeEmissionStatus(emission.status),
+            notes: emission.notes || undefined,
+            verified_by: emission.verified_by != null ? String(emission.verified_by) : undefined,
+            verified_at: emission.verified_at ? String(emission.verified_at) : undefined,
+            organisation_id: String(emission.organisation_id),
+            organisation_name: emission.organisation_name || undefined,
+            created_by,
+            created_by_name: emission.created_by_name || undefined,
+            created_at: this.coerceDate(emission.created_at) || dateVal,
+            updated_at: this.coerceDate(emission.updated_at) || this.coerceDate(emission.created_at) || dateVal
           });
           this.stats.emissions++;
         } catch (error) {
@@ -216,24 +256,58 @@ class MigrationManager {
 
       for (const task of tasks) {
         try {
+          const assignedTo = task.assigned_to != null
+            ? this.sqliteUserIdToMongo.get(String(task.assigned_to))
+            : null;
+          const assignedBy = task.assigned_by != null
+            ? this.sqliteUserIdToMongo.get(String(task.assigned_by))
+            : null;
+
+          if (!assignedTo || !assignedBy) {
+            logger.warn(
+              `Skip task ${task.id}: could not map assigned_to/assigned_by (SQLite user → Mongo ObjectId)`
+            );
+            this.stats.errors.push({
+              type: 'task',
+              id: task.id,
+              error: 'Missing user id mapping for assigned_to or assigned_by'
+            });
+            continue;
+          }
+
+          const scopeNum = parseInt(task.scope, 10);
+          const start = this.coerceDate(task.start_date);
+          const end = this.coerceDate(task.end_date);
+          const deadline = this.coerceDate(task.deadline);
+          if (!start || !end || !deadline) {
+            throw new Error('Invalid start_date, end_date, or deadline');
+          }
+
+          let status = task.status || 'pending';
+          if (!['pending', 'in_progress', 'completed', 'cancelled'].includes(status)) {
+            status = 'pending';
+          }
+          let priority = task.priority || 'medium';
+          if (!['low', 'medium', 'high', 'urgent'].includes(priority)) {
+            priority = 'medium';
+          }
+
           await Task.create({
-            assigned_to: task.assigned_to,
-            assigned_by: task.assigned_by,
-            assigned_to_name: task.assigned_to_name,
-            assigned_by_name: task.assigned_by_name,
-            scope: task.scope,
-            activity: task.activity,
-            source: task.source,
-            start_date: task.start_date,
-            end_date: task.end_date,
-            deadline: task.deadline,
-            comments: task.comments,
-            status: task.status,
-            priority: task.priority,
-            organisation_id: task.organisation_id,
-            completed_at: task.completed_at,
-            created_at: task.created_at,
-            updated_at: task.updated_at
+            assigned_to: assignedTo,
+            assigned_by: assignedBy,
+            scope: Number.isFinite(scopeNum) ? scopeNum : 1,
+            activity: task.activity || 'unknown',
+            source: task.source || undefined,
+            start_date: start,
+            end_date: end,
+            deadline,
+            comments: task.comments || undefined,
+            status,
+            priority,
+            organisation_id: String(task.organisation_id),
+            completed_at: this.coerceDate(task.completed_at),
+            created_at: this.coerceDate(task.created_at),
+            updated_at: this.coerceDate(task.updated_at)
           });
           this.stats.tasks++;
         } catch (error) {
@@ -256,19 +330,21 @@ class MigrationManager {
 
       for (const log of logs) {
         try {
+          const mapped = log.user_id != null ? this.sqliteUserIdToMongo.get(String(log.user_id)) : null;
+          const user_id = mapped ? mapped.toString() : String(log.user_id != null ? log.user_id : 'unknown');
+
           await ActivityLog.create({
-            user_id: log.user_id,
+            user_id,
             action: log.action,
-            resource_type: log.resource_type,
-            resource_id: log.resource_id,
-            details: log.details,
-            ip_address: log.ip_address,
-            user_agent: log.user_agent,
-            created_at: log.created_at
+            resource_type: log.resource_type || undefined,
+            resource_id: log.resource_id != null ? String(log.resource_id) : undefined,
+            details: log.details || undefined,
+            ip_address: log.ip_address || undefined,
+            user_agent: log.user_agent || undefined,
+            created_at: this.coerceDate(log.created_at) || new Date()
           });
           this.stats.activityLogs++;
         } catch (error) {
-          // Skip activity log errors to avoid cluttering output
           this.stats.errors.push({ type: 'activity_log', id: log.id, error: error.message });
         }
       }
@@ -325,9 +401,9 @@ class MigrationManager {
 
       for (const setting of settings) {
         try {
-          await OrganisationSettings.create({
+          const doc = {
             organisation_id: setting.organisation_id,
-            logo_url: setting.logo_url,
+            logo_url: setting.logo_url || undefined,
             primary_color: setting.primary_color,
             secondary_color: setting.secondary_color,
             default_reporting_period: setting.default_reporting_period,
@@ -339,9 +415,14 @@ class MigrationManager {
             features_enabled: setting.features_enabled ? JSON.parse(setting.features_enabled) : [],
             notification_settings: setting.notification_settings ? JSON.parse(setting.notification_settings) : null,
             data_retention_days: setting.data_retention_days,
-            created_at: setting.created_at,
-            updated_at: setting.updated_at
-          });
+            created_at: this.coerceDate(setting.created_at),
+            updated_at: this.coerceDate(setting.updated_at)
+          };
+          await OrganisationSettings.replaceOne(
+            { organisation_id: setting.organisation_id },
+            doc,
+            { upsert: true }
+          );
           this.stats.organisationSettings++;
         } catch (error) {
           logger.error(`Failed to migrate settings for org ${setting.organisation_id}:`, error.message);

@@ -1,22 +1,24 @@
-// backend/models/index.js - MongoDB Models Export
-// Import all MongoDB models
+// backend/models/index.js
+// Central export for all MongoDB models
+
 const User = require('./User');
 const Organisation = require('./Organisation');
-const Emission = require('./Emission');
-const ActivityLog = require('./ActivityLog');
-const Task = require('./Task');
-const CompanyOperator = require('./CompanyOperator');
 const OrganisationSettings = require('./OrganisationSettings');
+const CompanyOperator = require('./CompanyOperator');
+const Emission = require('./Emission');
+const Task = require('./Task');
+const ActivityLog = require('./ActivityLog');
 const MACCOpportunity = require('./MACCOpportunity');
+const Notification = require('./Notification');
 
-// Export all models
 module.exports = {
   User,
   Organisation,
-  Emission,
-  ActivityLog,
-  Task,
-  CompanyOperator,
   OrganisationSettings,
-  MACCOpportunity
+  CompanyOperator,
+  Emission,
+  Task,
+  ActivityLog,
+  MACCOpportunity,
+  Notification
 };

@@ -1,16 +1,13 @@
-// backend/middleware/companyAuth.js
-// Middleware for authenticating company operators
-
+// middleware/companyAuth.js - MongoDB-compatible company operator authentication
 const jwt = require('jsonwebtoken');
-const localDB = require('../database/localDB');
+const { CompanyOperator } = require('../models');
+const logger = require('../utils/logger');
 
 // Authenticate company operator token
 const authenticateCompanyOperator = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-
-    console.log('🔐 Company auth - Token received:', token ? 'Yes' : 'No');
 
     if (!token) {
       return res.status(401).json({
@@ -24,8 +21,6 @@ const authenticateCompanyOperator = async (req, res, next) => {
       token, 
       process.env.COMPANY_JWT_SECRET || process.env.JWT_SECRET || 'company-secret-key'
     );
-    
-    console.log('🔐 Company auth - Token decoded:', decoded);
 
     if (!decoded || !decoded.id || decoded.type !== 'company_operator') {
       return res.status(401).json({
@@ -34,9 +29,8 @@ const authenticateCompanyOperator = async (req, res, next) => {
       });
     }
 
-    // Get company operator from database
-    const operator = await localDB.findCompanyOperatorById(decoded.id);
-    console.log('🔐 Company auth - Operator found:', !!operator);
+    // Get company operator from MongoDB
+    const operator = await CompanyOperator.findById(decoded.id).select('-password');
 
     if (!operator) {
       return res.status(401).json({
@@ -55,22 +49,22 @@ const authenticateCompanyOperator = async (req, res, next) => {
 
     // Set operator information in request
     req.companyOperator = {
-      id: operator.id,
+      id: operator._id.toString(),
       name: operator.name,
       email: operator.email,
       role: operator.role,
       permissions: {
-        canCreateOrgs: operator.can_create_orgs === 1,
-        canManageOrgs: operator.can_manage_orgs === 1,
-        canViewAllOrgs: operator.can_view_all_orgs === 1
+        canCreateOrgs: operator.can_create_orgs === true,
+        canManageOrgs: operator.can_manage_orgs === true,
+        canViewAllOrgs: operator.can_view_all_orgs === true
       }
     };
-    
-    console.log('🔐 Company auth - Operator set:', req.companyOperator.email);
+
+    logger.debug('Company operator authenticated', { email: operator.email });
     return next();
 
   } catch (error) {
-    console.error('Company auth error:', error.message);
+    logger.error('Company auth error', error);
     
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({

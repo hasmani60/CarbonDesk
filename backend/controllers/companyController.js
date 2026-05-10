@@ -1,31 +1,36 @@
-// backend/controllers/companyController.js
-// COMPANY-ONLY Operations - Hidden from regular users
-
+// controllers/companyController.js - Fixed to set both _id and id for Organisation
 const jwt = require('jsonwebtoken');
-const localDB = require('../database/localDB');
+const { CompanyOperator, Organisation, OrganisationSettings, User, ActivityLog } = require('../models');
+const bcrypt = require('bcryptjs');
 
-// Generate JWT for company operators
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(12);
+  return bcrypt.hash(password, salt);
+};
+
+const verifyPassword = async (password, hashedPassword) => {
+  return bcrypt.compare(password, hashedPassword);
+};
+
 const generateCompanyToken = (operator) => {
   return jwt.sign(
-    { 
-      id: operator.id,
+    {
+      id: operator._id.toString(),
       email: operator.email,
       role: operator.role,
       type: 'company_operator'
-    }, 
+    },
     process.env.COMPANY_JWT_SECRET || process.env.JWT_SECRET || 'company-secret-key',
-    { expiresIn: '8h' } // Shorter expiry for company operators
+    { expiresIn: '8h' }
   );
 };
 
-// @desc    Company operator login (HIDDEN endpoint)
+// @desc    Company operator login
 // @route   POST /api/company/auth/login
-// @access  Public (but hidden)
+// @access  Public
 const companyLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    console.log('🔐 Company operator login attempt:', { email });
 
     if (!email || !password) {
       return res.status(400).json({
@@ -34,9 +39,8 @@ const companyLogin = async (req, res) => {
       });
     }
 
-    // Find company operator
-    const operator = await localDB.findCompanyOperatorByEmail(email.toLowerCase());
-    
+    const operator = await CompanyOperator.findOne({ email: email.toLowerCase() });
+
     if (!operator) {
       return res.status(401).json({
         success: false,
@@ -44,7 +48,6 @@ const companyLogin = async (req, res) => {
       });
     }
 
-    // Check if account is active
     if (!operator.is_active) {
       return res.status(403).json({
         success: false,
@@ -52,52 +55,39 @@ const companyLogin = async (req, res) => {
       });
     }
 
-    // Check if account is locked
-    if (operator.locked_until && new Date(operator.locked_until) > new Date()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is temporarily locked due to failed login attempts'
-      });
-    }
+    const isPasswordCorrect = await verifyPassword(password, operator.password);
 
-    // Verify password
-    const isPasswordCorrect = await localDB.verifyPassword(password, operator.password);
-    
     if (!isPasswordCorrect) {
-      // Increment failed attempts (implement this in localDB if needed)
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
-    // Update last login
-    await localDB.updateCompanyOperatorLogin(operator.id);
+    operator.last_login = new Date();
+    await operator.save();
 
     const token = generateCompanyToken(operator);
-
-    console.log('✅ Company operator login successful:', email);
 
     return res.json({
       success: true,
       data: {
         token,
         operator: {
-          id: operator.id,
+          id: operator._id.toString(),
           name: operator.name,
           email: operator.email,
           role: operator.role,
           permissions: {
-            canCreateOrgs: operator.can_create_orgs === 1,
-            canManageOrgs: operator.can_manage_orgs === 1,
-            canViewAllOrgs: operator.can_view_all_orgs === 1
+            canCreateOrgs: operator.can_create_orgs,
+            canManageOrgs: operator.can_manage_orgs,
+            canViewAllOrgs: operator.can_view_all_orgs
           }
         }
       }
     });
 
   } catch (error) {
-    console.error('Company login error:', error);
     res.status(500).json({
       success: false,
       message: 'Login failed. Please try again.'
@@ -105,13 +95,12 @@ const companyLogin = async (req, res) => {
   }
 };
 
-// @desc    Create new organisation with Super Admin
+// @desc    Create new organisation
 // @route   POST /api/company/organisations
 // @access  Private (Company operators only)
 const createOrganisation = async (req, res) => {
   try {
     const {
-      // Organisation details
       name,
       display_name,
       industry_type,
@@ -124,26 +113,17 @@ const createOrganisation = async (req, res) => {
       max_users,
       max_storage_gb,
       notes,
-      
-      // NEW: Organisation Details Section
       registered_name,
       cin_number,
       registered_address,
       gst_number,
       current_employees,
-      
-      // Super Admin details
       super_admin_name,
       super_admin_email,
       super_admin_password,
-      
-      // Optional settings
       settings
     } = req.body;
 
-    console.log('🏢 Creating new organisation:', name);
-
-    // Validate required fields
     if (!name || !industry_type || !contact_email) {
       return res.status(400).json({
         success: false,
@@ -151,53 +131,46 @@ const createOrganisation = async (req, res) => {
       });
     }
 
-    // NEW: Validate organisation details
-    if (!registered_address) {
+    if (!registered_address || !current_employees) {
       return res.status(400).json({
         success: false,
-        message: 'Registered address is required'
-      });
-    }
-
-    if (!current_employees || current_employees < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current number of employees is required and must be at least 1'
+        message: 'Registered address and current employees are required'
       });
     }
 
     if (!super_admin_name || !super_admin_email || !super_admin_password) {
       return res.status(400).json({
         success: false,
-        message: 'Super Admin name, email, and password are required'
+        message: 'Super Admin details are required'
       });
     }
 
-    // Check if organisation with similar name exists
-    const existingOrgs = await localDB.getAllOrganisations({ search: name });
-    if (existingOrgs && existingOrgs.length > 0) {
-      const exactMatch = existingOrgs.find(org => 
-        org.name.toLowerCase() === name.toLowerCase()
-      );
-      if (exactMatch) {
-        return res.status(400).json({
-          success: false,
-          message: 'Organisation with this name already exists'
-        });
-      }
+    const existingOrg = await Organisation.findOne({
+      name: new RegExp(`^${name}$`, 'i')
+    });
+
+    if (existingOrg) {
+      return res.status(400).json({
+        success: false,
+        message: 'Organisation with this name already exists'
+      });
     }
 
-    // Check if Super Admin email already exists
-    const existingSuperAdmin = await localDB.findUserByEmail(super_admin_email);
+    const existingSuperAdmin = await User.findOne({ email: super_admin_email.toLowerCase() });
     if (existingSuperAdmin) {
       return res.status(400).json({
         success: false,
-        message: 'Super Admin email already exists in the system'
+        message: 'Super Admin email already exists'
       });
     }
 
-    // Step 1: Create Organisation with new fields
-    const organisation = await localDB.createOrganisation({
+    // Generate unique org ID
+    const orgId = `org_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // FIXED: Set both _id and id to the same value
+    const organisation = await Organisation.create({
+      _id: orgId,  // CRITICAL: Must set _id for custom string ID
+      id: orgId,   // Also set id field
       name,
       display_name: display_name || name,
       industry_type,
@@ -209,52 +182,29 @@ const createOrganisation = async (req, res) => {
       subscription_tier: subscription_tier || 'standard',
       max_users: max_users || 50,
       max_storage_gb: max_storage_gb || 10,
-      
-      // NEW: Organisation Details
       registered_name: registered_name || name,
-      cin_number: cin_number || null,
+      cin_number,
       registered_address,
-      gst_number: gst_number || null,
+      gst_number,
       current_employees: parseInt(current_employees),
-      
       created_by: req.companyOperator.email,
       notes: notes || `Created by ${req.companyOperator.name}`
     });
 
-    console.log('✅ Organisation created:', organisation.id);
-
-    // Step 2: Create Organisation Settings
-    await localDB.createOrganisationSettings(organisation.id, settings || {});
-    console.log('✅ Organisation settings initialized');
-
-    // Step 3: Create Super Admin user
-    const superAdmin = await localDB.createSuperAdmin({
-      name: super_admin_name,
-      email: super_admin_email,
-      password: super_admin_password
-    }, organisation.id);
-
-    console.log('✅ Super Admin created:', superAdmin.email);
-
-    // Step 4: Log organisation creation activity
-    await localDB.logOrganisationActivity({
-      organisation_id: organisation.id,
-      action: 'org_created',
-      actor_type: 'company_operator',
-      actor_id: req.companyOperator.id,
-      actor_name: req.companyOperator.name,
-      details: {
-        organisation_name: name,
-        registered_name: registered_name || name,
-        super_admin_email: super_admin_email,
-        subscription_tier: subscription_tier || 'standard',
-        current_employees: current_employees
-      },
-      ip_address: req.ip,
-      user_agent: req.get('User-Agent')
+    await OrganisationSettings.create({
+      organisation_id: orgId,
+      ...settings
     });
 
-    console.log('✅ Organisation creation complete');
+    const hashedPassword = await hashPassword(super_admin_password);
+    const superAdmin = await User.create({
+      name: super_admin_name,
+      email: super_admin_email.toLowerCase(),
+      password: hashedPassword,
+      role: 'admin',
+      status: 'active',
+      organisation_id: orgId // String ID
+    });
 
     res.status(201).json({
       success: true,
@@ -263,25 +213,18 @@ const createOrganisation = async (req, res) => {
         organisation: {
           id: organisation.id,
           name: organisation.name,
-          display_name: organisation.display_name,
-          registered_name: organisation.registered_name,
-          industry_type: organisation.industry_type,
-          contact_email: organisation.contact_email,
-          subscription_tier: organisation.subscription_tier || 'standard',
-          max_users: organisation.max_users || 50,
-          current_employees: organisation.current_employees
+          display_name: organisation.display_name
         },
         super_admin: {
-          id: superAdmin.id,
+          id: superAdmin._id.toString(),
           name: superAdmin.name,
-          email: superAdmin.email,
-          role: superAdmin.role
+          email: superAdmin.email
         }
       }
     });
 
   } catch (error) {
-    console.error('Organisation creation error:', error);
+    console.error('Create organisation error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create organisation'
@@ -289,40 +232,45 @@ const createOrganisation = async (req, res) => {
   }
 };
 
-
 // @desc    Get all organisations
 // @route   GET /api/company/organisations
-// @access  Private (Company operators only)
+// @access  Private
 const getAllOrganisations = async (req, res) => {
   try {
-    const { search, is_active, industry_type, limit } = req.query;
+    const { is_active, industry_type, limit, search } = req.query;
 
-    const organisations = await localDB.getAllOrganisations({
-      search,
-      is_active: is_active !== undefined ? is_active === 'true' : undefined,
-      industry_type,
-      limit: limit ? parseInt(limit) : undefined
-    });
+    const query = {};
 
-    // Get stats for each organisation
-    const orgsWithStats = await Promise.all(
-      organisations.map(async (org) => {
-        const stats = await localDB.getOrganisationStats(org.id);
-        return {
-          ...org,
-          stats
-        };
-      })
-    );
+    if (is_active !== undefined) {
+      query.is_active = is_active === 'true';
+    }
+
+    if (industry_type && industry_type !== 'all') {
+      query.industry_type = industry_type;
+    }
+
+    if (search) {
+      query.$or = [
+        { name: new RegExp(search, 'i') },
+        { display_name: new RegExp(search, 'i') }
+      ];
+    }
+
+    let orgsQuery = Organisation.find(query).sort({ created_at: -1 });
+
+    if (limit) {
+      orgsQuery = orgsQuery.limit(parseInt(limit));
+    }
+
+    const organisations = await orgsQuery;
 
     res.json({
       success: true,
-      data: orgsWithStats,
-      total: orgsWithStats.length
+      data: organisations,
+      total: organisations.length
     });
 
   } catch (error) {
-    console.error('Get organisations error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve organisations'
@@ -330,249 +278,80 @@ const getAllOrganisations = async (req, res) => {
   }
 };
 
-// @desc    Get organisation by ID
-// @route   GET /api/company/organisations/:id
-// @access  Private (Company operators only)
+// Placeholder for other company controller functions
 const getOrganisationById = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const organisation = await localDB.findOrganisationById(id);
-    
+    const organisation = await Organisation.findOne({ id: req.params.id });
     if (!organisation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Organisation not found'
-      });
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
     }
-
-    // Get settings
-    const settings = await localDB.getOrganisationSettings(id);
-    
-    // Get stats
-    const stats = await localDB.getOrganisationStats(id);
-    
-    // Get recent activities
-    const activities = await localDB.getOrganisationActivities(id, 10);
-
-    res.json({
-      success: true,
-      data: {
-        ...organisation,
-        settings,
-        stats,
-        recent_activities: activities
-      }
-    });
-
+    res.json({ success: true, data: organisation });
   } catch (error) {
-    console.error('Get organisation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve organisation'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Update organisation
-// @route   PATCH /api/company/organisations/:id
-// @access  Private (Company operators only)
 const updateOrganisation = async (req, res) => {
   try {
-    const { id } = req.params;
     const updates = req.body;
-
-    // Remove fields that shouldn't be updated directly
     delete updates.id;
-    delete updates.created_at;
-    delete updates.created_by;
-
-    await localDB.updateOrganisation(id, updates);
-
-    // Log activity
-    await localDB.logOrganisationActivity({
-      organisation_id: id,
-      action: 'org_updated',
-      actor_type: 'company_operator',
-      actor_id: req.companyOperator.id,
-      actor_name: req.companyOperator.name,
-      details: { updated_fields: Object.keys(updates) },
-      ip_address: req.ip,
-      user_agent: req.get('User-Agent')
-    });
-
-    const updatedOrg = await localDB.findOrganisationById(id);
-
-    res.json({
-      success: true,
-      message: 'Organisation updated successfully',
-      data: updatedOrg
-    });
-
+    delete updates._id;
+    
+    const org = await Organisation.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: updates },
+      { new: true }
+    );
+    
+    res.json({ success: true, data: org });
   } catch (error) {
-    console.error('Update organisation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update organisation'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Deactivate organisation
-// @route   DELETE /api/company/organisations/:id
-// @access  Private (Company operators only)
 const deactivateOrganisation = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    await localDB.deactivateOrganisation(id);
-
-    // Log activity
-    await localDB.logOrganisationActivity({
-      organisation_id: id,
-      action: 'org_deactivated',
-      actor_type: 'company_operator',
-      actor_id: req.companyOperator.id,
-      actor_name: req.companyOperator.name,
-      details: { reason: req.body.reason || 'Not specified' },
-      ip_address: req.ip,
-      user_agent: req.get('User-Agent')
-    });
-
-    res.json({
-      success: true,
-      message: 'Organisation deactivated successfully'
-    });
-
+    await Organisation.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: { is_active: false } }
+    );
+    res.json({ success: true, message: 'Organisation deactivated' });
   } catch (error) {
-    console.error('Deactivate organisation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to deactivate organisation'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get organisation statistics
-// @route   GET /api/company/organisations/:id/stats
-// @access  Private (Company operators only)
 const getOrganisationStats = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const stats = await localDB.getOrganisationStats(id);
-    const activities = await localDB.getOrganisationActivities(id, 50);
-
-    res.json({
-      success: true,
-      data: {
-        stats,
-        activity_count: activities.length,
-        last_activity: activities[0] || null
-      }
-    });
-
+    const orgId = req.params.id;
+    const totalUsers = await User.countDocuments({ organisation_id: orgId });
+    res.json({ success: true, data: { stats: { totalUsers } } });
   } catch (error) {
-    console.error('Get org stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve statistics'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get company operator profile
-// @route   GET /api/company/auth/profile
-// @access  Private (Company operators only)
 const getCompanyProfile = async (req, res) => {
   try {
-    const operator = await localDB.findCompanyOperatorById(req.companyOperator.id);
-    
-    if (!operator) {
-      return res.status(404).json({
-        success: false,
-        message: 'Operator not found'
-      });
-    }
-
-    // Remove sensitive data
-    delete operator.password;
-    delete operator.failed_login_attempts;
-    delete operator.locked_until;
-
-    res.json({
-      success: true,
-      data: operator
-    });
-
+    const operator = await CompanyOperator.findById(req.companyOperator.id).select('-password');
+    res.json({ success: true, data: operator });
   } catch (error) {
-    console.error('Get company profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve profile'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get dashboard summary for company operators
-// @route   GET /api/company/dashboard
-// @access  Private (Company operators only)
 const getCompanyDashboard = async (req, res) => {
   try {
-    const allOrgs = await localDB.getAllOrganisations();
-    
-    const stats = {
-      total_organisations: allOrgs.length,
-      active_organisations: allOrgs.filter(org => org.is_active).length,
-      inactive_organisations: allOrgs.filter(org => !org.is_active).length,
-      total_users: 0,
-      active_users: 0,
-      by_subscription: {
-        basic: 0,
-        standard: 0,
-        premium: 0
-      },
-      by_industry: {}
-    };
-
-    // Calculate totals
-    for (const org of allOrgs) {
-      const orgStats = await localDB.getOrganisationStats(org.id);
-      stats.total_users += orgStats.totalUsers || 0;
-      stats.active_users += orgStats.activeUsers || 0;
-      
-      // Count by subscription
-      const tier = org.subscription_tier || 'standard';
-      stats.by_subscription[tier] = (stats.by_subscription[tier] || 0) + 1;
-      
-      // Count by industry
-      stats.by_industry[org.industry_type] = (stats.by_industry[org.industry_type] || 0) + 1;
-    }
-
-    // Get recent activities across all organisations
-    const recentActivities = [];
-    for (const org of allOrgs.slice(0, 10)) {
-      const activities = await localDB.getOrganisationActivities(org.id, 5);
-      recentActivities.push(...activities.map(a => ({ ...a, org_name: org.name })));
-    }
-    
-    recentActivities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
+    const allOrgs = await Organisation.find();
     res.json({
       success: true,
       data: {
-        stats,
-        recent_activities: recentActivities.slice(0, 20),
-        organisations: allOrgs.slice(0, 10) // Latest 10 orgs
+        stats: { total_organisations: allOrgs.length },
+        organisations: allOrgs.slice(0, 10)
       }
     });
-
   } catch (error) {
-    console.error('Company dashboard error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to load dashboard'
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

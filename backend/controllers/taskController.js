@@ -1,160 +1,165 @@
-// backend/controllers/taskController.js
-// Complete Task Management Controller with RBAC
+// controllers/taskController.js - MongoDB-compatible with ObjectId references
+const { Task, User, ActivityLog } = require('../models');
+const mongoose = require('mongoose');
+const { contributorMaySubmitEmission } = require('../utils/contributorEmissionAccess');
 
-const localDB = require('../database/localDB');
-const { scopeQuery, addOrganisationToData } = require('../middleware/organisationScope');
+// Helper to calculate days until deadline
+const getDaysUntilDeadline = (deadline) => {
+  const now = new Date();
+  const deadlineDate = new Date(deadline);
+  const diffTime = deadlineDate - now;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+};
 
-// @desc    Create new task (Admin only)
+// @desc    Create new task
 // @route   POST /api/tasks
 // @access  Private (Admin only)
 const createTask = async (req, res) => {
   try {
-    console.log('📋 Creating task by admin:', req.user.email);
-    console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
-    
-    const { 
-      assignedToUserId, 
-      scope, 
-      activity, 
+    const {
+      assignedToUserId,
+      scope,
+      activity,
       source,
-      startDate, 
-      endDate, 
-      deadline, 
+      startDate,
+      endDate,
+      deadline,
       comments,
       priority = 'medium'
     } = req.body;
-    
-    // Validate required fields
+
     if (!assignedToUserId || !scope || !activity || !startDate || !endDate || !deadline) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: assignedToUserId, scope, activity, startDate, endDate, deadline are required'
+        message: 'Missing required fields'
       });
     }
-    
-    // Validate scope
+
     if (![1, 2, 3].includes(parseInt(scope))) {
       return res.status(400).json({
         success: false,
         message: 'Invalid scope. Must be 1, 2, or 3'
       });
     }
-    
-    // Validate dates
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const due = new Date(deadline);
-    const now = new Date();
-    
-    if (start >= end) {
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(assignedToUserId)) {
       return res.status(400).json({
         success: false,
-        message: 'Start date must be before end date'
+        message: 'Invalid user ID format'
       });
     }
-    
-    if (due < now) {
-      return res.status(400).json({
-        success: false,
-        message: 'Deadline cannot be in the past'
-      });
-    }
-    
-    // Get assignee user info to verify they exist and are in same organisation
-    const assigneeUser = await localDB.findUserById(assignedToUserId);
+
+    // Get assignee user by MongoDB _id
+    const assigneeUser = await User.findById(assignedToUserId);
     if (!assigneeUser) {
       return res.status(404).json({
         success: false,
         message: 'Assigned user not found'
       });
     }
-    
-    // Verify assignee is in same organisation
+
     if (assigneeUser.organisation_id !== req.organisationId) {
       return res.status(403).json({
         success: false,
         message: 'Cannot assign tasks to users outside your organisation'
       });
     }
-    
-    // Verify assignee can handle the specified scope (check their restrictions)
+
+    // Check RBAC (same rules as emission create: scopes + granular activities)
     if (assigneeUser.role === 'contributor' && assigneeUser.restrictions) {
-      const { allowedScopes, allowedActivities } = assigneeUser.restrictions;
-      
-      // Check scope access
-      if (allowedScopes && allowedScopes.length > 0) {
-        if (!allowedScopes.includes(parseInt(scope))) {
-          return res.status(400).json({
-            success: false,
-            message: `User ${assigneeUser.name} does not have access to Scope ${scope}`
-          });
-        }
-      }
-      
-      // Check activity access
-      if (allowedActivities && allowedActivities.length > 0) {
-        if (!allowedActivities.includes(activity)) {
-          return res.status(400).json({
-            success: false,
-            message: `User ${assigneeUser.name} does not have access to activity: ${activity}`
-          });
-        }
+      const scopeNum = parseInt(scope, 10);
+      const categoryKey =
+        typeof activity === 'string' ? activity.trim() : String(activity ?? '').trim();
+      const lineKey = source ? String(source).trim() : '';
+
+      if (
+        !contributorMaySubmitEmission(
+          assigneeUser.restrictions,
+          scopeNum,
+          categoryKey,
+          lineKey
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `User ${assigneeUser.name} cannot be assigned Scope ${scopeNum}${
+            categoryKey ? ` for activity "${categoryKey}"` : ''
+          } with their current permissions`
+        });
       }
     }
-    
-    // Prepare task data with organisation context
-    const taskData = addOrganisationToData(req, {
-      assigned_to: parseInt(assignedToUserId),
-      assigned_by: req.user.id,
-      assigned_to_name: assigneeUser.name,
-      assigned_by_name: req.user.name,
+
+    const adminUser = await User.findById(req.user.id);
+
+    // Create task with ObjectId references and Date objects
+    const newTask = await Task.create({
+      organisation_id: req.organisationId,
+      assigned_to: assigneeUser._id,
+      assigned_by: adminUser._id,
       scope: parseInt(scope),
       activity: activity.trim(),
       source: source ? source.trim() : null,
-      start_date: startDate,
-      end_date: endDate,
-      deadline: deadline,
+      start_date: new Date(startDate),
+      end_date: new Date(endDate),
+      deadline: new Date(deadline),
       comments: comments ? comments.trim() : null,
       priority: ['low', 'medium', 'high', 'urgent'].includes(priority) ? priority : 'medium',
       status: 'pending'
     });
-    
-    console.log('🔐 Creating task with data:', {
-      assigned_to: taskData.assigned_to,
-      assigned_by: taskData.assigned_by,
-      scope: taskData.scope,
-      activity: taskData.activity,
-      organisation_id: taskData.organisation_id
-    });
-    
-    // Create task
-    const newTask = await localDB.createTask(taskData);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    // Populate user details
+    await newTask.populate([
+      { path: 'assigned_to', select: 'name email role' },
+      { path: 'assigned_by', select: 'name email role' }
+    ]);
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'task_created',
-      resourceType: 'task',
-      resourceId: newTask.id,
+      resource_type: 'task',
+      resource_id: newTask._id.toString(),
       details: `Created task for ${assigneeUser.name}: ${activity} (Scope ${scope})`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ Task created successfully: ID ${newTask.id}`);
-    
+
     res.status(201).json({
       success: true,
       data: {
-        ...newTask,
-        display_status: 'pending',
-        days_until_deadline: localDB.getDaysUntilDeadline(newTask.deadline)
+        _id: newTask._id.toString(),
+        id: newTask._id.toString(),
+        assigned_to: {
+          _id: newTask.assigned_to._id.toString(),
+          name: newTask.assigned_to.name,
+          email: newTask.assigned_to.email,
+          role: newTask.assigned_to.role
+        },
+        assigned_by: {
+          _id: newTask.assigned_by._id.toString(),
+          name: newTask.assigned_by.name,
+          email: newTask.assigned_by.email,
+          role: newTask.assigned_by.role
+        },
+        scope: newTask.scope,
+        activity: newTask.activity,
+        source: newTask.source,
+        start_date: newTask.start_date.toISOString(),
+        end_date: newTask.end_date.toISOString(),
+        deadline: newTask.deadline.toISOString(),
+        comments: newTask.comments,
+        priority: newTask.priority,
+        status: newTask.status,
+        days_until_deadline: getDaysUntilDeadline(newTask.deadline),
+        created_at: newTask.created_at,
+        updated_at: newTask.updated_at
       },
       message: 'Task assigned successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Create task error:', error);
+    console.error('Create task error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create task'
@@ -162,138 +167,199 @@ const createTask = async (req, res) => {
   }
 };
 
-// @desc    Get tasks (filtered by role and organisation)
+// @desc    Get tasks
 // @route   GET /api/tasks
 // @access  Private
 const getTasks = async (req, res) => {
-    try {
-      console.log('📋 Getting tasks for user:', req.user.email, 'role:', req.user.role);
-      
-      const {
-        status,
-        scope,
-        search,
-        start_date,
-        end_date,
-        limit,
-        assigned_to
-      } = req.query;
-      
-      console.log('📋 Query parameters:', { status, scope, search, limit, assigned_to });
-      
-      // Build filters with organisation context
-      const filters = {
-        organisation_id: req.organisationId,
-        status: status || undefined,
-        scope: scope || undefined,
-        search: search || undefined,
-        start_date: start_date || undefined,
-        end_date: end_date || undefined,
-        limit: limit ? parseInt(limit) : undefined,
-        include_overdue_status: true
-      };
-      
-      console.log('📋 Filters:', JSON.stringify(filters, null, 2));
-      
-      let tasks;
-      
-      if (req.user.role === 'admin') {
-        // Admin can see all tasks in organisation or filter by user
-        if (assigned_to) {
-          // Verify the user exists and is in same organisation
-          const targetUser = await localDB.findUserById(assigned_to);
-          if (!targetUser || targetUser.organisation_id !== req.organisationId) {
-            console.warn('❌ User not found or not in organisation:', assigned_to);
-            return res.status(404).json({
-              success: false,
-              message: 'User not found or not in your organisation'
-            });
-          }
-          
-          console.log('📋 Admin viewing tasks for user:', assigned_to);
-          tasks = await localDB.getUserTasks(assigned_to, filters);
-        } else {
-          console.log('📋 Admin viewing all organisation tasks');
-          tasks = await localDB.getAllTasks(filters);
-        }
-      } else {
-        // Contributors and others can only see their own tasks
-        console.log('📋 Contributor viewing own tasks, user ID:', req.user.id);
-        tasks = await localDB.getUserTasks(req.user.id, filters);
-      }
-      
-      console.log(`✅ Found ${tasks.length} tasks for ${req.user.role}: ${req.user.email}`);
-      
-      // Log task IDs for verification
-      if (tasks.length > 0) {
-        console.log('📋 Task IDs:', tasks.map(t => ({ id: t.id, activity: t.activity, status: t.status })));
-      }
-      
-      res.json({
-        success: true,
-        data: tasks,
-        total: tasks.length,
-        user_role: req.user.role,
-        organisation: req.organisation?.name || 'N/A',
-        filters: {
-          status: filters.status,
-          scope: filters.scope,
-          search: filters.search,
-          limit: filters.limit
-        }
-      });
-      
-    } catch (error) {
-      console.error('❌ Get tasks error:', error);
-      console.error('Stack:', error.stack);
-      
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to fetch tasks',
-        error: process.env.NODE_ENV === 'development' ? error.toString() : undefined
-      });
+  try {
+    const {
+      status,
+      scope,
+      search,
+      start_date,
+      end_date,
+      limit,
+      assigned_to
+    } = req.query;
+
+    const query = {
+      organisation_id: req.organisationId
+    };
+
+    if (status && status !== 'all') {
+      query.status = status;
     }
-  };
+
+    if (scope && scope !== 'all') {
+      query.scope = parseInt(scope);
+    }
+
+    if (search) {
+      query.$or = [
+        { activity: new RegExp(search, 'i') },
+        { source: new RegExp(search, 'i') }
+      ];
+    }
+
+    // Date filtering on Date objects
+    if (start_date) {
+      query.start_date = { $gte: new Date(start_date) };
+    }
+
+    if (end_date) {
+      query.end_date = { $lte: new Date(end_date) };
+    }
+
+    // Role-based filtering
+    if (req.user.role === 'admin') {
+      if (assigned_to && assigned_to !== 'all') {
+        if (mongoose.Types.ObjectId.isValid(assigned_to)) {
+          query.assigned_to = new mongoose.Types.ObjectId(assigned_to);
+        }
+      }
+    } else {
+      // Non-admins see only their tasks
+      query.assigned_to = new mongoose.Types.ObjectId(req.user.id);
+    }
+
+    let tasksQuery = Task.find(query)
+      .populate('assigned_to', 'name email role')
+      .populate('assigned_by', 'name email role')
+      .sort({ deadline: 1, created_at: -1 });
+
+    if (limit) {
+      tasksQuery = tasksQuery.limit(parseInt(limit));
+    }
+
+    const tasks = await tasksQuery;
+
+    // Transform tasks
+    const transformedTasks = tasks.map(task => {
+      const daysUntilDeadline = getDaysUntilDeadline(task.deadline);
+      const isOverdue = daysUntilDeadline < 0 && task.status !== 'completed';
+
+      return {
+        _id: task._id.toString(),
+        id: task._id.toString(),
+        assigned_to: {
+          _id: task.assigned_to._id.toString(),
+          name: task.assigned_to.name,
+          email: task.assigned_to.email,
+          role: task.assigned_to.role
+        },
+        assigned_by: {
+          _id: task.assigned_by._id.toString(),
+          name: task.assigned_by.name,
+          email: task.assigned_by.email,
+          role: task.assigned_by.role
+        },
+        scope: task.scope,
+        activity: task.activity,
+        source: task.source,
+        start_date: task.start_date.toISOString(),
+        end_date: task.end_date.toISOString(),
+        deadline: task.deadline.toISOString(),
+        comments: task.comments,
+        priority: task.priority,
+        status: isOverdue && task.status !== 'completed' ? 'overdue' : task.status,
+        display_status: isOverdue && task.status !== 'completed' ? 'overdue' : task.status,
+        days_until_deadline: daysUntilDeadline,
+        created_at: task.created_at,
+        updated_at: task.updated_at
+      };
+    });
+
+    res.json({
+      success: true,
+      data: transformedTasks,
+      total: transformedTasks.length
+    });
+
+  } catch (error) {
+    console.error('Get tasks error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch tasks'
+    });
+  }
+};
 
 // @desc    Get task by ID
 // @route   GET /api/tasks/:id
 // @access  Private
 const getTaskById = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    console.log('🔍 Getting task:', id, 'for user:', req.user.email);
-    
-    const task = await localDB.getTaskById(id);
-    
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid task ID format'
+      });
+    }
+
+    const task = await Task.findById(req.params.id)
+      .populate('assigned_to', 'name email role')
+      .populate('assigned_by', 'name email role');
+
     if (!task) {
       return res.status(404).json({
         success: false,
         message: 'Task not found'
       });
     }
-    
-    // Check access permissions
-    const canAccess = (
-      req.user.role === 'admin' && task.organisation_id === req.organisationId
-    ) || (
-      task.assigned_to === req.user.id
-    );
-    
-    if (!canAccess) {
+
+    if (task.organisation_id !== req.organisationId) {
       return res.status(403).json({
         success: false,
         message: 'You do not have access to this task'
       });
     }
-    
+
+    // Check if non-admin can access
+    if (req.user.role !== 'admin' && task.assigned_to._id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only view your own tasks'
+      });
+    }
+
+    const daysUntilDeadline = getDaysUntilDeadline(task.deadline);
+    const isOverdue = daysUntilDeadline < 0 && task.status !== 'completed';
+
     res.json({
       success: true,
-      data: task
+      data: {
+        _id: task._id.toString(),
+        id: task._id.toString(),
+        assigned_to: {
+          _id: task.assigned_to._id.toString(),
+          name: task.assigned_to.name,
+          email: task.assigned_to.email,
+          role: task.assigned_to.role
+        },
+        assigned_by: {
+          _id: task.assigned_by._id.toString(),
+          name: task.assigned_by.name,
+          email: task.assigned_by.email,
+          role: task.assigned_by.role
+        },
+        scope: task.scope,
+        activity: task.activity,
+        source: task.source,
+        start_date: task.start_date.toISOString(),
+        end_date: task.end_date.toISOString(),
+        deadline: task.deadline.toISOString(),
+        comments: task.comments,
+        priority: task.priority,
+        status: task.status,
+        display_status: isOverdue ? 'overdue' : task.status,
+        days_until_deadline: daysUntilDeadline,
+        created_at: task.created_at,
+        updated_at: task.updated_at
+      }
     });
-    
+
   } catch (error) {
-    console.error('❌ Get task by ID error:', error);
+    console.error('Get task by ID error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch task'
@@ -306,139 +372,110 @@ const getTaskById = async (req, res) => {
 // @access  Private
 const updateTask = async (req, res) => {
   try {
-    const { id } = req.params;
-    const updates = req.body;
-    
-    console.log('✏️ Updating task:', id, 'by user:', req.user.email);
-    console.log('📦 Updates:', JSON.stringify(updates, null, 2));
-    
-    // Get existing task
-    const task = await localDB.getTaskById(id);
-    
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid task ID format'
+      });
+    }
+
+    const task = await Task.findById(req.params.id);
+
     if (!task) {
       return res.status(404).json({
         success: false,
         message: 'Task not found'
       });
     }
-    
-    // Check update permissions
-    const canUpdate = (
-      req.user.role === 'admin' && task.organisation_id === req.organisationId
-    ) || (
-      task.assigned_to === req.user.id // Contributors can update their own tasks
-    );
-    
-    if (!canUpdate) {
+
+    if (task.organisation_id !== req.organisationId) {
       return res.status(403).json({
         success: false,
-        message: 'You do not have permission to update this task'
+        message: 'You do not have access to this task'
       });
     }
-    
-    // Validate updates based on role
-    const allowedUpdates = {};
-    
-    if (req.user.role === 'admin') {
-      // Admins can update most fields
-      const adminAllowedFields = [
-        'assigned_to', 'scope', 'activity', 'source', 
-        'start_date', 'end_date', 'deadline', 'comments', 
-        'status', 'priority'
-      ];
-      
-      adminAllowedFields.forEach(field => {
-        if (updates[field] !== undefined) {
-          allowedUpdates[field] = updates[field];
-        }
-      });
-      
-      // If changing assignee, validate the new user
-      if (updates.assigned_to && updates.assigned_to !== task.assigned_to) {
-        const newAssignee = await localDB.findUserById(updates.assigned_to);
-        if (!newAssignee || newAssignee.organisation_id !== req.organisationId) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid assignee or not in your organisation'
-          });
-        }
-        allowedUpdates.assigned_to_name = newAssignee.name;
-      }
-      
-    } else {
-      // Contributors can only update status and add comments
-      const contributorAllowedFields = ['status', 'comments'];
-      
-      contributorAllowedFields.forEach(field => {
-        if (updates[field] !== undefined) {
-          allowedUpdates[field] = updates[field];
-        }
-      });
-    }
-    
-    // Validate status transitions
-    if (allowedUpdates.status) {
-      const validStatuses = ['pending', 'in_progress', 'completed', 'cancelled'];
-      if (!validStatuses.includes(allowedUpdates.status)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid status'
-        });
-      }
-    }
-    
-    // Validate dates if being updated
-    if (allowedUpdates.start_date || allowedUpdates.end_date || allowedUpdates.deadline) {
-      const startDate = new Date(allowedUpdates.start_date || task.start_date);
-      const endDate = new Date(allowedUpdates.end_date || task.end_date);
-      const deadline = new Date(allowedUpdates.deadline || task.deadline);
-      
-      if (startDate >= endDate) {
-        return res.status(400).json({
-          success: false,
-          message: 'Start date must be before end date'
-        });
-      }
-    }
-    
-    if (Object.keys(allowedUpdates).length === 0) {
-      return res.status(400).json({
+
+    // Check permissions
+    if (req.user.role !== 'admin' && task.assigned_to.toString() !== req.user.id) {
+      return res.status(403).json({
         success: false,
-        message: 'No valid updates provided'
+        message: 'You can only update your own tasks'
       });
     }
+
+    const updates = req.body;
+    const allowedUpdates = ['status', 'comments', 'priority', 'deadline', 'start_date', 'end_date'];
     
-    // Update task
-    await localDB.updateTask(id, allowedUpdates);
-    
-    // Get updated task
-    const updatedTask = await localDB.getTaskById(id);
-    
-    // Log activity
-    const actionDetails = Object.keys(allowedUpdates).map(key => 
-      `${key}: ${allowedUpdates[key]}`
-    ).join(', ');
-    
-    await localDB.logActivity({
-      userId: req.user.id,
-      action: 'task_updated',
-      resourceType: 'task',
-      resourceId: id,
-      details: `Updated task (${actionDetails})`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    Object.keys(updates).forEach(key => {
+      if (allowedUpdates.includes(key) && updates[key] !== undefined) {
+        // Convert date strings to Date objects
+        if (['deadline', 'start_date', 'end_date'].includes(key)) {
+          task[key] = new Date(updates[key]);
+        } else {
+          task[key] = updates[key];
+        }
+      }
     });
-    
-    console.log(`✅ Task ${id} updated successfully`);
-    
+
+    // Mark as completed if status is completed
+    if (updates.status === 'completed' && !task.completed_at) {
+      task.completed_at = new Date();
+    }
+
+    task.updated_at = new Date();
+    await task.save();
+
+    // Populate user details for response
+    await task.populate([
+      { path: 'assigned_to', select: 'name email role' },
+      { path: 'assigned_by', select: 'name email role' }
+    ]);
+
+    await ActivityLog.create({
+      user_id: req.user.id,
+      action: 'task_updated',
+      resource_type: 'task',
+      resource_id: req.params.id,
+      details: `Updated task: ${task.activity}`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
+    });
+
     res.json({
       success: true,
-      data: updatedTask,
+      data: {
+        _id: task._id.toString(),
+        id: task._id.toString(),
+        assigned_to: {
+          _id: task.assigned_to._id.toString(),
+          name: task.assigned_to.name,
+          email: task.assigned_to.email,
+          role: task.assigned_to.role
+        },
+        assigned_by: {
+          _id: task.assigned_by._id.toString(),
+          name: task.assigned_by.name,
+          email: task.assigned_by.email,
+          role: task.assigned_by.role
+        },
+        scope: task.scope,
+        activity: task.activity,
+        source: task.source,
+        start_date: task.start_date.toISOString(),
+        end_date: task.end_date.toISOString(),
+        deadline: task.deadline.toISOString(),
+        comments: task.comments,
+        priority: task.priority,
+        status: task.status,
+        days_until_deadline: getDaysUntilDeadline(task.deadline),
+        created_at: task.created_at,
+        updated_at: task.updated_at
+      },
       message: 'Task updated successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Update task error:', error);
+    console.error('Update task error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update task'
@@ -446,56 +483,53 @@ const updateTask = async (req, res) => {
   }
 };
 
-// @desc    Delete task (Admin only)
+// @desc    Delete task
 // @route   DELETE /api/tasks/:id
 // @access  Private (Admin only)
 const deleteTask = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    console.log('🗑️ Deleting task:', id, 'by admin:', req.user.email);
-    
-    // Get task to verify access
-    const task = await localDB.getTaskById(id);
-    
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid task ID format'
+      });
+    }
+
+    const task = await Task.findById(req.params.id);
+
     if (!task) {
       return res.status(404).json({
         success: false,
         message: 'Task not found'
       });
     }
-    
-    // Check if user can delete (admin only, same organisation)
+
     if (task.organisation_id !== req.organisationId) {
       return res.status(403).json({
         success: false,
-        message: 'You can only delete tasks in your organisation'
+        message: 'You do not have access to this task'
       });
     }
-    
-    // Delete task
-    await localDB.deleteTask(id);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    await Task.findByIdAndDelete(req.params.id);
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'task_deleted',
-      resourceType: 'task',
-      resourceId: id,
-      details: `Deleted task: ${task.activity} (assigned to ${task.assigned_to_name})`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      resource_type: 'task',
+      resource_id: req.params.id,
+      details: `Deleted task: ${task.activity}`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ Task ${id} deleted successfully`);
-    
+
     res.json({
       success: true,
       message: 'Task deleted successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Delete task error:', error);
+    console.error('Delete task error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete task'
@@ -508,27 +542,38 @@ const deleteTask = async (req, res) => {
 // @access  Private
 const getTaskStats = async (req, res) => {
   try {
-    console.log('📊 Getting task stats for user:', req.user.email, 'org:', req.organisationId);
-    
-    let stats;
-    
-    if (req.user.role === 'admin') {
-      // Admin gets organisation-wide stats
-      stats = await localDB.getTaskStats(req.organisationId);
-    } else {
-      // Contributors get their own stats
-      stats = await localDB.getTaskStats(req.organisationId, req.user.id);
+    const query = { organisation_id: req.organisationId };
+
+    if (req.user.role !== 'admin') {
+      query.assigned_to = new mongoose.Types.ObjectId(req.user.id);
     }
-    
+
+    const total = await Task.countDocuments(query);
+    const pending = await Task.countDocuments({ ...query, status: 'pending' });
+    const in_progress = await Task.countDocuments({ ...query, status: 'in_progress' });
+    const completed = await Task.countDocuments({ ...query, status: 'completed' });
+
+    // Overdue tasks
+    const now = new Date();
+    const overdueTasks = await Task.countDocuments({
+      ...query,
+      deadline: { $lt: now },
+      status: { $ne: 'completed' }
+    });
+
     res.json({
       success: true,
-      data: stats,
-      user_role: req.user.role,
-      organisation: req.organisation?.name || 'N/A'
+      data: {
+        total,
+        pending,
+        in_progress,
+        completed,
+        overdue: overdueTasks
+      }
     });
-    
+
   } catch (error) {
-    console.error('❌ Get task stats error:', error);
+    console.error('Get task stats error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch task statistics'
@@ -536,107 +581,86 @@ const getTaskStats = async (req, res) => {
   }
 };
 
-// @desc    Get users available for task assignment (Admin only)
+// @desc    Get assignable users
 // @route   GET /api/tasks/assignable-users
 // @access  Private (Admin only)
 const getAssignableUsers = async (req, res) => {
-    try {
-      console.log('👥 Getting assignable users for org:', req.organisationId);
-      
-      // Get all active users in the organisation (excluding admin user)
-      const users = await localDB.getAllUsers({
-        status: 'active',
-        organisation_id: req.organisationId
-      });
-      
-      if (!users) {
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to fetch users'
-        });
-      }
-      
-      // Filter to contributors and analysts (users who can be assigned tasks)
-      const assignableUsers = users
-        .filter(user => 
-          ['contributor', 'analyst'].includes(user.role) && 
-          user.id !== req.user.id // Don't include the admin themselves
-        )
-        .map(user => {
-          // Parse restrictions if it's a string
-          let restrictions = null;
-          if (user.restrictions) {
-            try {
-              restrictions = typeof user.restrictions === 'string' 
-                ? JSON.parse(user.restrictions) 
-                : user.restrictions;
-            } catch (e) {
-              console.warn(`Failed to parse restrictions for user ${user.id}:`, e);
-              restrictions = null;
-            }
-          }
-          
-          return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            restrictions: restrictions,
-            allowedScopes: restrictions?.allowedScopes || [1, 2, 3],
-            allowedActivities: restrictions?.allowedActivities || null
-          };
-        });
-      
-      console.log(`✅ Found ${assignableUsers.length} assignable users`);
-      console.log('📋 Users:', assignableUsers.map(u => ({ id: u.id, name: u.name, role: u.role })));
-      
-      res.json({
-        success: true,
-        data: assignableUsers,
-        total: assignableUsers.length,
-        organisation: req.organisation?.name || 'N/A'
-      });
-      
-    } catch (error) {
-      console.error('❌ Get assignable users error:', error);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to fetch assignable users'
-      });
-    }
-  };
-  
-  module.exports = { getAssignableUsers };
+  try {
+    const users = await User.find({
+      organisation_id: req.organisationId,
+      status: 'active'
+    }).select('name email role restrictions');
 
-// @desc    Get tasks due soon (for notifications)
+    const assignableUsers = users.map(user => ({
+      id: user._id.toString(),
+      _id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      restrictions: user.restrictions
+    }));
+
+    res.json({
+      success: true,
+      data: assignableUsers
+    });
+
+  } catch (error) {
+    console.error('Get assignable users error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch assignable users'
+    });
+  }
+};
+
+// @desc    Get tasks due soon
 // @route   GET /api/tasks/due-soon
 // @access  Private
 const getTasksDueSoon = async (req, res) => {
   try {
-    const { days = 3 } = req.query;
-    
-    console.log(`⏰ Getting tasks due within ${days} days for org:`, req.organisationId);
-    
-    let tasks;
-    
-    if (req.user.role === 'admin') {
-      // Admin gets all tasks due soon in organisation
-      tasks = await localDB.getTasksDueSoon(parseInt(days), req.organisationId);
-    } else {
-      // Contributors get their own tasks due soon
-      tasks = await localDB.getTasksDueSoon(parseInt(days), req.organisationId);
-      tasks = tasks.filter(task => task.assigned_to === req.user.id);
+    const { days = 7 } = req.query;
+    const now = new Date();
+    const daysAhead = new Date();
+    daysAhead.setDate(daysAhead.getDate() + parseInt(days));
+
+    const query = {
+      organisation_id: req.organisationId,
+      deadline: { $lte: daysAhead, $gte: now },
+      status: { $ne: 'completed' }
+    };
+
+    if (req.user.role !== 'admin') {
+      query.assigned_to = new mongoose.Types.ObjectId(req.user.id);
     }
-    
+
+    const tasks = await Task.find(query)
+      .populate('assigned_to', 'name email')
+      .sort({ deadline: 1 })
+      .limit(10);
+
+    const transformedTasks = tasks.map(task => ({
+      _id: task._id.toString(),
+      id: task._id.toString(),
+      activity: task.activity,
+      deadline: task.deadline.toISOString(),
+      assigned_to: {
+        _id: task.assigned_to._id.toString(),
+        name: task.assigned_to.name,
+        email: task.assigned_to.email
+      },
+      days_until_deadline: getDaysUntilDeadline(task.deadline),
+      priority: task.priority,
+      status: task.status
+    }));
+
     res.json({
       success: true,
-      data: tasks,
-      total: tasks.length,
-      days: parseInt(days)
+      data: transformedTasks
     });
-    
+
   } catch (error) {
-    console.error('❌ Get tasks due soon error:', error);
+    console.error('Get tasks due soon error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch tasks due soon'

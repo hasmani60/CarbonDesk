@@ -1,4 +1,5 @@
-// backend/database/localDB.js - Complete SQLite Local Database with Multi-Tenant Support
+// backend/database/localDB.js — Legacy SQLite helpers for local tooling / old scripts only.
+// Production APIs use MongoDB via Mongoose; do not wire this module into Express routes.
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const path = require('path');

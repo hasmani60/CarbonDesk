@@ -1,24 +1,23 @@
-// backend/models/CompanyOperator.js - MongoDB Company Operator Schema
+// backend/models/CompanyOperator.js - FIXED to match actual MongoDB collection name
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
 const companyOperatorSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Name is required'],
+    required: true,
     trim: true
   },
   email: {
     type: String,
-    required: [true, 'Email is required'],
+    required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    index: true
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
-    select: false
+    required: true
   },
   role: {
     type: String,
@@ -39,7 +38,8 @@ const companyOperatorSchema = new mongoose.Schema({
   },
   is_active: {
     type: Boolean,
-    default: true
+    default: true,
+    index: true
   },
   last_login: Date,
   failed_login_attempts: {
@@ -47,46 +47,11 @@ const companyOperatorSchema = new mongoose.Schema({
     default: 0
   },
   locked_until: Date,
-  created_by: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'CompanyOperator'
-  },
-  notes: String,
-  created_at: {
-    type: Date,
-    default: Date.now
-  },
-  updated_at: {
-    type: Date,
-    default: Date.now
-  }
+  created_by: Number,
+  notes: String
 }, {
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  collection: 'company_operators' // FIXED: Explicitly set collection name to match MongoDB
 });
-
-// Hash password before saving
-companyOperatorSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Method to compare passwords
-companyOperatorSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
-// Don't return password in JSON
-companyOperatorSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
-};
 
 module.exports = mongoose.model('CompanyOperator', companyOperatorSchema);

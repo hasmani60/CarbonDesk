@@ -1,23 +1,16 @@
-// backend/routes/organisation.js
+// routes/organisation.js - MongoDB-compatible organisation routes
 const express = require('express');
 const router = express.Router();
-const organisationController = require('../controllers/organisationController');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const { addOrganisationContext, requireOrganisation } = require('../middleware/organisationScope');
+const { requireAdmin } = require('../middleware/auth');
+const { 
+  getOrganisationDetails, 
+  updateOrganisationDetails 
+} = require('../controllers/organisationController');
 
-// All routes require authentication and organisation context
-router.use(authenticateToken);
-router.use(addOrganisationContext);
-router.use(requireOrganisation);
+// All routes protected by authenticateToken + addOrganisationContext + requireOrganisation in server.js
 
-// @route   GET /api/organisation/details
-// @desc    Get organisation details
-// @access  Admin only
-router.get('/details', requireAdmin, organisationController.getOrganisationDetails);
-
-// @route   PATCH /api/organisation/details
-// @desc    Update organisation details
-// @access  Admin only
-router.patch('/details', requireAdmin, organisationController.updateOrganisationDetails);
+// Any authenticated user in an organisation can view (server stack adds organisation context)
+router.get('/details', getOrganisationDetails);
+router.patch('/details', requireAdmin, updateOrganisationDetails);
 
 module.exports = router;

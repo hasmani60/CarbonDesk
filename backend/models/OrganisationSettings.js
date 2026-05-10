@@ -1,13 +1,13 @@
-// backend/models/OrganisationSettings.js - MongoDB Organisation Settings Schema
+// backend/models/OrganisationSettings.js
 const mongoose = require('mongoose');
 
 const organisationSettingsSchema = new mongoose.Schema({
   organisation_id: {
     type: String,
-    required: [true, 'Organisation ID is required'],
+    required: true,
     unique: true,
-    ref: 'Organisation',
-    index: true
+    index: true,
+    ref: 'Organisation'
   },
   logo_url: String,
   primary_color: {
@@ -20,7 +20,7 @@ const organisationSettingsSchema = new mongoose.Schema({
   },
   default_reporting_period: {
     type: String,
-    enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
+    enum: ['monthly', 'quarterly', 'yearly'],
     default: 'monthly'
   },
   fiscal_year_start: {
@@ -47,18 +47,13 @@ const organisationSettingsSchema = new mongoose.Schema({
     type: [String],
     default: ['analytics', 'reporting']
   },
-  notification_settings: mongoose.Schema.Types.Mixed,
+  notification_settings: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   data_retention_days: {
     type: Number,
     default: 365
-  },
-  created_at: {
-    type: Date,
-    default: Date.now
-  },
-  updated_at: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }

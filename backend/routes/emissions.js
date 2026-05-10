@@ -1,6 +1,6 @@
 // backend/routes/emissions.js - Updated with new emission factors endpoints
 const express = require('express');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, authorizeRoles } = require('../middleware/auth');
 const {
   getEmissions,
   getEmissionById,
@@ -12,7 +12,8 @@ const {
   getEmissionCategories,
   getEmissionFactors,
   getUserAllowedActivities,
-  getDiagnostics
+  getDiagnostics,
+  syncEmissionsToActivities
 } = require('../controllers/emissionController');
 
 const router = express.Router();
@@ -24,12 +25,15 @@ router.get('/factors', getEmissionFactors);
 router.get('/user/allowed-activities', getUserAllowedActivities);
 router.get('/diagnostics', getDiagnostics);
 
+// Sync endpoint (admin only)
+router.post('/sync-to-activities', requireAdmin, syncEmissionsToActivities);
+
 // CRUD operations
 router.get('/', getEmissions);
 router.get('/:id', getEmissionById);
 router.post('/', createEmission);
 router.patch('/:id', updateEmission);
-router.patch('/:id/verify', requireAdmin, verifyEmission);
+router.patch('/:id/verify', authorizeRoles('admin', 'analyst'), verifyEmission);
 router.delete('/:id', deleteEmission);
 
 module.exports = router;

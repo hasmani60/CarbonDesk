@@ -1,39 +1,54 @@
-// backend/controllers/userController.js
-// Complete user controller with RBAC restrictions support
+// controllers/userController.js - Fixed to use req.user.organisation_id
+const { User, ActivityLog } = require('../models');
+const bcrypt = require('bcryptjs');
 
-const localDB = require('../database/localDB');
-const { scopeQuery } = require('../middleware/organisationScope');
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(12);
+  return bcrypt.hash(password, salt);
+};
+
+// Helper function to get organisation ID from request
+const getOrganisationId = (req) => {
+  return req.organisationId || req.user?.organisation_id || req.user?.organizationId;
+};
 
 // @desc    Get all users (scoped to organisation)
 // @route   GET /api/users
 // @access  Private (Admin, Analyst)
 const getUsers = async (req, res) => {
   try {
-    console.log('👥 Getting users for org:', req.organisationId, 'by:', req.user.email);
+    const organisationId = getOrganisationId(req);
     
-    // Build filters
-    const filters = {
-      role: req.query.role,
-      status: req.query.status,
-      search: req.query.search,
-      limit: req.query.limit ? parseInt(req.query.limit) : undefined
+    const query = {
+      organisation_id: organisationId
     };
-    
-    // ADD ORGANISATION FILTER (Critical!)
-    if (req.organisationId) {
-      filters.organisation_id = req.organisationId;
-      console.log('🔒 Filtering users by organisation:', req.organisationId);
-    } else {
-      console.warn('⚠️  No organisation filter - user may see all users!');
+
+    if (req.query.role && req.query.role !== 'all') {
+      query.role = req.query.role;
     }
-    
-    // Get users from database
-    const users = await localDB.getAllUsers(filters);
-    
-    // Remove sensitive data (password already excluded by getAllUsers)
+
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
+    }
+
+    if (req.query.search) {
+      query.$or = [
+        { name: new RegExp(req.query.search, 'i') },
+        { email: new RegExp(req.query.search, 'i') }
+      ];
+    }
+
+    let usersQuery = User.find(query).select('-password');
+
+    if (req.query.limit) {
+      usersQuery = usersQuery.limit(parseInt(req.query.limit));
+    }
+
+    const users = await usersQuery.sort({ created_at: -1 });
+
     const sanitizedUsers = users.map(user => ({
-      id: user.id,
-      _id: user.id, // Add _id for frontend compatibility
+      id: user._id.toString(),
+      _id: user._id.toString(),
       name: user.name,
       email: user.email,
       role: user.role,
@@ -43,29 +58,16 @@ const getUsers = async (req, res) => {
       createdAt: user.created_at,
       created_at: user.created_at,
       lastLogin: user.last_login,
-      last_login: user.last_login,
-      statistics: {
-        totalActivities: 0,
-        lastActivity: user.last_login
-      }
+      last_login: user.last_login
     }));
-    
-    console.log(`✅ Found ${sanitizedUsers.length} users in organisation: ${req.organisation?.name}`);
-    
+
     res.json({
       success: true,
       data: sanitizedUsers,
-      total: sanitizedUsers.length,
-      organisation: req.organisation?.name || 'N/A',
-      filters: {
-        role: filters.role,
-        status: filters.status,
-        search: filters.search
-      }
+      total: sanitizedUsers.length
     });
-    
+
   } catch (error) {
-    console.error('❌ Get users error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch users'
@@ -78,49 +80,42 @@ const getUsers = async (req, res) => {
 // @access  Private
 const getUserById = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    console.log('🔍 Getting user:', id, 'for org:', req.organisationId);
-    
-    // Get user
-    const user = await localDB.findUserById(id);
-    
+    const user = await User.findById(req.params.id).select('-password');
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    // Check if user belongs to same organisation
-    if (user.organisation_id !== req.organisationId) {
+
+    const organisationId = getOrganisationId(req);
+
+    // Check organisation access
+    if (user.organisation_id !== organisationId) {
       return res.status(403).json({
         success: false,
         message: 'You do not have access to this user'
       });
     }
-    
-    // Remove sensitive data
-    const sanitizedUser = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      organisation_id: user.organisation_id,
-      restrictions: user.restrictions,
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-      last_login: user.last_login
-    };
-    
+
     res.json({
       success: true,
-      data: sanitizedUser
+      data: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        organisation_id: user.organisation_id,
+        restrictions: user.restrictions,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_login: user.last_login
+      }
     });
-    
+
   } catch (error) {
-    console.error('❌ Get user by ID error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch user'
@@ -128,35 +123,30 @@ const getUserById = async (req, res) => {
   }
 };
 
-// @desc    Create new user (admin only, scoped to organisation)
+// @desc    Create new user
 // @route   POST /api/users
 // @access  Private (Admin only)
 const createUser = async (req, res) => {
   try {
-    console.log('➕ Creating user for org:', req.organisationId, 'by admin:', req.user.email);
-    console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
-    
-    const { 
-      name, 
-      email, 
-      password, 
-      role, 
+    const {
+      name,
+      email,
+      password,
+      role,
       status,
       allowedScopes,
       allowedActivities,
       restrictedPages,
-      restrictions // Also support restrictions object directly
+      restrictions
     } = req.body;
-    
-    // Validate required fields
+
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Name, email, and password are required'
       });
     }
-    
-    // Validate email format
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
@@ -164,16 +154,14 @@ const createUser = async (req, res) => {
         message: 'Invalid email format'
       });
     }
-    
-    // Validate password length
+
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
         message: 'Password must be at least 6 characters long'
       });
     }
-    
-    // Validate role
+
     const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({
@@ -181,99 +169,74 @@ const createUser = async (req, res) => {
         message: `Invalid role. Must be one of: ${validRoles.join(', ')}`
       });
     }
-    
-    // Check if email already exists
-    const existingUser = await localDB.findUserByEmail(email);
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
       });
     }
-    
-    // CRITICAL: Build restrictions object properly
+
+    // Build restrictions object
     let userRestrictions = null;
-    
-    // If restrictions object is provided directly, use it
+
     if (restrictions && typeof restrictions === 'object') {
       userRestrictions = restrictions;
-    } 
-    // Otherwise, build from individual fields (frontend sends these)
-    else if ((role || 'contributor') === 'contributor') {
-      // Only create restrictions object if at least one restriction is provided
+    } else if ((role || 'contributor') === 'contributor') {
       if (allowedScopes || allowedActivities || restrictedPages) {
         userRestrictions = {
           allowedScopes: Array.isArray(allowedScopes) ? allowedScopes : [],
           allowedActivities: Array.isArray(allowedActivities) ? allowedActivities : [],
           restrictedPages: Array.isArray(restrictedPages) ? restrictedPages : []
         };
-        
-        console.log('🔒 Built restrictions object:', JSON.stringify(userRestrictions, null, 2));
       }
     }
-    
-    // Prepare user data
-    const userData = {
+
+    const hashedPassword = await hashPassword(password);
+    const organisationId = getOrganisationId(req);
+
+    const newUser = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
-      password,
+      password: hashedPassword,
       role: role || 'contributor',
       status: status || 'active',
-      restrictions: userRestrictions, // CRITICAL: Pass restrictions here
-      organisation_id: req.organisationId // CRITICAL: Add organisation
-    };
-    
-    console.log('🔐 Creating user with data:', {
-      name: userData.name,
-      email: userData.email,
-      role: userData.role,
-      status: userData.status,
-      organisation_id: userData.organisation_id,
-      restrictions: userData.restrictions
+      restrictions: userRestrictions,
+      organisation_id: organisationId,
+      email_verified: true
     });
-    
-    // Create user
-    const newUser = await localDB.createUser(userData);
-    
-    console.log('✅ User created in database with ID:', newUser.id);
-    console.log('🔒 Restrictions saved:', JSON.stringify(newUser.restrictions, null, 2));
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'user_created',
-      resourceType: 'user',
-      resourceId: newUser.id,
+      resource_type: 'user',
+      resource_id: newUser._id.toString(),
       details: `Created user: ${newUser.name} (${newUser.email}) with role: ${newUser.role}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    // Remove password from response
+
     const sanitizedUser = {
-      id: newUser.id,
-      _id: newUser.id, // Add _id for frontend compatibility
+      id: newUser._id.toString(),
+      _id: newUser._id.toString(),
       name: newUser.name,
       email: newUser.email,
       role: newUser.role,
       status: newUser.status,
       organisation_id: newUser.organisation_id,
-      restrictions: newUser.restrictions, // CRITICAL: Include restrictions in response
+      restrictions: newUser.restrictions,
       createdAt: newUser.created_at,
       created_at: newUser.created_at
     };
-    
-    console.log(`✅ User created successfully: ${newUser.email} for organisation: ${req.organisation?.name}`);
-    console.log('📤 Sending response with restrictions:', JSON.stringify(sanitizedUser.restrictions, null, 2));
-    
+
     res.status(201).json({
       success: true,
       data: sanitizedUser,
       message: 'User created successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Create user error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create user'
@@ -288,10 +251,7 @@ const updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
     const { role } = req.body;
-    
-    console.log('✏️ Updating user role:', id, 'to:', role, 'by admin:', req.user.email);
-    
-    // Validate role
+
     const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
@@ -299,68 +259,68 @@ const updateUserRole = async (req, res) => {
         message: `Invalid role. Must be one of: ${validRoles.join(', ')}`
       });
     }
-    
-    // Get user to check organisation
-    const user = await localDB.findUserById(id);
-    
+
+    const user = await User.findById(id);
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    // Check if user belongs to same organisation
-    if (user.organisation_id !== req.organisationId) {
+
+    const organisationId = getOrganisationId(req);
+
+    // MongoDB compatibility: Ensure both are strings
+    const userOrgId = String(user.organisation_id);
+    const reqOrgId = String(organisationId);
+
+    if (userOrgId !== reqOrgId) {
+      console.log('❌ Update Role - Organisation mismatch!');
+      console.log('  User org:', userOrgId);
+      console.log('  Request org:', reqOrgId);
       return res.status(403).json({
         success: false,
         message: 'You can only update users in your organisation'
       });
     }
-    
-    // Prevent admin from changing their own role
-    if (parseInt(id) === req.user.id) {
+
+    if (id === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'You cannot change your own role'
       });
     }
-    
-    // Update role
-    await localDB.updateUser(id, { role });
-    
-    // Get updated user
-    const updatedUser = await localDB.findUserById(id);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    user.role = role;
+    user.updated_at = new Date();
+    await user.save();
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'user_role_updated',
-      resourceType: 'user',
-      resourceId: id,
-      details: `Updated user ${user.email} role from ${user.role} to ${role}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      resource_type: 'user',
+      resource_id: id,
+      details: `Updated user ${user.email} role to ${role}`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ User role updated: ${user.email} -> ${role}`);
-    
+
     res.json({
       success: true,
       data: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        status: updatedUser.status,
-        organisation_id: updatedUser.organisation_id,
-        restrictions: updatedUser.restrictions
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        organisation_id: user.organisation_id,
+        restrictions: user.restrictions
       },
       message: 'User role updated successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Update user role error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update user role'
@@ -374,86 +334,57 @@ const updateUserRole = async (req, res) => {
 const updateUserRestrictions = async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      restrictions,
-      allowedScopes,
-      allowedActivities,
-      restrictedPages
-    } = req.body;
-    
-    console.log('✏️ Updating user restrictions:', id, 'by admin:', req.user.email);
-    console.log('📦 Received data:', JSON.stringify(req.body, null, 2));
-    
-    // Get user to check organisation
-    const user = await localDB.findUserById(id);
-    
+    const { restrictions } = req.body;
+
+    const user = await User.findById(id);
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    // Check if user belongs to same organisation
-    if (user.organisation_id !== req.organisationId) {
+
+    const organisationId = getOrganisationId(req);
+
+    // MongoDB compatibility: Ensure both are strings
+    const userOrgId = String(user.organisation_id);
+    const reqOrgId = String(organisationId);
+
+    if (userOrgId !== reqOrgId) {
       return res.status(403).json({
         success: false,
         message: 'You can only update users in your organisation'
       });
     }
-    
-    // Build restrictions object
-    let userRestrictions = null;
-    
-    // If restrictions object is provided directly, use it
-    if (restrictions && typeof restrictions === 'object') {
-      userRestrictions = restrictions;
-    }
-    // Otherwise, build from individual fields
-    else if (allowedScopes || allowedActivities || restrictedPages) {
-      userRestrictions = {
-        allowedScopes: Array.isArray(allowedScopes) ? allowedScopes : [],
-        allowedActivities: Array.isArray(allowedActivities) ? allowedActivities : [],
-        restrictedPages: Array.isArray(restrictedPages) ? restrictedPages : []
-      };
-    }
-    
-    console.log('🔒 Updating to restrictions:', JSON.stringify(userRestrictions, null, 2));
-    
-    // Update restrictions
-    await localDB.updateUser(id, { restrictions: userRestrictions });
-    
-    // Get updated user
-    const updatedUser = await localDB.findUserById(id);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    user.restrictions = restrictions;
+    user.updated_at = new Date();
+    await user.save();
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'user_restrictions_updated',
-      resourceType: 'user',
-      resourceId: id,
+      resource_type: 'user',
+      resource_id: id,
       details: `Updated restrictions for user ${user.email}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ User restrictions updated: ${user.email}`);
-    console.log('🔒 New restrictions:', JSON.stringify(updatedUser.restrictions, null, 2));
-    
+
     res.json({
       success: true,
       data: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        restrictions: updatedUser.restrictions
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        restrictions: user.restrictions
       },
       message: 'User restrictions updated successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Update user restrictions error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update user restrictions'
@@ -468,77 +399,85 @@ const updateUserStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
-    console.log('✏️ Updating user status:', id, 'to:', status, 'by admin:', req.user.email);
-    
-    // Validate status
-    const validStatuses = ['active', 'inactive', 'suspended'];
+
+    const validStatuses = ['active', 'inactive', 'deleted'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
         message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
       });
     }
-    
-    // Get user to check organisation
-    const user = await localDB.findUserById(id);
-    
+
+    const user = await User.findById(id);
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    // Check if user belongs to same organisation
-    if (user.organisation_id !== req.organisationId) {
+
+    const organisationId = getOrganisationId(req);
+
+    console.log('🔍 Update User Status - Organisation Check:');
+    console.log('  User organisation_id:', user.organisation_id);
+    console.log('  Request organisationId (from helper):', organisationId);
+    console.log('  req.organisationId:', req.organisationId);
+    console.log('  req.user.organisation_id:', req.user?.organisation_id);
+
+    // MongoDB compatibility: Ensure both are strings
+    const userOrgId = String(user.organisation_id);
+    const reqOrgId = String(organisationId);
+
+    if (userOrgId !== reqOrgId) {
+      console.log('❌ Organisation mismatch!');
+      console.log('  User org (string):', userOrgId);
+      console.log('  Request org (string):', reqOrgId);
       return res.status(403).json({
         success: false,
         message: 'You can only update users in your organisation'
       });
     }
-    
-    // Prevent admin from deactivating themselves
-    if (parseInt(id) === req.user.id && status !== 'active') {
+
+    if (id === req.user.id && status !== 'active') {
       return res.status(400).json({
         success: false,
         message: 'You cannot deactivate your own account'
       });
     }
-    
-    // Update status
-    await localDB.updateUser(id, { status });
-    
-    // Get updated user
-    const updatedUser = await localDB.findUserById(id);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    user.status = status;
+    user.updated_at = new Date();
+    await user.save();
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'user_status_updated',
-      resourceType: 'user',
-      resourceId: id,
-      details: `Updated user ${user.email} status from ${user.status} to ${status}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      resource_type: 'user',
+      resource_id: id,
+      details: `Updated user ${user.email} status to ${status}`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ User status updated: ${user.email} -> ${status}`);
-    
+
+    console.log('✅ User status updated successfully');
+
     res.json({
       success: true,
       data: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        status: updatedUser.status
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        organisation_id: user.organisation_id,
+        restrictions: user.restrictions
       },
       message: 'User status updated successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Update user status error:', error);
+    console.error('❌ Error updating user status:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update user status'
@@ -552,58 +491,57 @@ const updateUserStatus = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    console.log('🗑️ Deleting user:', id, 'by admin:', req.user.email);
-    
-    // Get user to check organisation
-    const user = await localDB.findUserById(id);
-    
+
+    const user = await User.findById(id);
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
-    // Check if user belongs to same organisation
-    if (user.organisation_id !== req.organisationId) {
+
+    const organisationId = getOrganisationId(req);
+
+    // MongoDB compatibility: Ensure both are strings
+    const userOrgId = String(user.organisation_id);
+    const reqOrgId = String(organisationId);
+
+    if (userOrgId !== reqOrgId) {
+      console.log('❌ Delete User - Organisation mismatch!');
+      console.log('  User org:', userOrgId);
+      console.log('  Request org:', reqOrgId);
       return res.status(403).json({
         success: false,
         message: 'You can only delete users in your organisation'
       });
     }
-    
-    // Prevent admin from deleting themselves
-    if (parseInt(id) === req.user.id) {
+
+    if (id === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'You cannot delete your own account'
       });
     }
-    
-    // Soft delete (set status to inactive)
-    await localDB.deleteUser(id);
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+
+    await User.findByIdAndDelete(id);
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'user_deleted',
-      resourceType: 'user',
-      resourceId: id,
-      details: `Deleted user: ${user.email}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      resource_type: 'user',
+      resource_id: id,
+      details: `Deleted user: ${user.name} (${user.email})`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-    
-    console.log(`✅ User deleted: ${user.email}`);
-    
+
     res.json({
       success: true,
       message: 'User deleted successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Delete user error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete user'
@@ -611,45 +549,110 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// @desc    Get user statistics (scoped to organisation)
+// @desc    Get user activities
+// @route   GET /api/users/:id/activities
+// @access  Private (Admin only)
+const getUserActivities = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const organisationId = getOrganisationId(req);
+
+    // MongoDB compatibility: Ensure both are strings
+    const userOrgId = String(user.organisation_id);
+    const reqOrgId = String(organisationId);
+
+    if (userOrgId !== reqOrgId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only view activities for users in your organisation'
+      });
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const activities = await ActivityLog.find({ user_id: id })
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await ActivityLog.countDocuments({ user_id: id });
+
+    const formattedActivities = activities.map(activity => ({
+      _id: activity._id.toString(),
+      action: activity.action,
+      resourceType: activity.resource_type,
+      resourceId: activity.resource_id,
+      details: activity.details,
+      ipAddress: activity.ip_address,
+      userAgent: activity.user_agent,
+      createdAt: activity.created_at
+    }));
+
+    res.json({
+      success: true,
+      data: formattedActivities,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        totalItems: total,
+        itemsPerPage: parseInt(limit)
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch user activities'
+    });
+  }
+};
+
+// @desc    Get user statistics
 // @route   GET /api/users/stats
 // @access  Private (Admin, Analyst)
 const getUserStats = async (req, res) => {
   try {
-    console.log('📊 Getting user stats for org:', req.organisationId);
+    const organisationId = getOrganisationId(req);
     
-    // Get stats scoped to organisation
-    const stats = await new Promise((resolve, reject) => {
-      localDB.db.get(
-        `SELECT 
-          COUNT(*) as totalUsers,
-          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeUsers,
-          SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactiveUsers,
-          SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) as suspendedUsers,
-          SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as adminUsers,
-          SUM(CASE WHEN role = 'analyst' THEN 1 ELSE 0 END) as analystUsers,
-          SUM(CASE WHEN role = 'contributor' THEN 1 ELSE 0 END) as contributorUsers,
-          SUM(CASE WHEN role = 'viewer' THEN 1 ELSE 0 END) as viewerUsers
-        FROM users
-        WHERE organisation_id = ?`,
-        [req.organisationId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    });
+    const totalUsers = await User.countDocuments({ organisation_id: organisationId });
+    const activeUsers = await User.countDocuments({ organisation_id: organisationId, status: 'active' });
+    const inactiveUsers = await User.countDocuments({ organisation_id: organisationId, status: 'inactive' });
+    const deletedUsers = await User.countDocuments({ organisation_id: organisationId, status: 'deleted' });
     
+    const adminUsers = await User.countDocuments({ organisation_id: organisationId, role: 'admin' });
+    const analystUsers = await User.countDocuments({ organisation_id: organisationId, role: 'analyst' });
+    const contributorUsers = await User.countDocuments({ organisation_id: organisationId, role: 'contributor' });
+    const viewerUsers = await User.countDocuments({ organisation_id: organisationId, role: 'viewer' });
+
+    const stats = {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      suspendedUsers: deletedUsers,
+      adminUsers,
+      analystUsers,
+      contributorUsers,
+      viewerUsers
+    };
+
     res.json({
       success: true,
       data: {
         overview: stats
-      },
-      organisation: req.organisation?.name || 'N/A'
+      }
     });
-    
+
   } catch (error) {
-    console.error('❌ Get user stats error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch user statistics'
@@ -657,7 +660,7 @@ const getUserStats = async (req, res) => {
   }
 };
 
-// @desc    Get RBAC options (roles and restrictions)
+// @desc    Get RBAC options
 // @route   GET /api/users/rbac-options
 // @access  Private (Admin)
 const getRBACOptions = async (req, res) => {
@@ -698,31 +701,30 @@ const getRBACOptions = async (req, res) => {
         {
           key: 'allowedScopes',
           label: 'Allowed Scopes',
-          description: 'Restrict which emission scopes the user can access',
-          type: 'array'
+          description: 'Limit which emission scopes the user can access',
+          type: 'multi-select'
         },
         {
           key: 'allowedActivities',
           label: 'Allowed Activities',
-          description: 'Restrict which activities the user can work with',
-          type: 'array'
+          description: 'Limit which activities the user can perform',
+          type: 'multi-select'
         },
         {
           key: 'restrictedPages',
           label: 'Restricted Pages',
           description: 'Pages the user cannot access',
-          type: 'array'
+          type: 'multi-select'
         }
       ]
     };
-    
+
     res.json({
       success: true,
       data: rbacOptions
     });
-    
+
   } catch (error) {
-    console.error('❌ Get RBAC options error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch RBAC options'
@@ -736,81 +738,88 @@ const getRBACOptions = async (req, res) => {
 const bulkUpdateUsers = async (req, res) => {
   try {
     const { userIds, updates } = req.body;
-    
-    console.log('📦 Bulk updating users:', userIds, 'by admin:', req.user.email);
-    
+
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'userIds array is required'
       });
     }
-    
+
     if (!updates || typeof updates !== 'object') {
       return res.status(400).json({
         success: false,
         message: 'updates object is required'
       });
     }
-    
+
+    const organisationId = getOrganisationId(req);
+
     const results = {
       success: [],
       failed: []
     };
-    
+
     // Update each user
     for (const userId of userIds) {
       try {
-        // Get user to check organisation
-        const user = await localDB.findUserById(userId);
-        
+        const user = await User.findById(userId);
+
         if (!user) {
           results.failed.push({ userId, reason: 'User not found' });
           continue;
         }
-        
-        // Check if user belongs to same organisation
-        if (user.organisation_id !== req.organisationId) {
+
+        // MongoDB compatibility: Ensure both are strings
+        const userOrgId = String(user.organisation_id);
+        const reqOrgId = String(organisationId);
+
+        if (userOrgId !== reqOrgId) {
           results.failed.push({ userId, reason: 'Not in your organisation' });
           continue;
         }
-        
+
         // Don't allow updating own account in bulk
-        if (parseInt(userId) === req.user.id) {
+        if (userId === req.user.id) {
           results.failed.push({ userId, reason: 'Cannot update own account' });
           continue;
         }
-        
-        // Update user
-        await localDB.updateUser(userId, updates);
-        results.success.push(userId);
-        
-        // Log activity
-        await localDB.logActivity({
-          userId: req.user.id,
-          action: 'user_bulk_updated',
-          resourceType: 'user',
-          resourceId: userId,
-          details: `Bulk updated user ${user.email}`,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
+
+        // Apply updates
+        Object.keys(updates).forEach(key => {
+          if (key !== '_id' && key !== 'organisation_id' && key !== 'password') {
+            user[key] = updates[key];
+          }
         });
-        
+
+        user.updated_at = new Date();
+        await user.save();
+
+        results.success.push(userId);
+
+        // Log activity
+        await ActivityLog.create({
+          user_id: req.user.id,
+          action: 'user_bulk_updated',
+          resource_type: 'user',
+          resource_id: userId,
+          details: `Bulk updated user ${user.email}`,
+          ip_address: req.ip,
+          user_agent: req.get('User-Agent')
+        });
+
       } catch (error) {
         results.failed.push({ userId, reason: error.message });
       }
     }
-    
-    console.log(`✅ Bulk update complete: ${results.success.length} success, ${results.failed.length} failed`);
-    
+
     res.json({
       success: true,
       data: results,
       message: `Updated ${results.success.length} of ${userIds.length} users`
     });
-    
+
   } catch (error) {
-    console.error('❌ Bulk update error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to bulk update users'
@@ -826,6 +835,7 @@ module.exports = {
   updateUserRestrictions,
   updateUserStatus,
   deleteUser,
+  getUserActivities,
   getUserStats,
   getRBACOptions,
   bulkUpdateUsers

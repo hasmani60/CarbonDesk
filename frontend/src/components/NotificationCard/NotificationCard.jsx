@@ -77,7 +77,7 @@ export const NotificationCard = ({ notification }) => {
           {!notification.read && (
             <button
               onClick={handleMarkAsRead}
-              className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100 rounded transition-colors"
+              className="p-1.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded transition-colors"
               title="Mark as read and remove"
             >
               <Check className="w-4 h-4" />

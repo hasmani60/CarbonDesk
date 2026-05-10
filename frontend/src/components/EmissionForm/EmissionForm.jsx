@@ -1,17 +1,15 @@
-// frontend/src/components/EmissionForm/EmissionForm.jsx - Activity-Based Version
-// UPDATED: Removed emission factor displays from UI while keeping calculations
+// frontend/src/components/EmissionForm/EmissionForm.jsx - MongoDB Compliant Version
+// UPDATED: Uses API calls instead of localStorage
 import { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Lock, AlertCircle, Users, Truck, Gauge } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
-import { saveEmission } from '../../utils/localStorage';
+import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
 
-const EmissionForm = ({ activity, scope, onClose }) => {
+const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const { user } = useAuth();
-  const { addEmissionNotification } = useNotifications();
   const { logEmissionAction, logActivity } = useActivity();
   
   const isSubmittingRef = useRef(false);
@@ -288,6 +286,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
       const ch4 = calculatedAmount * (factorData.ch4 || 0);
       const n2o = calculatedAmount * (factorData.n2o || 0);
       
+      // Prepare emission data for MongoDB API
       const emissionData = {
         scope: parseInt(scope),
         category: activity.name,
@@ -308,7 +307,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
         // Activity-specific data
         activityData: activityData,
         
-        // Emission factor details (stored but not displayed)
+        // Emission factor details
         factor: factorData.factor,
         emissionFactor: {
           value: factorData.factor,
@@ -331,39 +330,32 @@ const EmissionForm = ({ activity, scope, onClose }) => {
           start: new Date(formData.startDate),
           end: new Date(formData.endDate)
         },
-        status: 'draft',
-        user: user?.id,
-        userName: user?.name || 'Unknown User',
+        // Omit status — backend sets submitted (contributors) or verified (admin/analyst)
         created_by: user?.id,
         created_by_name: user?.name || 'Unknown User'
       };
       
-      const savedEmission = saveEmission(emissionData);
+      // ============================================
+      // MONGODB API CALL - Replace localStorage
+      // ============================================
+      console.log('📤 Submitting emission to MongoDB via API:', emissionData);
+      const savedEmission = await emissionsAPI.create(emissionData);
+      console.log('✅ Emission saved to MongoDB:', savedEmission);
       
+      // Activity logging (non-blocking)
       try {
-        await logEmissionAction('created', savedEmission.id, 
+        await logEmissionAction('created', savedEmission._id || savedEmission.id, 
           `Created emission record: ${activity.name} - ${calculatedAmount} ${factorData.unit}`
         );
         
-        await logActivity('emission_added', 'emission', savedEmission.id, 
+        await logActivity('emission_added', 'emission', savedEmission._id || savedEmission.id, 
           `Added emission: ${activity.name} (${formData.source}) - ${totalEmissions.toFixed(2)} CO₂e`
         );
       } catch (activityError) {
         console.warn('⚠️ Activity logging failed (non-critical):', activityError.message);
       }
       
-      try {
-        if (user && savedEmission) {
-          addEmissionNotification(user, {
-            ...savedEmission,
-            category: activity.name,
-            activityType: activity.name
-          });
-        }
-      } catch (notificationError) {
-        console.warn('⚠️ Notification creation failed (non-critical):', notificationError.message);
-      }
-      
+      // Dispatch event for UI updates (header notifications poll / refresh listeners)
       window.dispatchEvent(new CustomEvent('emission-added', { 
         detail: { 
           emission: savedEmission,
@@ -404,54 +396,50 @@ const EmissionForm = ({ activity, scope, onClose }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
     
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
     }
   };
 
   const handleClose = () => {
-    if (isSubmittingRef.current) {
-      toast.error('Please wait for the submission to complete');
-      return;
+    if (!loading) {
+      onClose();
     }
-    onClose();
   };
 
   const factorData = getEmissionFactor(formData.source);
 
-  // Render input fields based on activity type
   const renderActivityInputs = () => {
     switch (activity.activityType) {
       case 'fuel-based':
       case 'quantity':
         return (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Quantity*
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Quantity* ({factorData?.unit || 'units'})
             </label>
-            <div className="flex space-x-2">
-              <input
-                type="number"
-                name="fuelQuantity"
-                value={formData.fuelQuantity}
-                onChange={handleChange}
-                required
-                min="0.01"
-                step="0.01"
-                disabled={loading}
-                className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                  errors.fuelQuantity ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter quantity"
-              />
-              <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[80px] flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-700">
-                  {factorData?.unit || 'unit'}
-                </span>
-              </div>
-            </div>
+            <input
+              type="number"
+              name="fuelQuantity"
+              value={formData.fuelQuantity}
+              onChange={handleChange}
+              required
+              min="0"
+              step="0.01"
+              disabled={loading}
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                errors.fuelQuantity ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+              }`}
+              placeholder={`Enter quantity in ${factorData?.unit || 'units'}`}
+            />
             {errors.fuelQuantity && (
               <p className="text-red-500 text-xs mt-1 flex items-center">
                 <AlertCircle className="w-3 h-3 mr-1" />
@@ -464,31 +452,24 @@ const EmissionForm = ({ activity, scope, onClose }) => {
       case 'distance':
         return (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Distance Travelled*
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+              <Gauge className="w-4 h-4 mr-1" />
+              Distance* (km)
             </label>
-            <div className="flex space-x-2">
-              <div className="relative flex-1">
-                <Gauge className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="number"
-                  name="distance"
-                  value={formData.distance}
-                  onChange={handleChange}
-                  required
-                  min="0.01"
-                  step="0.01"
-                  disabled={loading}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                    errors.distance ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter distance"
-                />
-              </div>
-              <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[60px] flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-700">km</span>
-              </div>
-            </div>
+            <input
+              type="number"
+              name="distance"
+              value={formData.distance}
+              onChange={handleChange}
+              required
+              min="0"
+              step="0.1"
+              disabled={loading}
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                errors.distance ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+              }`}
+              placeholder="Enter distance travelled"
+            />
             {errors.distance && (
               <p className="text-red-500 text-xs mt-1 flex items-center">
                 <AlertCircle className="w-3 h-3 mr-1" />
@@ -500,28 +481,26 @@ const EmissionForm = ({ activity, scope, onClose }) => {
         
       case 'passenger-distance':
         return (
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Number of Passengers*
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                <Users className="w-4 h-4 mr-1" />
+                Passengers*
               </label>
-              <div className="relative">
-                <Users className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="number"
-                  name="passengers"
-                  value={formData.passengers}
-                  onChange={handleChange}
-                  required
-                  min="1"
-                  step="1"
-                  disabled={loading}
-                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                    errors.passengers ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="e.g., 2"
-                />
-              </div>
+              <input
+                type="number"
+                name="passengers"
+                value={formData.passengers}
+                onChange={handleChange}
+                required
+                min="1"
+                step="1"
+                disabled={loading}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                  errors.passengers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                placeholder="Number of passengers"
+              />
               {errors.passengers && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -531,31 +510,24 @@ const EmissionForm = ({ activity, scope, onClose }) => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Distance Travelled*
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                <Gauge className="w-4 h-4 mr-1" />
+                Distance* (km)
               </label>
-              <div className="flex space-x-2">
-                <div className="relative flex-1">
-                  <Gauge className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="number"
-                    name="distance"
-                    value={formData.distance}
-                    onChange={handleChange}
-                    required
-                    min="0.01"
-                    step="0.01"
-                    disabled={loading}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                      errors.distance ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter distance"
-                  />
-                </div>
-                <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[60px] flex items-center justify-center">
-                  <span className="text-sm font-medium text-gray-700">km</span>
-                </div>
-              </div>
+              <input
+                type="number"
+                name="distance"
+                value={formData.distance}
+                onChange={handleChange}
+                required
+                min="0"
+                step="0.1"
+                disabled={loading}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                  errors.distance ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                placeholder="Distance travelled"
+              />
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -563,46 +535,31 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 </p>
               )}
             </div>
-            
-            {formData.passengers && formData.distance && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Total:</strong> {parseFloat(formData.passengers) * parseFloat(formData.distance)} passenger.km
-                </p>
-              </div>
-            )}
           </div>
         );
         
       case 'freight':
         return (
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cargo Weight*
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                <Truck className="w-4 h-4 mr-1" />
+                Weight* (tonnes)
               </label>
-              <div className="flex space-x-2">
-                <div className="relative flex-1">
-                  <Truck className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="number"
-                    name="weight"
-                    value={formData.weight}
-                    onChange={handleChange}
-                    required
-                    min="0.01"
-                    step="0.01"
-                    disabled={loading}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                      errors.weight ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter weight"
-                  />
-                </div>
-                <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[80px] flex items-center justify-center">
-                  <span className="text-sm font-medium text-gray-700">tonnes</span>
-                </div>
-              </div>
+              <input
+                type="number"
+                name="weight"
+                value={formData.weight}
+                onChange={handleChange}
+                required
+                min="0"
+                step="0.01"
+                disabled={loading}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                  errors.weight ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                placeholder="Cargo weight"
+              />
               {errors.weight && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -612,31 +569,24 @@ const EmissionForm = ({ activity, scope, onClose }) => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transport Distance*
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                <Gauge className="w-4 h-4 mr-1" />
+                Distance* (km)
               </label>
-              <div className="flex space-x-2">
-                <div className="relative flex-1">
-                  <Gauge className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="number"
-                    name="distance"
-                    value={formData.distance}
-                    onChange={handleChange}
-                    required
-                    min="0.01"
-                    step="0.01"
-                    disabled={loading}
-                    className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                      errors.distance ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter distance"
-                  />
-                </div>
-                <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[60px] flex items-center justify-center">
-                  <span className="text-sm font-medium text-gray-700">km</span>
-                </div>
-              </div>
+              <input
+                type="number"
+                name="distance"
+                value={formData.distance}
+                onChange={handleChange}
+                required
+                min="0"
+                step="0.1"
+                disabled={loading}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                  errors.distance ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                }`}
+                placeholder="Transport distance"
+              />
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -644,42 +594,29 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 </p>
               )}
             </div>
-            
-            {formData.weight && formData.distance && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Total:</strong> {parseFloat(formData.weight) * parseFloat(formData.distance)} tonne.km
-                </p>
-              </div>
-            )}
           </div>
         );
         
       case 'refrigerant':
         return (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Refrigerant Amount*
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Refrigerant Amount* (kg)
             </label>
-            <div className="flex space-x-2">
-              <input
-                type="number"
-                name="refrigerantAmount"
-                value={formData.refrigerantAmount}
-                onChange={handleChange}
-                required
-                min="0.01"
-                step="0.01"
-                disabled={loading}
-                className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                  errors.refrigerantAmount ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter amount leaked/used"
-              />
-              <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg min-w-[60px] flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-700">kg</span>
-              </div>
-            </div>
+            <input
+              type="number"
+              name="refrigerantAmount"
+              value={formData.refrigerantAmount}
+              onChange={handleChange}
+              required
+              min="0"
+              step="0.001"
+              disabled={loading}
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                errors.refrigerantAmount ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+              }`}
+              placeholder="Enter amount leaked or used"
+            />
             {errors.refrigerantAmount && (
               <p className="text-red-500 text-xs mt-1 flex items-center">
                 <AlertCircle className="w-3 h-3 mr-1" />
@@ -692,7 +629,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
       case 'accommodation':
         return (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Number of Nights*
             </label>
             <input
@@ -705,7 +642,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
               step="1"
               disabled={loading}
               className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                errors.nights ? 'border-red-500' : 'border-gray-300'
+                errors.nights ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
               }`}
               placeholder="Enter number of nights"
             />
@@ -721,7 +658,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
       case 'homeworking':
         return (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Working Hours*
             </label>
             <input
@@ -734,7 +671,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
               step="0.5"
               disabled={loading}
               className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                errors.hours ? 'border-red-500' : 'border-gray-300'
+                errors.hours ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
               }`}
               placeholder="Enter number of hours"
             />
@@ -752,23 +689,22 @@ const EmissionForm = ({ activity, scope, onClose }) => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+  const FormContent = (
+    <div className={`bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-6 w-full ${!isInline ? 'max-w-2xl max-h-[90vh] overflow-y-auto' : ''}`}>
+      <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Add Emission Data</h2>
-            <p className="text-sm text-gray-600">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Emission Data</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Scope {scope} - {activity.name}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {activity.description}
             </p>
           </div>
           <button
             onClick={handleClose}
             disabled={loading}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
             type="button"
           >
             <X className="w-6 h-6" />
@@ -779,7 +715,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
           <div className="grid grid-cols-1 gap-4">
             {/* Source Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Source Type*
               </label>
               <select
@@ -789,7 +725,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 required
                 disabled={loading}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                  errors.source ? 'border-red-500' : 'border-gray-300'
+                  errors.source ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               >
                 <option value="">Select source...</option>
@@ -803,7 +739,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 <p className="text-red-500 text-xs mt-1">{errors.source}</p>
               )}
               {factorData && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   {factorData.description}
                 </p>
               )}
@@ -815,7 +751,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
             {/* Date Range */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Start Date*
                 </label>
                 <div className="relative">
@@ -828,7 +764,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                     required
                     disabled={loading}
                     className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                      errors.startDate ? 'border-red-500' : 'border-gray-300'
+                      errors.startDate ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                   />
                 </div>
@@ -838,7 +774,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   End Date*
                 </label>
                 <div className="relative">
@@ -851,7 +787,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                     required
                     disabled={loading}
                     className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
-                      errors.endDate ? 'border-red-500' : 'border-gray-300'
+                      errors.endDate ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                   />
                 </div>
@@ -863,7 +799,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
 
             {/* Location */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Location
               </label>
               <input
@@ -873,13 +809,13 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 onChange={handleChange}
                 disabled={loading}
                 placeholder="e.g., Building A, Floor 2, Factory Site"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Description
               </label>
               <textarea
@@ -889,19 +825,19 @@ const EmissionForm = ({ activity, scope, onClose }) => {
                 rows={3}
                 disabled={loading}
                 placeholder="Additional details about this emission source..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
               />
             </div>
           </div>
 
           {/* Emission Preview - Simplified without showing calculation details */}
           {emissionsPreview && factorData && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
+            <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-emerald-800">
+                <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
                   Estimated Total Emissions:
                 </span>
-                <span className="text-lg font-bold text-emerald-900">
+                <span className="text-lg font-bold text-emerald-900 dark:text-emerald-300">
                   {emissionsPreview.total.toFixed(2)} kg CO₂e
                 </span>
               </div>
@@ -918,7 +854,7 @@ const EmissionForm = ({ activity, scope, onClose }) => {
               type="button"
               onClick={handleClose}
               disabled={loading}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:bg-gray-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -928,13 +864,22 @@ const EmissionForm = ({ activity, scope, onClose }) => {
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {loading && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-4 h-4 border-2 border-white border-t dark:border-gray-700-transparent rounded-full animate-spin"></div>
               )}
               <span>{loading ? 'Saving...' : 'Save Emission'}</span>
             </button>
           </div>
         </form>
       </div>
+  );
+
+  if (isInline) {
+    return FormContent;
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {FormContent}
     </div>
   );
 };

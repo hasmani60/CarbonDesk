@@ -116,11 +116,13 @@ apiClient.interceptors.response.use(
       }
     }
     
-    // 403 Forbidden - access denied
+    // 403 Forbidden - access denied (preserve code e.g. EMAIL_NOT_VERIFIED)
     if (error.response?.status === 403) {
       return Promise.reject({
         message: error.response.data?.message || 'Access denied. Insufficient permissions.',
-        status: 'ACCESS_DENIED'
+        status: 'ACCESS_DENIED',
+        code: error.response.data?.code,
+        response: error.response
       });
     }
     
@@ -151,7 +153,12 @@ export const authAPI = {
   logout: () => apiClient.post('/auth/logout'),
   verifyToken: () => apiClient.get('/auth/verify'),
   updateProfile: (profileData) => apiClient.patch('/auth/profile', profileData),
-  changePassword: (passwordData) => apiClient.patch('/auth/change-password', passwordData)
+  changePassword: (passwordData) => apiClient.patch('/auth/change-password', passwordData),
+  /** @param {string} token - raw token from verification link */
+  verifyEmail: (token) =>
+    apiClient.get('/auth/verify-email', { params: { token } }),
+  requestVerificationEmail: (email) =>
+    apiClient.post('/auth/request-verification-email', { email })
 };
 
 // Admin API
@@ -209,217 +216,132 @@ export const analyticsAPI = {
   getEmissionsByCategory: (params) => apiClient.get('/analytics/by-category', { params }),
   getMonthlyData: (params) => apiClient.get('/analytics/monthly', { params }),
   getYearlyData: (params) => apiClient.get('/analytics/yearly', { params }),
-  getTopEmitters: (params) => apiClient.get('/analytics/top-emitters', { params }),
-  getUserAnalytics: (userId, params) => apiClient.get('/analytics/user', { 
-    params: { userId, ...params } 
-  }),
-
-  // ===== NEW: SCOPE MIGRATION ANALYSIS =====
+  getTopCategories: (params) => apiClient.get('/analytics/top-categories', { params }),
+  getTopUsers: (params) => apiClient.get('/analytics/top-users', { params }),
+  getReductionOpportunities: (params) => apiClient.get('/analytics/reduction-opportunities', { params }),
+  
+  // NEW: Advanced Analytics Endpoints
+  
   /**
-   * Get scope migration analysis data
-   * @param {Object} params - Query parameters
-   * @param {string} params.startDate - Start date (ISO format)
-   * @param {string} params.endDate - End date (ISO format)
-   * @param {string} params.timeGranularity - 'month' | 'quarter' | 'year'
-   * @returns {Promise} Scope migration data with insights
+   * Get user performance comparison
+   * @param {Object} params - { startDate, endDate, userId?, limit? }
+   * @returns {Promise<Object>} Performance metrics by user
    */
-  getScopeMigration: (params = {}) => {
-    const defaultParams = {
-      timeGranularity: 'quarter',
-      ...params
-    };
-    return apiClient.get('/analytics/scope-migration', { params: defaultParams });
-  },
-
+  getUserPerformance: (params) => apiClient.get('/analytics/user-performance', { params }),
+  
   /**
-   * Get burden shifting detection analysis
-   * @param {Object} params - Query parameters
-   * @returns {Promise} Burden shifting insights
+   * Get activity pattern analysis
+   * @param {Object} params - { startDate, endDate, userId?, period? }
+   * @returns {Promise<Object>} Activity patterns over time
    */
-  getBurdenShifting: (params = {}) => {
-    return apiClient.get('/analytics/burden-shifting', { params });
-  },
-
+  getActivityPatterns: (params) => apiClient.get('/analytics/activity-patterns', { params }),
+  
   /**
-   * Get emission flow matrix between scopes
-   * @param {Object} params - Query parameters
-   * @returns {Promise} Flow matrix data for Sankey diagram
+   * Get emissions trajectory analysis
+   * @param {Object} params - { startDate, endDate, scope?, category? }
+   * @returns {Promise<Object>} Projected emissions trends
    */
-  getEmissionFlows: (params = {}) => {
-    return apiClient.get('/analytics/emission-flows', { params });
-  },
-
-  // ===== NEW: HOTSPOT PARETO ANALYSIS =====
+  getEmissionsTrajectory: (params) => apiClient.get('/analytics/emissions-trajectory', { params }),
+  
   /**
-   * Get Pareto analysis data with drill-down capability
-   * @param {Object} params - Query parameters
-   * @param {number|string} params.scope - 1 | 2 | 3 | 'all'
-   * @param {string} params.drilldownLevel - 'scope' | 'category' | 'activity' | 'asset'
-   * @param {string} params.parentId - Parent ID for drill-down (optional)
-   * @param {Object} params.dateRange - { start, end }
-   * @returns {Promise} Pareto analysis data
+   * Get emissions velocity (rate of change)
+   * @param {Object} params - { startDate, endDate, scope? }
+   * @returns {Promise<Object>} Rate of change analysis
    */
-  getHotspotPareto: (params = {}) => {
-    const defaultParams = {
-      scope: 'all',
-      drilldownLevel: 'scope',
-      ...params
-    };
-    return apiClient.get('/analytics/hotspot-pareto', { params: defaultParams });
-  },
-
+  getEmissionsVelocity: (params) => apiClient.get('/analytics/emissions-velocity', { params }),
+  
   /**
-   * Get children items for Pareto drill-down
-   * @param {string} parentId - Parent item identifier
-   * @param {Object} params - Additional query parameters
-   * @returns {Promise} Child items for drill-down
+   * Get scope breakdown analysis
+   * @param {Object} params - { startDate, endDate, userId? }
+   * @returns {Promise<Object>} Detailed scope breakdown
    */
-  getParetoChildren: (parentId, params = {}) => {
-    return apiClient.get(`/analytics/hotspot-pareto/${parentId}/children`, { params });
-  },
-
+  getScopeBreakdown: (params) => apiClient.get('/analytics/scope-breakdown', { params }),
+  
   /**
-   * Get concentration risk metrics
-   * @param {Object} params - Query parameters
-   * @returns {Promise} Concentration risk analysis
+   * Get category trends over time
+   * @param {Object} params - { startDate, endDate, scope?, limit? }
+   * @returns {Promise<Object>} Category trends
    */
-  getConcentrationRisk: (params = {}) => {
-    return apiClient.get('/analytics/concentration-risk', { params });
-  },
-
+  getCategoryTrends: (params) => apiClient.get('/analytics/category-trends', { params }),
+  
   /**
-   * Get reduction potential analysis
-   * @param {Object} params - Query parameters
-   * @param {number} params.reductionPercentage - Target reduction % (default 50)
-   * @returns {Promise} Reduction potential metrics
+   * Get data quality metrics
+   * @param {Object} params - { startDate, endDate, userId? }
+   * @returns {Promise<Object>} Data completeness and quality metrics
    */
-  getReductionPotential: (params = {}) => {
-    const defaultParams = {
-      reductionPercentage: 50,
-      ...params
-    };
-    return apiClient.get('/analytics/reduction-potential', { params: defaultParams });
-  },
-
-  // ===== NEW: EMISSIONS TRAJECTORY ANALYSIS =====
+  getDataQuality: (params) => apiClient.get('/analytics/data-quality', { params }),
+  
   /**
-   * Get emissions trajectory analysis vs science-based targets
-   * @param {Object} params - Query parameters
-   * @param {string} params.startDate - Start date
-   * @param {string} params.endDate - End date
-   * @param {string} params.targetScenario - '1.5C' | '2C' | '2C_low'
-   * @param {number} params.baselineYear - Baseline year for targets
-   * @returns {Promise} Trajectory analysis with alignment metrics
+   * Get verification statistics
+   * @param {Object} params - { startDate, endDate, userId? }
+   * @returns {Promise<Object>} Verification rates and timing
    */
-  getEmissionsTrajectory: (params = {}) => {
-    const defaultParams = {
-      targetScenario: '1.5C',
-      ...params
-    };
-    return apiClient.get('/analytics/emissions-trajectory', { params: defaultParams });
-  },
-
+  getVerificationStats: (params) => apiClient.get('/analytics/verification-stats', { params }),
+  
   /**
-   * Get trajectory alignment status
-   * @param {Object} params - Query parameters
-   * @returns {Promise} Alignment metrics and recommendations
+   * Get comparative benchmarking
+   * @param {Object} params - { startDate, endDate, scope?, category? }
+   * @returns {Promise<Object>} Benchmark comparisons
    */
-  getTrajectoryAlignment: (params = {}) => {
-    return apiClient.get('/analytics/trajectory-alignment', { params });
-  },
-
-  // ===== NEW: VELOCITY & ACCELERATION ANALYSIS =====
+  getBenchmarking: (params) => apiClient.get('/analytics/benchmarking', { params }),
+  
   /**
-   * Get emissions velocity and acceleration metrics
-   * @param {Object} params - Query parameters
-   * @param {string} params.startDate - Start date
-   * @param {string} params.endDate - End date
-   * @param {string} params.granularity - 'month' | 'quarter' | 'year'
-   * @returns {Promise} Velocity and acceleration data with inflection points
+   * Get anomaly detection
+   * @param {Object} params - { startDate, endDate, sensitivity? }
+   * @returns {Promise<Object>} Detected anomalies in emissions data
    */
-  getEmissionsVelocity: (params = {}) => {
-    const defaultParams = {
-      granularity: 'quarter',
-      ...params
-    };
-    return apiClient.get('/analytics/emissions-velocity', { params: defaultParams });
-  },
-
+  getAnomalies: (params) => apiClient.get('/analytics/anomalies', { params }),
+  
   /**
-   * Get inflection points (trend reversals)
-   * @param {Object} params - Query parameters
-   * @returns {Promise} Detected inflection points with context
+   * Get seasonal analysis
+   * @param {Object} params - { startYear, endYear, scope? }
+   * @returns {Promise<Object>} Seasonal patterns
    */
-  getInflectionPoints: (params = {}) => {
-    return apiClient.get('/analytics/inflection-points', { params });
-  },
+  getSeasonalAnalysis: (params) => apiClient.get('/analytics/seasonal-analysis', { params }),
 
-  // ===== NEW: MACC ANALYSIS =====
+  /** Organisation-wide rollup (scopes + totals) — matches GET /api/analytics/overview */
+  getOverview: (params) => apiClient.get('/analytics/overview', { params }),
+  
+  getScopeMigration: (params) => apiClient.get('/analytics/scope-migration', { params }),
+  getPareto: (params) => apiClient.get('/analytics/pareto', { params }),
+  getParetoDrilldown: (category) => apiClient.get(`/analytics/pareto/drilldown/${encodeURIComponent(category)}`),
+  getVelocity: (params) => apiClient.get('/analytics/velocity', { params }),
+  
   /**
-   * Get Marginal Abatement Cost Curve analysis
-   * @param {Object} params - Query parameters
-   * @param {number} params.scope - Filter by scope (optional)
-   * @param {string} params.category - Filter by category (optional)
-   * @returns {Promise} MACC analysis with cost-effectiveness ranking
+   * Get MACC (Marginal Abatement Cost Curve) analysis
+   * @param {Object} params - { startDate, endDate }
+   * @returns {Promise<Object>} Cost-effectiveness of reduction opportunities
    */
-  getMACCAnalysis: (params = {}) => {
-    return apiClient.get('/analytics/macc', { params });
-  },
-
+  getMACCAnalysis: (params) => apiClient.get('/analytics/macc', { params }),
+  saveMACCOpportunity: (opportunityData) => apiClient.post('/analytics/macc/opportunity', opportunityData),
+  
   /**
-   * Create or update MACC opportunity
-   * @param {Object} opportunityData - MACC opportunity data
-   * @returns {Promise} Created/updated opportunity
+   * Get predictive insights
+   * @param {Object} params - { forecastMonths?, scope?, category? }
+   * @returns {Promise<Object>} Predictive analysis
    */
-  saveMACCOpportunity: (opportunityData) => {
-    return apiClient.post('/analytics/macc/opportunities', opportunityData);
-  },
-
+  getPredictiveInsights: (params) => apiClient.get('/analytics/predictive-insights', { params }),
+  
   /**
-   * Get MACC opportunities
-   * @param {Object} params - Query parameters
-   * @returns {Promise} List of MACC opportunities
+   * Get compliance tracking
+   * @param {Object} params - { year?, standard? }
+   * @returns {Promise<Object>} Compliance metrics
    */
-  getMACCOpportunities: (params = {}) => {
-    return apiClient.get('/analytics/macc/opportunities', { params });
-  },
-
+  getComplianceTracking: (params) => apiClient.get('/analytics/compliance-tracking', { params }),
+  
   /**
-   * Delete MACC opportunity
-   * @param {number} opportunityId - Opportunity ID
-   * @returns {Promise} Deletion confirmation
-   */
-  deleteMACCOpportunity: (opportunityId) => {
-    return apiClient.delete(`/analytics/macc/opportunities/${opportunityId}`);
-  },
-
-  // ===== EXPORT FUNCTIONS FOR ADVANCED ANALYTICS =====
-  /**
-   * Export scope migration analysis
+   * Export performance analysis
    * @param {string} format - 'csv' | 'json' | 'pdf'
    * @param {Object} filters - Filter parameters
    * @returns {Promise<Blob>} File blob
    */
-  exportScopeMigration: (format = 'csv', filters = {}) => {
-    return apiClient.get('/analytics/scope-migration/export', {
+  exportPerformanceAnalysis: (format = 'csv', filters = {}) => {
+    return apiClient.get('/analytics/user-performance/export', {
       params: { format, ...filters },
       responseType: 'blob'
     });
   },
-
-  /**
-   * Export Pareto analysis
-   * @param {string} format - 'csv' | 'json' | 'pdf'
-   * @param {Object} filters - Filter parameters
-   * @returns {Promise<Blob>} File blob
-   */
-  exportParetoAnalysis: (format = 'csv', filters = {}) => {
-    return apiClient.get('/analytics/hotspot-pareto/export', {
-      params: { format, ...filters },
-      responseType: 'blob'
-    });
-  },
-
+  
   /**
    * Export trajectory analysis
    * @param {string} format - 'csv' | 'json' | 'pdf'
@@ -462,15 +384,17 @@ export const analyticsAPI = {
 
 // Monitor API
 export const monitorAPI = {
-  getActivities: (params) => apiClient.get('/monitor/activities', { params }),
-  createTask: (taskData) => apiClient.post('/monitor/tasks', taskData),
-  updateTask: (id, taskData) => apiClient.patch(`/monitor/tasks/${id}`, taskData),
-  deleteTask: (id) => apiClient.delete(`/monitor/tasks/${id}`),
-  getTasks: (params) => apiClient.get('/monitor/tasks', { params }),
-  assignActivity: (assignmentData) => apiClient.post('/monitor/assign', assignmentData),
-  getMyTasks: (params) => apiClient.get('/monitor/tasks', { params: { ...params, assignedToMe: true } }),
-  getTaskById: (id) => apiClient.get(`/monitor/tasks/${id}`),
-  updateTaskStatus: (id, status) => apiClient.patch(`/monitor/tasks/${id}`, { status })
+  getActivities: (params) => apiClient.get('/activities', { params }),
+  createTask: (taskData) => apiClient.post('/tasks', taskData),
+  updateTask: (id, taskData) => apiClient.patch(`/tasks/${id}`, taskData),
+  deleteTask: (id) => apiClient.delete(`/tasks/${id}`),
+  getTasks: (params) => apiClient.get('/tasks', { params }),
+  getTaskStats: (params) => apiClient.get('/tasks/stats', { params }),
+  getAssignableUsers: (params) => apiClient.get('/tasks/assignable-users', { params }),
+  assignActivity: (assignmentData) => apiClient.post('/tasks/assign', assignmentData),
+  getMyTasks: (params) => apiClient.get('/tasks', { params: { ...params, assignedToMe: true } }),
+  getTaskById: (id) => apiClient.get(`/tasks/${id}`),
+  updateTaskStatus: (id, status) => apiClient.patch(`/tasks/${id}`, { status })
 };
 
 // Users API
@@ -509,20 +433,15 @@ export const generatorsAPI = {
   delete: (id) => apiClient.delete(`/generators/${id}`)
 };
 
-// Organization API
-export const organizationAPI = {
+// Organisation API - MongoDB Compatible (British spelling, plural endpoint)
+export const organisationAPI = {
   // Organisation Details (Admin only)
-  getDetails: () => apiClient.get('/organisation/details'),
-  updateDetails: (organisationData) => apiClient.patch('/organisation/details', organisationData),
-  
-  // Boundary Management
-  getBoundary: () => apiClient.get('/organization/boundary'),
-  updateBoundary: (boundaryData) => apiClient.patch('/organization/boundary', boundaryData),
-  
-  // Settings Management
-  getSettings: () => apiClient.get('/organization/settings'),
-  updateSettings: (settingsData) => apiClient.patch('/organization/settings', settingsData)
+  getDetails: () => apiClient.get('/organisations/details'),
+  updateDetails: (organisationData) => apiClient.patch('/organisations/details', organisationData)
 };
+
+// Organization API - Alias for American spelling compatibility
+export const organizationAPI = organisationAPI;
 
 // Notifications API
 export const notificationAPI = {
@@ -530,7 +449,7 @@ export const notificationAPI = {
   getById: (id) => apiClient.get(`/notifications/${id}`),
   create: (notificationData) => apiClient.post('/notifications', notificationData),
   markAsRead: (id) => apiClient.patch(`/notifications/${id}/read`),
-  markAllAsRead: () => apiClient.patch('/notifications/mark-all-read'),
+  markAllAsRead: () => apiClient.patch('/notifications/read-all'),
   delete: (id) => apiClient.delete(`/notifications/${id}`),
   getMyNotifications: (params) => apiClient.get('/notifications', { params }),
   getUnreadCount: () => apiClient.get('/notifications/unread-count')
@@ -558,9 +477,9 @@ export const exportAPI = {
 
 // Activity Logging API
 export const activityAPI = {
-  logActivity: (activityData) => apiClient.post('/activity/log', activityData),
-  getUserActivities: (userId, params) => apiClient.get(`/activity/user/${userId}`, { params }),
-  getRecentActivities: (params) => apiClient.get('/activity/recent', { params })
+  logActivity: (activityData) => apiClient.post('/activities/log', activityData),
+  getUserActivities: (userId, params) => apiClient.get(`/activities/user/${userId}`, { params }),
+  getRecentActivities: (params) => apiClient.get('/activities/recent', { params })
 };
 
 // RBAC Utility functions
@@ -613,6 +532,7 @@ export default {
   usersAPI,
   vehiclesAPI,
   generatorsAPI,
+  organisationAPI,
   organizationAPI,
   notificationAPI,
   exportAPI,

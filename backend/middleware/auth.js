@@ -1,7 +1,8 @@
-// middleware/auth.js - Updated authentication middleware with strict RBAC enforcement
+// middleware/auth.js - MongoDB-compatible authentication middleware with RBAC
 const jwt = require('jsonwebtoken');
-const localDB = require('../database/localDB');
+const { User } = require('../models');
 const logger = require('../utils/logger');
+const { contributorAllowedToUseScope } = require('../utils/contributorEmissionAccess');
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -25,8 +26,8 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    // Get user from local database
-    const user = await localDB.findUserById(decoded.id);
+    // Get user from MongoDB
+    const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
       return res.status(401).json({
@@ -45,12 +46,12 @@ const authenticateToken = async (req, res, next) => {
 
     // Set user information in request
     req.user = {
-      id: user.id,
+      id: user._id.toString(),
       name: user.name,
       email: user.email,
       role: user.role,
       status: user.status,
-      organisation_id: user.organisation_id,
+      organisation_id: user.organisation_id, // String
       restrictions: user.restrictions || null
     };
 
@@ -80,9 +81,15 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-// Role-based authorization middleware
+// Role-based authorization middleware - FIXED
 const authorizeRoles = (...roles) => {
   return (req, res, next) => {
+    console.log('🔐 authorizeRoles check:', {
+      requiredRoles: roles,
+      userRole: req.user?.role,
+      user: req.user ? 'present' : 'missing'
+    });
+
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -90,13 +97,22 @@ const authorizeRoles = (...roles) => {
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    // FIXED: Normalize roles for comparison (handle case sensitivity and whitespace)
+    const userRole = String(req.user.role || '').trim().toLowerCase();
+    const allowedRoles = roles.map(r => String(r).trim().toLowerCase());
+
+    console.log('🔍 Normalized roles:', { userRole, allowedRoles });
+
+    if (!allowedRoles.includes(userRole)) {
+      console.error('❌ Role check FAILED');
+      
       return res.status(403).json({
         success: false,
         message: `Access denied. Required roles: ${roles.join(', ')}. Your role: ${req.user.role}`
       });
     }
 
+    console.log('✅ Role check PASSED');
     next();
   };
 };
@@ -120,7 +136,7 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// RBAC middleware for checking scope and activity restrictions (for contributors)
+// RBAC middleware for checking scope restrictions
 const checkScopeAccess = (requiredScope) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -135,11 +151,9 @@ const checkScopeAccess = (requiredScope) => {
       return next();
     }
 
-    // Contributors with restrictions
+    // Contributors — scope allowed explicitly or implied by allowedActivities (fine-grained RBAC)
     if (req.user.role === 'contributor' && req.user.restrictions) {
-      const allowedScopes = req.user.restrictions.allowedScopes || [1, 2, 3];
-      
-      if (!allowedScopes.includes(parseInt(requiredScope))) {
+      if (!contributorAllowedToUseScope(req.user.restrictions, requiredScope)) {
         return res.status(403).json({
           success: false,
           message: `Access denied. You don't have permission to access Scope ${requiredScope}`
@@ -151,7 +165,7 @@ const checkScopeAccess = (requiredScope) => {
   };
 };
 
-// RBAC middleware for checking activity restrictions (for contributors)
+// RBAC middleware for checking activity restrictions
 const checkActivityAccess = (requiredActivity) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -183,7 +197,7 @@ const checkActivityAccess = (requiredActivity) => {
   };
 };
 
-// UPDATED: Enhanced page access control with strict RBAC enforcement
+// Enhanced page access control with strict RBAC enforcement
 const checkPageAccess = (page) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -195,10 +209,10 @@ const checkPageAccess = (page) => {
 
     // STRICT RBAC: Define exact page access per role
     const strictRolePageAccess = {
-      admin: ['/dashboard', '/input', '/monitor', '/analytics', '/settings', '/admin'], // Admin has access to all
-      analyst: ['/analytics', '/settings'], // FIXED: Only Analytics and Settings
-      contributor: ['/input', '/settings'], // FIXED: Only Input and Settings
-      viewer: ['/dashboard', '/monitor', '/analytics', '/settings'] // FIXED: Dashboard, Monitor, Analytics, Settings
+      admin: ['/dashboard', '/input', '/monitor', '/analytics', '/settings', '/admin'],
+      analyst: ['/analytics', '/settings'],
+      contributor: ['/input', '/settings'],
+      viewer: ['/dashboard', '/monitor', '/analytics', '/settings']
     };
 
     const allowedPages = strictRolePageAccess[req.user.role] || [];
@@ -206,7 +220,7 @@ const checkPageAccess = (page) => {
     // Check if the page is in the allowed list for this role
     const hasAccess = allowedPages.some(allowedPage => {
       if (allowedPage === '/admin' && page.startsWith('/admin')) {
-        return true; // Admin routes
+        return true;
       }
       return page === allowedPage || page.startsWith(allowedPage + '/');
     });
@@ -235,7 +249,7 @@ const checkPageAccess = (page) => {
   };
 };
 
-// UPDATED: Route-level access control middleware for API endpoints
+// Route-level access control middleware for API endpoints
 const enforceRouteAccess = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
@@ -250,7 +264,6 @@ const enforceRouteAccess = (req, res, next) => {
   // Define route access rules based on roles
   const routeAccess = {
     admin: {
-      // Admin can access all routes
       GET: ['*'],
       POST: ['*'],
       PUT: ['*'],
@@ -258,7 +271,6 @@ const enforceRouteAccess = (req, res, next) => {
       DELETE: ['*']
     },
     analyst: {
-      // Analyst: Only analytics and settings
       GET: ['/api/analytics/*', '/api/settings/*', '/api/auth/*'],
       POST: ['/api/auth/*'],
       PATCH: ['/api/auth/*', '/api/settings/*'],
@@ -266,15 +278,13 @@ const enforceRouteAccess = (req, res, next) => {
       DELETE: []
     },
     contributor: {
-      // Contributor: Only input (emissions) and settings
-      GET: ['/api/emissions/*', '/api/settings/*', '/api/auth/*', '/api/dashboard/summary'], // Allow dashboard summary for input page
+      GET: ['/api/emissions/*', '/api/settings/*', '/api/auth/*', '/api/dashboard/summary'],
       POST: ['/api/emissions/*', '/api/auth/*'],
       PATCH: ['/api/emissions/*', '/api/auth/*', '/api/settings/*'],
       PUT: ['/api/emissions/*', '/api/settings/*'],
-      DELETE: ['/api/emissions/*'] // Can delete own emissions
+      DELETE: ['/api/emissions/*']
     },
     viewer: {
-      // Viewer: Dashboard, monitor, analytics, settings (read-only mostly)
       GET: ['/api/dashboard/*', '/api/monitor/*', '/api/analytics/*', '/api/settings/*', '/api/auth/*', '/api/emissions/*'],
       POST: ['/api/auth/*'],
       PATCH: ['/api/auth/*', '/api/settings/*'],
@@ -323,13 +333,13 @@ const authorizeResourceAccess = (req, res, next) => {
 
   // Regular users can only access their own data
   req.canAccessAll = false;
-  req.userFilter = { user: req.user.id };
+  req.userFilter = { user_id: req.user.id }; // MongoDB compatible
   
   next();
 };
 
 // Middleware to check if user can modify specific resource
-const authorizeResourceModification = (resourceUserIdField = 'user') => {
+const authorizeResourceModification = (resourceUserIdField = 'user_id') => {
   return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -353,7 +363,6 @@ const authorizeResourceModification = (resourceUserIdField = 'user') => {
         });
       }
 
-      // This is a generic check - specific controllers should implement their own logic
       req.requireOwnership = true;
       req.ownershipField = resourceUserIdField;
       
@@ -383,7 +392,7 @@ const logActivity = (action, resourceType = null) => {
   };
 };
 
-// Middleware to validate user can access their own data only (for non-admin users)
+// Middleware to validate user can access their own data only
 const requireOwnership = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
@@ -398,7 +407,6 @@ const requireOwnership = (req, res, next) => {
   }
 
   // For other users, they can only access their own data
-  // This will be enforced at the query level in controllers
   req.ownershipRequired = true;
   next();
 };
@@ -410,9 +418,9 @@ module.exports = {
   checkScopeAccess,
   checkActivityAccess,
   checkPageAccess,
-  enforceRouteAccess, // NEW: Strict route-level access control
+  enforceRouteAccess,
   authorizeResourceAccess,
   authorizeResourceModification,
   logActivity,
-  requireOwnership // NEW: Ownership validation
+  requireOwnership
 };

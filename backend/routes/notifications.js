@@ -1,19 +1,18 @@
-// ===== backend/routes/notifications.js =====
+// routes/notifications.js - MongoDB-compatible notification routes
 const express = require('express');
 const router = express.Router();
+const {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification
+} = require('../controllers/notificationController');
 
-router.get('/', (req, res) => {
-  res.json({ 
-    success: true, 
-    data: [] 
-  });
-});
+// All routes protected by authenticateToken in server.js
 
-router.patch('/:id/read', (req, res) => {
-  res.json({ 
-    success: true, 
-    message: 'Notification marked as read' 
-  });
-});
+router.get('/', getNotifications);
+router.patch('/:id/read', markAsRead);
+router.patch('/mark-all-read', markAllAsRead);
+router.delete('/:id', deleteNotification);
 
 module.exports = router;

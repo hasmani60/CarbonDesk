@@ -1,38 +1,70 @@
-// controllers/authController.js - Fixed to ensure clean organisation context
+// controllers/authController.js - With detailed error logging
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const localDB = require('../database/localDB');
+const { User, ActivityLog } = require('../models');
 const logger = require('../utils/logger');
+const emailService = require('../utils/emailService');
 
-// Generate JWT Token with role information and restrictions
+const hashVerifyToken = (raw) =>
+  crypto.createHash('sha256').update(String(raw), 'utf8').digest('hex');
+
+// Helper functions
+const hashPassword = async (password) => {
+  const salt = await bcrypt.genSalt(12);
+  return bcrypt.hash(password, salt);
+};
+
+const verifyPassword = async (password, hashedPassword) => {
+  return bcrypt.compare(password, hashedPassword);
+};
+
+function publicUserDoc(userDoc) {
+  if (!userDoc) return null;
+  const u = userDoc.toObject ? userDoc.toObject() : userDoc;
+  return {
+    id: u._id.toString(),
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    status: u.status,
+    restrictions: u.restrictions,
+    organisation_id: u.organisation_id,
+    settings: u.settings && typeof u.settings === 'object' ? u.settings : {},
+    lastLogin: u.last_login,
+    email_verified: u.email_verified !== false
+  };
+}
+
+// Generate JWT Token
 const generateToken = (user) => {
-  logger.debug('Generating token for user', {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    organisation_id: user.organisation_id
-  });
-
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret === 'your-secret-key') {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('JWT_SECRET is not set or is using a default — refusing to sign tokens');
+      throw new Error('Server misconfiguration: JWT_SECRET');
+    }
+  }
+  const expires = process.env.JWT_EXPIRE || '30d';
   return jwt.sign(
-    { 
-      id: user.id,
+    {
+      id: user._id.toString(),
       role: user.role,
-      organisation_id: user.organisation_id, // CRITICAL: Include in token
+      organisation_id: user.organisation_id,
       restrictions: user.restrictions
-    }, 
-    process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '30d' }
+    },
+    secret || 'development-only-secret',
+    { expiresIn: expires }
   );
 };
 
-// @desc    Register user (Admin only for creating users)
+// @desc    Register user
 // @route   POST /api/auth/register
 // @access  Private (Admin only)
 const register = async (req, res) => {
   try {
     const { name, email, password, role = 'contributor', restrictions = null } = req.body;
 
-    // Validate input
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -40,17 +72,15 @@ const register = async (req, res) => {
       });
     }
 
-    // Validate role
     const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid role specified. Must be one of: admin, analyst, contributor, viewer'
+        message: 'Invalid role specified'
       });
     }
 
-    // Check if user already exists
-    const existingUser = await localDB.findUserByEmail(email.toLowerCase());
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -58,52 +88,64 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user
-    const userData = {
+    const hashedPassword = await hashPassword(password);
+
+    const verifyOnRegister = process.env.EMAIL_VERIFICATION_ON_REGISTER === 'true';
+    const verifyExpiresAt = verifyOnRegister
+      ? new Date(Date.now() + 24 * 60 * 60 * 1000)
+      : null;
+    const rawVerification = verifyOnRegister ? crypto.randomBytes(32).toString('hex') : null;
+
+    const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
-      password,
+      password: hashedPassword,
       role,
       status: 'active',
-      restrictions: restrictions
-    };
-
-    const user = await localDB.createUser(userData);
-
-    // Generate token
-    const token = generateToken(user);
-
-    // Log registration activity
-    await localDB.logActivity({
-      userId: user.id,
-      action: 'user_registered',
-      resourceType: 'user',
-      resourceId: user.id,
-      details: `User ${user.name} registered with role: ${user.role}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      restrictions: restrictions,
+      organisation_id: req.organisationId || '',
+      email_verified: verifyOnRegister ? false : true,
+      email_verification_token: rawVerification ? hashVerifyToken(rawVerification) : null,
+      email_verification_expires: verifyExpiresAt
     });
 
-    logger.info('User registered successfully', { email: user.email, role: user.role });
+    if (verifyOnRegister && rawVerification) {
+      const send = await emailService.sendVerificationEmail(user, rawVerification);
+      if (!send.sent) {
+        logger.warn('Verification email not sent', { reason: send.reason, email: user.email });
+      }
+    }
 
-    res.status(201).json({
+    await ActivityLog.create({
+      user_id: user._id.toString(),
+      action: 'user_registered',
+      resource_type: 'user',
+      resource_id: user._id.toString(),
+      details: `User ${user.name} registered with role: ${user.role}`,
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
+    });
+
+    if (verifyOnRegister) {
+      return res.status(201).json({
+        success: true,
+        message:
+          'Account created. Check your email to verify your address, then you can sign in.',
+        data: { user: publicUserDoc(user) }
+      });
+    }
+
+    const token = generateToken(user);
+
+    return res.status(201).json({
       success: true,
       data: {
         token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          restrictions: user.restrictions,
-          organisation_id: user.organisation_id,
-          lastLogin: new Date()
-        }
+        user: { ...publicUserDoc(user), lastLogin: new Date() }
       }
     });
   } catch (error) {
-    logger.error('Registration error', error);
+    console.error('❌ REGISTER ERROR:', error);
     res.status(400).json({
       success: false,
       message: error.message || 'Registration failed'
@@ -118,9 +160,8 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    logger.audit('Login attempt', { email });
+    console.log('🔐 Login attempt:', email);
 
-    // Validate email and password
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -128,67 +169,89 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user in local database
-    const user = await localDB.findUserByEmail(email.toLowerCase());
+    console.log('1. Looking up user...');
+    const user = await User.findOne({ email: email.toLowerCase() });
     
     if (!user) {
+      console.log('❌ User not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
+    console.log('✅ User found:', user.email);
 
-    // Check if account is active
     if (user.status !== 'active') {
+      console.log('❌ User not active');
       return res.status(403).json({
         success: false,
         message: 'Account is not active. Please contact administrator.'
       });
     }
 
-    // Verify password
-    const isPasswordCorrect = await localDB.verifyPassword(password, user.password);
+    if (
+      process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
+      user.email_verified === false
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message:
+          'Please verify your email before signing in. Use the link we sent, or request a new verification email from the login page.'
+      });
+    }
+
+    console.log('2. Verifying password...');
+    const isPasswordCorrect = await verifyPassword(password, user.password);
     if (!isPasswordCorrect) {
+      console.log('❌ Password incorrect');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Update last login
-    await localDB.updateLastLogin(user.id);
+    console.log('✅ Password correct');
+    console.log('3. Updating last_login...');
 
-    // Log login activity
-    await localDB.logActivity({
-      userId: user.id,
-      action: 'login',
-      resourceType: 'user',
-      resourceId: user.id,
-      details: 'User logged in successfully',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+    try {
+      user.last_login = new Date();
+      await user.save();
+      console.log('✅ User saved');
+    } catch (saveError) {
+      console.error('❌ Error saving user:', saveError);
+      // Continue anyway - not critical
+    }
 
+    console.log('4. Creating activity log...');
+    try {
+      await ActivityLog.create({
+        user_id: user._id.toString(),
+        action: 'login',
+        resource_type: 'user',
+        resource_id: user._id.toString(),
+        details: 'User logged in successfully',
+        ip_address: req.ip,
+        user_agent: req.get('User-Agent')
+      });
+      console.log('✅ Activity log created');
+    } catch (logError) {
+      console.error('⚠️  Activity log failed:', logError.message);
+      // Continue anyway - not critical
+    }
+
+    console.log('5. Generating token...');
     const token = generateToken(user);
+    console.log('✅ Token generated');
 
-    logger.audit('Login successful', { email, organisationId: user.organisation_id });
+    console.log('✅ Login successful for:', user.email);
 
-    // CRITICAL: Return complete user data with organisation context
     return res.json({
       success: true,
       data: {
         token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          restrictions: user.restrictions,
-          organisation_id: user.organisation_id, // CRITICAL
-          lastLogin: new Date()
-        }
+        user: { ...publicUserDoc(user), lastLogin: new Date() }
       },
       message: user.organisation_id 
         ? `Welcome back! Logged into organisation ID: ${user.organisation_id}` 
@@ -196,10 +259,12 @@ const login = async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Login error', error);
+    console.error('❌ LOGIN ERROR:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Login failed. Please try again.'
+      message: 'Login failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -209,8 +274,7 @@ const login = async (req, res) => {
 // @access  Private
 const verifyToken = async (req, res) => {
   try {
-    // Get user from local database
-    const user = await localDB.findUserById(req.user.id);
+    const user = await User.findById(req.user.id);
 
     if (!user) {
       return res.status(404).json({
@@ -219,22 +283,11 @@ const verifyToken = async (req, res) => {
       });
     }
 
-
     return res.json({
       success: true,
-      data: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        restrictions: user.restrictions,
-        organisation_id: user.organisation_id, // CRITICAL
-        lastLogin: user.last_login
-      }
+      data: publicUserDoc(user)
     });
   } catch (error) {
-    logger.error('Token verification error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -247,15 +300,14 @@ const verifyToken = async (req, res) => {
 // @access  Private
 const logout = async (req, res) => {
   try {
-    // Log logout activity
-    await localDB.logActivity({
-      userId: req.user.id,
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'logout',
-      resourceType: 'user',
-      resourceId: req.user.id,
+      resource_type: 'user',
+      resource_id: req.user.id,
       details: 'User logged out',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
 
     res.json({
@@ -263,7 +315,6 @@ const logout = async (req, res) => {
       message: 'Logged out successfully'
     });
   } catch (error) {
-    logger.error('Logout error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -276,43 +327,83 @@ const logout = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const { name, email, phone, company, bio } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      company,
+      position,
+      bio,
+      notifications,
+      preferences
+    } = req.body;
 
-    const updates = {};
-    if (name) updates.name = name;
-    if (email) updates.email = email;
-    // Note: phone, company, bio would need additional columns in database
-    
-    await localDB.updateUser(req.user.id, updates);
-    
-    // Get updated user
-    const updatedUser = await localDB.findUserById(req.user.id);
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-    // Log profile update activity
-    await localDB.logActivity({
-      userId: req.user.id,
+    if (name !== undefined && String(name).trim()) {
+      user.name = String(name).trim();
+    }
+
+    if (email !== undefined && String(email).trim()) {
+      const nextEmail = String(email).toLowerCase().trim();
+      if (nextEmail !== user.email) {
+        const taken = await User.findOne({
+          email: nextEmail,
+          _id: { $ne: user._id }
+        });
+        if (taken) {
+          return res.status(400).json({
+            success: false,
+            message: 'That email is already used by another account'
+          });
+        }
+        user.email = nextEmail;
+      }
+    }
+
+    const prevSettings =
+      user.settings && typeof user.settings === 'object' ? { ...user.settings } : {};
+    const profile = { ...(prevSettings.profile || {}) };
+    if (phone !== undefined) profile.phone = String(phone);
+    if (company !== undefined) profile.company = String(company);
+    if (position !== undefined) profile.position = String(position);
+    if (bio !== undefined) profile.bio = String(bio);
+
+    const nextSettings = { ...prevSettings, profile };
+    if (notifications !== undefined && typeof notifications === 'object') {
+      nextSettings.notifications = {
+        ...(prevSettings.notifications || {}),
+        ...notifications
+      };
+    }
+    if (preferences !== undefined && typeof preferences === 'object') {
+      nextSettings.preferences = {
+        ...(prevSettings.preferences || {}),
+        ...preferences
+      };
+    }
+    user.settings = nextSettings;
+    user.updated_at = new Date();
+    await user.save();
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'profile_update',
-      resourceType: 'user',
-      resourceId: req.user.id,
-      details: 'User updated profile information',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      resource_type: 'user',
+      resource_id: req.user.id,
+      details: 'User updated profile/settings',
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
 
     return res.json({
       success: true,
-      data: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        status: updatedUser.status,
-        restrictions: updatedUser.restrictions,
-        organisation_id: updatedUser.organisation_id
-      }
+      data: publicUserDoc(user)
     });
   } catch (error) {
-    logger.error('Profile update error', error);
     res.status(400).json({
       success: false,
       message: error.message
@@ -341,9 +432,8 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Get user and verify current password
-    const user = await localDB.findUserById(req.user.id);
-    const isCurrentPasswordCorrect = await localDB.verifyPassword(currentPassword, user.password);
+    const user = await User.findById(req.user.id);
+    const isCurrentPasswordCorrect = await verifyPassword(currentPassword, user.password);
     
     if (!isCurrentPasswordCorrect) {
       return res.status(400).json({
@@ -352,19 +442,18 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Hash new password and update
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-    await localDB.updateUser(req.user.id, { password: hashedPassword });
+    user.password = await hashPassword(newPassword);
+    user.updated_at = new Date();
+    await user.save();
 
-    // Log password change activity
-    await localDB.logActivity({
-      userId: req.user.id,
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'password_change',
-      resourceType: 'user',
-      resourceId: req.user.id,
+      resource_type: 'user',
+      resource_id: req.user.id,
       details: 'User changed password',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
 
     return res.json({
@@ -372,10 +461,142 @@ const changePassword = async (req, res) => {
       message: 'Password changed successfully'
     });
   } catch (error) {
-    logger.error('Password change error', error);
     res.status(400).json({
       success: false,
       message: error.message
+    });
+  }
+};
+
+// @desc    Complete email verification (link from email)
+// @route   GET /api/auth/verify-email?token=
+// @access  Public
+const verifyEmailFromToken = async (req, res) => {
+  try {
+    const raw = req.query.token;
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification link is invalid or expired.'
+      });
+    }
+
+    const hash = hashVerifyToken(raw.trim());
+    const user = await User.findOne({
+      email_verification_token: hash,
+      email_verification_expires: { $gt: new Date() }
+    }).select('+email_verification_token +email_verification_expires');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification link is invalid or expired.'
+      });
+    }
+
+    user.email_verified = true;
+    user.email_verification_token = null;
+    user.email_verification_expires = null;
+    user.updated_at = new Date();
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Email verified. You can sign in now.'
+    });
+  } catch (error) {
+    console.error('verifyEmailFromToken:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not verify email. Please try again or request a new link.'
+    });
+  }
+};
+
+/**
+ * Resend verification email — always responds with the same message (no email enumeration).
+ * @route POST /api/auth/request-verification-email
+ */
+const requestVerificationEmail = async (req, res) => {
+  const generic = {
+    success: true,
+    message:
+      'If that email is registered and still needs verification, we sent a new link.'
+  };
+  try {
+    const email =
+      req.body?.email && String(req.body.email).toLowerCase().trim();
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required.'
+      });
+    }
+
+    const user = await User.findOne({ email }).select(
+      '+email_verification_token +email_verification_expires'
+    );
+
+    if (!user || user.email_verified !== false) {
+      return res.json(generic);
+    }
+
+    const raw = crypto.randomBytes(32).toString('hex');
+    user.email_verification_token = hashVerifyToken(raw);
+    user.email_verification_expires = new Date(
+      Date.now() + 24 * 60 * 60 * 1000
+    );
+    await user.save();
+
+    const send = await emailService.sendVerificationEmail(user, raw);
+    if (!send.sent) {
+      logger.warn('requestVerificationEmail: SMTP not sent', {
+        reason: send.reason,
+        email
+      });
+    }
+
+    return res.json(generic);
+  } catch (error) {
+    logger.error('requestVerificationEmail', error);
+    return res.json(generic);
+  }
+};
+
+const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken: token } = req.body;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token required'
+      });
+    }
+
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    const newToken = jwt.sign(
+      { 
+        id: decoded.id, 
+        email: decoded.email, 
+        role: decoded.role,
+        organisation_id: decoded.organisation_id
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      success: true,
+      token: newToken
+    });
+  } catch (error) {
+    console.error('Refresh token error', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired refresh token'
     });
   }
 };
@@ -386,5 +607,8 @@ module.exports = {
   verifyToken,
   logout,
   updateProfile,
-  changePassword
+  changePassword,
+  refreshToken,
+  verifyEmailFromToken,
+  requestVerificationEmail
 };

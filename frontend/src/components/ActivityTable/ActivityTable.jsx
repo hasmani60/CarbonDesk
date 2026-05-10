@@ -31,7 +31,7 @@ export const ActivityTable = ({ activities, loading, onRefresh }) => {
             {columns.map((column) => (
               <th
                 key={column.key}
-                className={`px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider ${column.width}`}
+                className={`px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider ${column.width}`}
               >
                 {column.label}
               </th>
@@ -73,7 +73,7 @@ export const ActivityTable = ({ activities, loading, onRefresh }) => {
               <td className="px-6 py-4 whitespace-nowrap">
                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                   activity.status === 'active' 
-                    ? 'bg-green-100 text-green-800' 
+                    ? 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300' 
                     : 'bg-gray-100 text-gray-800'
                 }`}>
                   {activity.status}
@@ -81,7 +81,7 @@ export const ActivityTable = ({ activities, loading, onRefresh }) => {
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                 <div className="flex items-center space-x-2">
-                  <button className="text-emerald-600 hover:text-emerald-900">
+                  <button className="text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-300">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
                     </svg>

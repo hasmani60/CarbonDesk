@@ -267,9 +267,12 @@ const UserManagement = () => {
         const usersData = response.data || response || [];
         
         const enhancedUsers = await Promise.all(usersData.map(async (userItem) => {
-          const userActivities = getRecentActivities(5, { userId: userItem._id });
+          const userId = userItem._id || userItem.id; // MongoDB compatibility
+          const userActivities = getRecentActivities(5, { userId });
           return {
             ...userItem,
+            id: userId,  // MongoDB compatibility
+            _id: userId, // MongoDB compatibility
             statistics: {
               ...userItem.statistics,
               recentActivities: userActivities,
@@ -401,7 +404,8 @@ const UserManagement = () => {
   };
 
   const handleShowUserActivities = (userItem) => {
-    const userActivities = getRecentActivities(50, { userId: userItem._id });
+    const userId = userItem._id || userItem.id; // MongoDB compatibility
+    const userActivities = getRecentActivities(50, { userId });
     setSelectedUserActivities(userActivities);
     setSelectedUser(userItem);
     setShowActivitiesModal(true);
@@ -552,21 +556,21 @@ const UserManagement = () => {
 
   const getRoleBadgeColor = (role) => {
     const colors = {
-      admin: 'bg-red-100 text-red-800',
-      analyst: 'bg-blue-100 text-blue-800',
-      contributor: 'bg-green-100 text-green-800',
-      viewer: 'bg-gray-100 text-gray-800'
+      admin: 'bg-red-100 dark:bg-red-950/45 text-red-800 dark:text-red-300',
+      analyst: 'bg-blue-100 dark:bg-blue-950/45 text-blue-800 dark:text-blue-300',
+      contributor: 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300',
+      viewer: 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200'
     };
-    return colors[role] || 'bg-gray-100 text-gray-800';
+    return colors[role] || 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200';
   };
 
   const getStatusBadgeColor = (status) => {
     const colors = {
-      active: 'bg-green-100 text-green-800',
-      inactive: 'bg-gray-100 text-gray-800',
-      suspended: 'bg-red-100 text-red-800'
+      active: 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300',
+      inactive: 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200',
+      suspended: 'bg-red-100 dark:bg-red-950/45 text-red-800 dark:text-red-300'
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200';
   };
 
   const getRoleIcon = (role) => {
@@ -588,10 +592,10 @@ const UserManagement = () => {
   };
 
   const getSeverityColor = (action) => {
-    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50';
-    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50';
-    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50';
-    return 'text-gray-600 bg-gray-50';
+    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50 dark:text-red-300 dark:bg-red-950/50';
+    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50 dark:text-orange-300 dark:bg-orange-950/50';
+    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/50';
+    return 'text-gray-600 bg-gray-50 dark:text-gray-300 dark:bg-slate-800';
   };
 
   const formatTimestamp = (timestamp) => {
@@ -607,11 +611,11 @@ const UserManagement = () => {
 
   if (!isAdmin()) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="text-center">
           <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You need admin privileges to manage users.</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
+          <p className="text-gray-600 dark:text-gray-400">You need admin privileges to manage users.</p>
         </div>
       </div>
     );
@@ -629,7 +633,7 @@ const UserManagement = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={handleExportUsers}
-              className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center space-x-2 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-200 transition-colors"
             >
               <Download className="w-4 h-4" />
               <span>Export</span>
@@ -646,14 +650,14 @@ const UserManagement = () => {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="app-card p-4">
           <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Users className="w-6 h-6 text-blue-600" />
+            <div className="p-2 bg-blue-100 dark:bg-blue-950/40 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Users</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {dashboardStats.loading ? (
                   <span className="text-gray-400">–</span>
                 ) : (
@@ -664,14 +668,14 @@ const UserManagement = () => {
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="app-card p-4">
           <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Activity className="w-6 h-6 text-green-600" />
+            <div className="p-2 bg-green-100 dark:bg-green-950/40 rounded-lg">
+              <Activity className="w-6 h-6 text-green-600 dark:text-green-400" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Activities</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Activities</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {dashboardStats.loading ? (
                   <span className="text-gray-400">–</span>
                 ) : (
@@ -682,14 +686,14 @@ const UserManagement = () => {
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="app-card p-4">
           <div className="flex items-center">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-orange-600" />
+            <div className="p-2 bg-orange-100 dark:bg-orange-950/35 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-orange-600 dark:text-orange-400" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Recent (24h)</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Recent (24h)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {dashboardStats.loading ? (
                   <span className="text-gray-400">–</span>
                 ) : (
@@ -700,14 +704,14 @@ const UserManagement = () => {
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="app-card p-4">
           <div className="flex items-center">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <AlertCircle className="w-6 h-6 text-red-600" />
+            <div className="p-2 bg-red-100 dark:bg-red-950/35 rounded-lg">
+              <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Critical Activities</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Critical Activities</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {dashboardStats.loading ? (
                   <span className="text-gray-400">–</span>
                 ) : (
@@ -719,10 +723,10 @@ const UserManagement = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b">
+      <div className="app-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
               <Activity className="w-5 h-5 mr-2 text-emerald-600" />
               Recent User Activities
             </h3>
@@ -731,7 +735,7 @@ const UserManagement = () => {
                 loadRecentActivities();
                 loadDashboardStats();
               }}
-              className="flex items-center space-x-2 text-sm text-emerald-600 hover:text-emerald-700"
+              className="flex items-center space-x-2 text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
             >
               <RefreshCw className="w-4 h-4" />
               <span>Refresh</span>
@@ -743,20 +747,20 @@ const UserManagement = () => {
           {recentActivities.length > 0 ? (
             <div className="space-y-3 max-h-64 overflow-y-auto">
               {recentActivities.slice(0, 10).map((activity, index) => (
-                <div key={index} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50">
+                <div key={index} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800/60">
                   <div className={`p-2 rounded-lg ${getSeverityColor(activity.action)}`}>
                     {getActivityIcon(activity.action)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
                         {activity.user?.name || 'Unknown User'}
                       </p>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
                         {formatTimestamp(activity.timestamp)}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 truncate">{activity.details}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{activity.details}</p>
                     <div className="flex items-center mt-1 space-x-2">
                       <span className={`text-xs px-2 py-1 rounded-full ${getRoleBadgeColor(activity.user?.role)}`}>
                         {activity.user?.role}
@@ -770,7 +774,7 @@ const UserManagement = () => {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>No recent activities found</p>
             </div>
@@ -778,7 +782,7 @@ const UserManagement = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-4">
+      <div className="app-card p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="relative">
@@ -788,14 +792,14 @@ const UserManagement = () => {
                 placeholder="Search users..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 w-80"
+                className="pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-80"
               />
             </div>
             
             <select
               value={filters.role}
               onChange={(e) => setFilters(prev => ({ ...prev, role: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">All Roles</option>
               <option value="admin">Admin</option>
@@ -807,7 +811,7 @@ const UserManagement = () => {
             <select
               value={filters.status}
               onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -818,7 +822,7 @@ const UserManagement = () => {
 
           <button
             onClick={loadUsers}
-            className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:bg-gray-50 rounded-lg"
+            className="flex items-center space-x-2 px-3 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Refresh</span>
@@ -826,40 +830,42 @@ const UserManagement = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b">
-          <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-          <p className="text-sm text-gray-600 mt-1">Manage user accounts, roles, RBAC permissions, and monitor activities</p>
+      <div className="app-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">User Management</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage user accounts, roles, RBAC permissions, and monitor activities</p>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
-            <span className="ml-2 text-gray-600">Loading users...</span>
+            <span className="ml-2 text-gray-600 dark:text-gray-400">Loading users...</span>
           </div>
         ) : users.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 mb-2">No users found</p>
-            <p className="text-sm text-gray-500">Try adjusting your search criteria or add a new user</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-2">No users found</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Try adjusting your search criteria or add a new user</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-emerald-50">
+              <thead className="bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-slate-700">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Activity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Restrictions</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">User</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Activity</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Restrictions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((userItem) => (
-                  <tr key={userItem._id || userItem.id} className="hover:bg-gray-50">
+              <tbody className="bg-white dark:bg-slate-900/40 divide-y divide-gray-200 dark:divide-slate-700">
+                {users.map((userItem) => {
+                  const userId = userItem._id || userItem.id; // MongoDB compatibility
+                  return (
+                  <tr key={userId} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center">
@@ -868,17 +874,17 @@ const UserManagement = () => {
                           </span>
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{userItem.name}</div>
-                          <div className="text-sm text-gray-500">{userItem.email}</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">{userItem.name}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{userItem.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <select
                         value={userItem.role}
-                        onChange={(e) => handleUpdateUserRole(userItem._id || userItem.id, e.target.value)}
-                        className="text-xs px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        disabled={userItem._id === user.id || userItem.id === user.id}
+                        onChange={(e) => handleUpdateUserRole(userId, e.target.value)}
+                        className="text-xs px-2 py-1 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        disabled={userId === user.id}
                       >
                         <option value="admin">Admin</option>
                         <option value="analyst">Analyst</option>
@@ -895,9 +901,9 @@ const UserManagement = () => {
                     <td className="px-6 py-4">
                       <select
                         value={userItem.status}
-                        onChange={(e) => handleUpdateUserStatus(userItem._id || userItem.id, e.target.value)}
+                        onChange={(e) => handleUpdateUserStatus(userId, e.target.value)}
                         className={`text-xs px-2 py-1 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getStatusBadgeColor(userItem.status)}`}
-                        disabled={userItem._id === user.id || userItem.id === user.id}
+                        disabled={userId === user.id}
                       >
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -907,22 +913,22 @@ const UserManagement = () => {
                     <td className="px-6 py-4">
                       <div className="text-sm space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-900 font-medium">
+                          <span className="text-gray-900 dark:text-white font-medium">
                             {userItem.statistics?.totalActivities || 0} total
                           </span>
                           <button
                             onClick={() => handleShowUserActivities(userItem)}
-                            className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center"
+                            className="text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 flex items-center"
                           >
                             <ExternalLink className="w-3 h-3 mr-1" />
                             View
                           </button>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
                           Last: {userItem.statistics?.lastActivity ? formatTimestamp(userItem.statistics.lastActivity) : 'Never'}
                         </div>
                         {userItem.statistics?.recentActivities && userItem.statistics.recentActivities.length > 0 && (
-                          <div className="text-xs text-blue-600">
+                          <div className="text-xs text-blue-600 dark:text-blue-400">
                             Latest: {userItem.statistics.recentActivities[0].action.replace(/_/g, ' ')}
                           </div>
                         )}
@@ -938,7 +944,7 @@ const UserManagement = () => {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => setSelectedUser(userItem)}
-                          className="text-emerald-600 hover:text-emerald-900 transition-colors"
+                          className="text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-300 transition-colors"
                           title="Edit User"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -950,9 +956,9 @@ const UserManagement = () => {
                         >
                           <Activity className="w-4 h-4" />
                         </button>
-                        {(userItem._id !== user.id && userItem.id !== user.id) && (
+                        {userId !== user.id && (
                           <button
-                            onClick={() => handleDeleteUser(userItem._id || userItem.id, userItem.name)}
+                            onClick={() => handleDeleteUser(userId, userItem.name)}
                             className="text-red-600 hover:text-red-900 transition-colors"
                             title="Delete User"
                           >
@@ -962,7 +968,8 @@ const UserManagement = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1014,36 +1021,36 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
   };
 
   const getSeverityColor = (action) => {
-    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50';
-    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50';
-    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50';
-    return 'text-gray-600 bg-gray-50';
+    if (action.includes('delete') || action.includes('admin')) return 'text-red-600 bg-red-50 dark:text-red-300 dark:bg-red-950/50';
+    if (action.includes('create') || action.includes('update')) return 'text-orange-600 bg-orange-50 dark:text-orange-300 dark:bg-orange-950/50';
+    if (action.includes('viewed') || action.includes('login')) return 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/50';
+    return 'text-gray-600 bg-gray-50 dark:text-gray-300 dark:bg-slate-800';
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b">
+    <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-600 shadow-2xl dark:shadow-black/40 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700 shrink-0">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">User Activities</h2>
-            <p className="text-sm text-gray-600 mt-1">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Activities</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Activity history for {user.name} ({user.email})
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <XCircle className="w-6 h-6" />
           </button>
         </div>
 
-        <div className="p-6 border-b">
+        <div className="p-6 border-b border-gray-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40">
           <div className="flex items-center space-x-4">
             <select
               value={activityFilter}
               onChange={(e) => setActivityFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">All Activities</option>
               <option value="login">Login Events</option>
@@ -1051,7 +1058,7 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
               <option value="admin">Admin Actions</option>
               <option value="viewed">Page Views</option>
             </select>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
               Showing {filteredActivities.length} of {activities.length} activities
             </div>
           </div>
@@ -1061,20 +1068,20 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
           {filteredActivities.length > 0 ? (
             <div className="p-6 space-y-4">
               {filteredActivities.map((activity, index) => (
-                <div key={index} className="flex items-start space-x-4 p-4 rounded-lg border hover:bg-gray-50">
+                <div key={index} className="flex items-start space-x-4 p-4 rounded-lg border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800/50">
                   <div className={`p-2 rounded-lg ${getSeverityColor(activity.action)}`}>
                     {getActivityIcon(activity.action)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <h4 className="text-sm font-medium text-gray-900">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                         {activity.action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </h4>
                       <span className="text-sm text-gray-500">
                         {new Date(activity.timestamp).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">{activity.details}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{activity.details}</p>
                     {activity.resourceType && (
                       <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
                         <span>Resource: {activity.resourceType}</span>
@@ -1088,12 +1095,12 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
           ) : (
             <div className="text-center py-12">
               <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No activities found for the selected filter</p>
+              <p className="text-gray-600 dark:text-gray-400">No activities found for the selected filter</p>
             </div>
           )}
         </div>
 
-        <div className="p-6 border-t bg-gray-50">
+        <div className="p-6 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80 shrink-0">
           <button
             onClick={onClose}
             className="w-full bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 transition-colors"
@@ -1407,19 +1414,19 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
 
   const getScopeStatusColor = (scope) => {
     const mode = scopeSelectionMode[scope];
-    if (mode === 'scope') return 'text-green-600 bg-green-50';
-    if (mode === 'activity') return 'text-blue-600 bg-blue-50';
-    return 'text-gray-600 bg-gray-50';
+    if (mode === 'scope') return 'text-green-600 bg-green-50 dark:text-emerald-300 dark:bg-emerald-950/50';
+    if (mode === 'activity') return 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/50';
+    return 'text-gray-600 bg-gray-50 dark:text-gray-300 dark:bg-slate-800';
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[95vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Create New User with Activity-Specific Access Control</h2>
+    <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-600 shadow-2xl dark:shadow-black/40 w-full max-w-6xl max-h-[95vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white pr-4">Create New User with Activity-Specific Access Control</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
           >
             <XCircle className="w-6 h-6" />
           </button>
@@ -1428,15 +1435,15 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Full Name *
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
-                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  errors.name ? 'border-red-500' : 'border-gray-300'
+                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 dark:text-gray-100 ${
+                  errors.name ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-600'
                 }`}
                 placeholder="Enter full name"
               />
@@ -1444,15 +1451,15 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Email Address *
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  errors.email ? 'border-red-500' : 'border-gray-300'
+                className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 dark:text-gray-100 ${
+                  errors.email ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-600'
                 }`}
                 placeholder="Enter email address"
               />
@@ -1461,15 +1468,15 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Password *
             </label>
             <input
               type="password"
               value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                errors.password ? 'border-red-500' : 'border-gray-300'
+              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 dark:text-gray-100 ${
+                errors.password ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-600'
               }`}
               placeholder="Enter password"
             />
@@ -1478,13 +1485,13 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Role *
               </label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({...formData, role: e.target.value})}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 {rbacOptions.roles.map(role => (
                   <option key={role.value} value={role.value}>
@@ -1492,19 +1499,19 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {rbacOptions.roles.find(r => r.value === formData.role)?.description}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Status
               </label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({...formData, status: e.target.value})}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -1513,19 +1520,19 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
           </div>
 
           {showRestrictions && (
-            <div className="border-t pt-6">
+            <div className="border-t border-gray-200 dark:border-slate-700 pt-6">
               <div className="flex items-center space-x-2 mb-4">
                 <Target className="w-5 h-5 text-orange-500" />
-                <h3 className="text-lg font-medium text-gray-900">Activity-Specific Access Control</h3>
-                <span className="text-sm text-gray-500">(Contributor Role)</span>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Activity-Specific Access Control</h3>
+                <span className="text-sm text-gray-500 dark:text-gray-400">(Contributor Role)</span>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 rounded-lg p-4 mb-6">
+                <h4 className="font-medium text-blue-900 dark:text-blue-200 mb-2 flex items-center">
                   <Info className="w-4 h-4 mr-2" />
                   Enhanced Access Configuration:
                 </h4>
-                <ul className="text-sm text-blue-800 space-y-1">
+                <ul className="text-sm text-blue-800 dark:text-blue-200/90 space-y-1">
                   <li>• <strong>Activity-Specific Access:</strong> Choose individual activity categories for granular control</li>
                   <li>• <strong>No Access:</strong> Completely deny access to a scope</li>
                   <li>• <strong>Note:</strong> Activity categories match exactly what users see in the Input page</li>
@@ -1534,8 +1541,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
 
               <div className="space-y-4">
                 {[1, 2, 3].map(scope => (
-                  <div key={scope} className="border rounded-lg shadow-sm">
-                    <div className="p-4 bg-gradient-to-r from-gray-50 to-white border-b">
+                  <div key={scope} className="border border-gray-200 dark:border-slate-600 rounded-lg shadow-sm dark:shadow-black/30 overflow-hidden">
+                    <div className="p-4 bg-gradient-to-r from-gray-50 to-white dark:from-slate-800/90 dark:to-slate-900/90 border-b border-gray-200 dark:border-slate-600">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
                           <div className="flex items-center space-x-2">
@@ -1547,16 +1554,16 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               {scope}
                             </div>
                             <div>
-                              <h4 className="font-medium text-gray-900">Scope {scope}</h4>
-                              <p className="text-sm text-gray-600">
+                              <h4 className="font-medium text-gray-900 dark:text-white">Scope {scope}</h4>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
                                 {rbacOptions.scopes.find(s => s.value === scope)?.description}
                               </p>
                               <div className="flex items-center space-x-2 mt-1">
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-500">
                                   {activitiesPerScope[scope]?.length || 0} activity categories
                                 </span>
                                 {scopeSelectionMode[scope] === 'activity' && (
-                                  <span className="text-xs text-blue-600">
+                                  <span className="text-xs text-blue-600 dark:text-blue-400">
                                     {formData.allowedActivities.filter(a => 
                                       activitiesPerScope[scope]?.includes(a)
                                     ).length} selected
@@ -1574,7 +1581,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                           <button
                             type="button"
                             onClick={() => toggleScopeExpanded(scope)}
-                            className="text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                           >
                             {expandedScopes[scope] ? 
                               <ChevronUp className="w-5 h-5" /> : 
@@ -1586,16 +1593,16 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                     </div>
 
                     {expandedScopes[scope] && (
-                      <div className="p-4 bg-white">
+                      <div className="p-4 bg-white dark:bg-slate-900/70">
                         <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                             Access Level for Scope {scope}
                           </label>
                           <div className="grid grid-cols-2 gap-3">
                             <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                               scopeSelectionMode[scope] === 'activity' 
-                                ? 'border-blue-500 bg-blue-50 shadow-md' 
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-400 shadow-md' 
+                                : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800'
                             }`}>
                               <input
                                 type="radio"
@@ -1609,15 +1616,15 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                 scopeSelectionMode[scope] === 'activity' ? 'text-blue-600' : 'text-gray-400'
                               }`} />
                               <div className="text-center">
-                                <div className="font-medium text-blue-700">Activity-Specific</div>
-                                <div className="text-xs text-blue-600">Choose categories</div>
+                                <div className="font-medium text-blue-700 dark:text-blue-200">Activity-Specific</div>
+                                <div className="text-xs text-blue-600 dark:text-blue-400">Choose categories</div>
                               </div>
                             </label>
 
                             <label className={`flex flex-col items-center space-y-2 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                               scopeSelectionMode[scope] === 'none' 
-                                ? 'border-gray-500 bg-gray-50 shadow-md' 
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                ? 'border-gray-500 bg-gray-50 dark:bg-slate-800 dark:border-gray-400 shadow-md' 
+                                : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500 hover:bg-gray-50 dark:hover:bg-slate-800'
                             }`}>
                               <input
                                 type="radio"
@@ -1631,22 +1638,22 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                 scopeSelectionMode[scope] === 'none' ? 'text-gray-600' : 'text-gray-400'
                               }`} />
                               <div className="text-center">
-                                <div className="font-medium text-gray-700">No Access</div>
-                                <div className="text-xs text-gray-600">Deny all access</div>
+                                <div className="font-medium text-gray-700 dark:text-gray-200">No Access</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">Deny all access</div>
                               </div>
                             </label>
                           </div>
                         </div>
 
                         {scopeSelectionMode[scope] === 'activity' && (
-                          <div className="mt-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+                          <div className="mt-4 p-4 border-2 border-blue-200 dark:border-blue-800/80 rounded-lg bg-blue-50 dark:bg-blue-950/40">
                             <div className="flex items-center justify-between mb-4">
-                              <label className="block text-sm font-medium text-blue-900 flex items-center">
+                              <label className="block text-sm font-medium text-blue-900 dark:text-blue-200 flex items-center">
                                 <List className="w-4 h-4 mr-2" />
                                 Select Activity Categories in Scope {scope}
                               </label>
                               <div className="flex items-center space-x-2">
-                                <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded-full">
+                                <span className="text-xs text-blue-700 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-1 rounded-full">
                                   {formData.allowedActivities.filter(activity => 
                                     activitiesPerScope[scope]?.includes(activity)
                                   ).length} of {activitiesPerScope[scope]?.length || 0} selected
@@ -1665,7 +1672,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                     ...prev,
                                     [scope]: e.target.value
                                   }))}
-                                  className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  className="w-full pl-10 pr-4 py-2 border border-blue-300 dark:border-blue-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 dark:text-gray-100"
                                 />
                               </div>
                             </div>
@@ -1674,7 +1681,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               <button
                                 type="button"
                                 onClick={() => handleSelectAllActivities(scope)}
-                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-200 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-800/70 transition-colors"
                               >
                                 <Plus className="w-3 h-3" />
                                 <span>Select All</span>
@@ -1682,7 +1689,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                               <button
                                 type="button"
                                 onClick={() => handleClearAllActivities(scope)}
-                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                                className="flex items-center space-x-1 text-xs px-3 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
                               >
                                 <Minus className="w-3 h-3" />
                                 <span>Clear All</span>
@@ -1694,7 +1701,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                     ...prev,
                                     [scope]: ''
                                   }))}
-                                  className="flex items-center space-x-1 text-xs px-3 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                                  className="flex items-center space-x-1 text-xs px-3 py-2 bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 rounded-lg hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
                                 >
                                   <X className="w-3 h-3" />
                                   <span>Clear Search</span>
@@ -1711,8 +1718,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                       key={activity} 
                                       className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all hover:shadow-sm ${
                                         isSelected 
-                                          ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
-                                          : 'bg-white border-2 border-gray-200 hover:border-blue-200 hover:bg-blue-25'
+                                          ? 'bg-blue-100 dark:bg-blue-950/60 border-2 border-blue-300 dark:border-blue-600 shadow-sm' 
+                                          : 'bg-white dark:bg-slate-800/80 border-2 border-gray-200 dark:border-slate-600 hover:border-blue-200 dark:hover:border-blue-600 hover:bg-blue-25 dark:hover:bg-slate-700/80'
                                       }`}
                                     >
                                       <input
@@ -1722,8 +1729,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
                                       />
                                       <div className="flex-1">
-                                        <div className="text-sm font-medium text-gray-900">{activity}</div>
-                                        <div className="text-xs text-gray-600">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-white">{activity}</div>
+                                        <div className="text-xs text-gray-600 dark:text-gray-400">
                                           {emissionFactors?.[`scope${scope}`]?.[activity] ? 
                                             `${Object.keys(emissionFactors[`scope${scope}`][activity]).length} emission sources` :
                                             'Activity category for emission tracking'
@@ -1740,13 +1747,13 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                                 })}
                               </div>
                             ) : (
-                              <div className="text-center py-4 text-gray-500">
+                              <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                                 <p className="text-sm">No activities available for Scope {scope}</p>
                               </div>
                             )}
 
                             {activitySearchTerm[scope] && (
-                              <div className="mt-3 text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                              <div className="mt-3 text-xs text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 p-2 rounded">
                                 Showing {getFilteredActivities(scope).length} of {activitiesPerScope[scope]?.length || 0} activities
                                 {getFilteredActivities(scope).length === 0 && (
                                   <span className="text-orange-600"> - No matching activities found</span>
@@ -1757,10 +1764,10 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                         )}
 
                         {scopeSelectionMode[scope] === 'none' && (
-                          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                          <div className="mt-4 p-3 bg-gray-50 dark:bg-slate-800/80 border border-gray-200 dark:border-slate-600 rounded-lg">
                             <div className="flex items-center space-x-2">
-                              <XCircle className="w-4 h-4 text-gray-600" />
-                              <p className="text-sm text-gray-700">
+                              <XCircle className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                              <p className="text-sm text-gray-700 dark:text-gray-300">
                                 <strong>No Access:</strong> User will not be able to access any activities in Scope {scope}.
                               </p>
                             </div>
@@ -1772,25 +1779,25 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 ))}
               </div>
 
-              <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <h4 className="font-medium text-emerald-900 mb-2 flex items-center">
+              <div className="mt-6 p-4 bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800/70 rounded-lg">
+                <h4 className="font-medium text-emerald-900 dark:text-emerald-300 mb-2 flex items-center">
                   <Eye className="w-4 h-4 mr-2" />
                   Access Preview Summary
                 </h4>
-                <div className="text-sm text-emerald-800 whitespace-pre-line bg-white p-3 rounded border">
+                <div className="text-sm text-emerald-800 dark:text-emerald-300 whitespace-pre-line bg-white dark:bg-slate-900 p-3 rounded border border-gray-200 dark:border-slate-600">
                   {accessPreview || 'No access configured'}
                 </div>
-                <div className="mt-2 text-xs text-emerald-600">
+                <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
                   This preview shows exactly what the user will be able to access in the Input page
                 </div>
               </div>
 
-              <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <h4 className="font-medium text-orange-900 mb-3 flex items-center">
+              <div className="mt-6 p-4 bg-orange-50 dark:bg-orange-950/35 border border-orange-200 dark:border-orange-900/60 rounded-lg">
+                <h4 className="font-medium text-orange-900 dark:text-orange-200 mb-3 flex items-center">
                   <Lock className="w-4 h-4 mr-2" />
                   Page Access Restrictions (Optional)
                 </h4>
-                <p className="text-xs text-orange-700 mb-3">
+                <p className="text-xs text-orange-700 dark:text-orange-300/90 mb-3">
                   By default, contributors can access Dashboard, Input, Monitor, and Settings pages. 
                   Select pages below to RESTRICT access (remove from available pages).
                 </p>
@@ -1802,8 +1809,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                       key={page.value}
                       className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all border-2 ${
                         formData.restrictedPages?.includes(page.value)
-                          ? 'bg-red-50 border-red-300'
-                          : 'bg-white border-gray-200 hover:border-orange-300'
+                          ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800'
+                          : 'bg-white dark:bg-slate-800/80 border-gray-200 dark:border-slate-600 hover:border-orange-300 dark:hover:border-orange-700'
                       }`}
                     >
                       <input
@@ -1827,8 +1834,8 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                       <div className="flex items-center space-x-2 flex-1">
                         <span className="text-lg">{page.icon}</span>
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{page.label}</div>
-                          <div className="text-xs text-gray-600">{page.value}</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">{page.label}</div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400">{page.value}</div>
                         </div>
                       </div>
                       {formData.restrictedPages?.includes(page.value) && (
@@ -1837,7 +1844,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                     </label>
                   ))}
                 </div>
-                <div className="mt-3 text-xs text-orange-600">
+                <div className="mt-3 text-xs text-orange-600 dark:text-orange-400">
                   {formData.restrictedPages?.length > 0 ? (
                     <span>⚠️ User will NOT be able to access: {formData.restrictedPages.map(p => 
                       rbacOptions?.pages?.find(page => page.value === p)?.label
@@ -1857,7 +1864,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             </div>
           )}
 
-          <div className="flex space-x-3 pt-4 sticky bottom-0 bg-white border-t -mx-6 px-6 py-4">
+          <div className="flex space-x-3 pt-4 sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-t border-gray-200 dark:border-slate-700 -mx-6 px-6 py-4">
             <button 
               type="submit" 
               disabled={loading}
@@ -1879,7 +1886,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
               type="button" 
               onClick={onClose}
               disabled={loading}
-              className="flex-1 border border-gray-300 py-3 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              className="flex-1 border border-gray-300 dark:border-slate-600 py-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-gray-200 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1887,12 +1894,12 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
         </form>
 
         <div className="p-6 pt-0">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800 font-medium mb-2 flex items-center">
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-100 dark:border-blue-900/50">
+            <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2 flex items-center">
               <Info className="w-4 h-4 mr-2" />
               Role-Based Access Control (RBAC) + Activity-Specific Restrictions:
             </p>
-            <div className="grid grid-cols-2 gap-4 text-xs text-blue-700">
+            <div className="grid grid-cols-2 gap-4 text-xs text-blue-700 dark:text-blue-200/90">
               <div>
                 <strong>Admin:</strong> Full system access (restrictions ignored)<br/>
                 <strong>Analyst:</strong> Analytics & Settings only<br/>
@@ -1902,7 +1909,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
                 <strong>Viewer:</strong> Dashboard, Monitor, Analytics & Settings (read-only)<br/>
               </div>
             </div>
-            <div className="mt-3 text-xs text-blue-600 border-t border-blue-200 pt-3">
+            <div className="mt-3 text-xs text-blue-600 dark:text-blue-400 border-t border-blue-200 dark:border-blue-900 pt-3">
               <strong>Note:</strong> Activity categories selected here match exactly what users will see in the Input page. 
               For example, selecting "Gaseous Fuels" gives access to all gaseous fuel types (Butane, CNG, LNG, LPG, Natural Gas, Propane).
             </div>

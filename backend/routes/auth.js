@@ -1,4 +1,4 @@
-// routes/auth.js
+// routes/auth.js - MongoDB-compatible authentication routes
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const {
@@ -7,7 +7,9 @@ const {
   verifyToken,
   logout,
   updateProfile,
-  changePassword
+  changePassword,
+  verifyEmailFromToken,
+  requestVerificationEmail
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -15,6 +17,8 @@ const router = express.Router();
 // Public routes
 router.post('/register', register);
 router.post('/login', login);
+router.get('/verify-email', verifyEmailFromToken);
+router.post('/request-verification-email', requestVerificationEmail);
 
 // Protected routes
 router.get('/verify', authenticateToken, verifyToken);

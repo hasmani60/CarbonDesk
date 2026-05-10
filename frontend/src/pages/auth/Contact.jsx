@@ -12,14 +12,18 @@ import {
   Send,
   ArrowLeft,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Sun,
+  Moon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTheme } from '../../context/ThemeContext';
 // Import the Sustain360 logo
 import Sustain360Logo from '../../assets/Sustain360_Logo.svg';
 
 const Contact = () => {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
@@ -160,16 +164,24 @@ const Contact = () => {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 flex items-center justify-center p-4">
+      <div className="relative min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center p-4">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="absolute top-4 right-4 z-10 p-2 rounded-lg bg-white/80 dark:bg-slate-800/90 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm transition-colors"
+          aria-label="Toggle theme"
+        >
+          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
         <div className="max-w-md w-full">
-          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-10 h-10 text-green-600" />
+          <div className="bg-white dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg dark:shadow-none p-8 text-center">
+            <div className="w-16 h-16 bg-green-100 dark:bg-emerald-950/50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-10 h-10 text-green-600 dark:text-emerald-400" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
               Enquiry Saved!
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
               Your enquiry has been saved locally. The administrator will be notified when they access the system.
             </p>
             <div className="space-y-3">
@@ -181,7 +193,7 @@ const Contact = () => {
               </button>
               <button
                 onClick={() => setSubmitted(false)}
-                className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                className="w-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 py-3 px-4 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-600 transition-colors"
               >
                 Submit Another Enquiry
               </button>
@@ -193,14 +205,22 @@ const Contact = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="relative min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-12 px-4 sm:px-6 lg:px-8">
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 z-10 p-2 rounded-lg bg-white/80 dark:bg-slate-800/90 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm transition-colors"
+        aria-label="Toggle theme"
+      >
+        {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+      </button>
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           {/* Back to Login Link */}
           <Link
             to="/login"
-            className="inline-flex items-center text-emerald-600 hover:text-emerald-700 mb-6 transition-colors"
+            className="inline-flex items-center text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 mb-6 transition-colors"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Login
@@ -215,23 +235,23 @@ const Contact = () => {
             />
           </div>
           
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-2">
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2">
             Contact NatureMark Systems
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Fill out the form below and our team will get back to you shortly
           </p>
         </div>
 
         {/* Information Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
           <div className="flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-medium text-blue-900 mb-1">
+              <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-1">
                 New to Sustain360?
               </h3>
-              <p className="text-sm text-blue-700">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
                 Submit an enquiry to request access. Your request will be saved locally and reviewed by the administrator.
               </p>
             </div>
@@ -239,11 +259,11 @@ const Contact = () => {
         </div>
 
         {/* Enquiry Form */}
-        <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="bg-white dark:bg-slate-900/95 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg dark:shadow-none p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Name */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Full Name <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -257,7 +277,7 @@ const Contact = () => {
                   value={formData.name}
                   onChange={handleChange}
                   className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                    errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.name ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                   }`}
                   placeholder="Enter your full name"
                 />
@@ -269,7 +289,7 @@ const Contact = () => {
 
             {/* Organisation */}
             <div>
-              <label htmlFor="organisation" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="organisation" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Organisation <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -283,7 +303,7 @@ const Contact = () => {
                   value={formData.organisation}
                   onChange={handleChange}
                   className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                    errors.organisation ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.organisation ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                   }`}
                   placeholder="Your company or organisation name"
                 />
@@ -297,7 +317,7 @@ const Contact = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Email */}
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Email Address <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -311,7 +331,7 @@ const Contact = () => {
                     value={formData.email}
                     onChange={handleChange}
                     className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                      errors.email ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.email ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                     }`}
                     placeholder="your.email@example.com"
                   />
@@ -323,7 +343,7 @@ const Contact = () => {
 
               {/* Phone */}
               <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Phone Number <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -337,7 +357,7 @@ const Contact = () => {
                     value={formData.phone}
                     onChange={handleChange}
                     className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                      errors.phone ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.phone ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                     }`}
                     placeholder="+91 98765 43210"
                   />
@@ -352,7 +372,7 @@ const Contact = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Location */}
               <div>
-                <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="location" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Location <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -366,7 +386,7 @@ const Contact = () => {
                     value={formData.location}
                     onChange={handleChange}
                     className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                      errors.location ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.location ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                     }`}
                     placeholder="City, Country"
                   />
@@ -378,7 +398,7 @@ const Contact = () => {
 
               {/* Role */}
               <div>
-                <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Desired Role <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -391,7 +411,7 @@ const Contact = () => {
                     value={formData.role}
                     onChange={handleChange}
                     className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors ${
-                      errors.role ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.role ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                     }`}
                   >
                     {roles.map(role => (
@@ -409,7 +429,7 @@ const Contact = () => {
 
             {/* Query */}
             <div>
-              <label htmlFor="query" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="query" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Your Query <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -423,7 +443,7 @@ const Contact = () => {
                   value={formData.query}
                   onChange={handleChange}
                   className={`block w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors resize-none ${
-                    errors.query ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.query ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-gray-300 dark:border-slate-600'
                   }`}
                   placeholder="Tell us about your requirements, questions, or how we can help you..."
                 />
@@ -431,7 +451,7 @@ const Contact = () => {
               {errors.query && (
                 <p className="mt-1 text-sm text-red-600">{errors.query}</p>
               )}
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Minimum 20 characters. Please provide details about your needs.
               </p>
             </div>
@@ -441,7 +461,7 @@ const Contact = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+                className="w-full flex justify-center items-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
               >
                 {loading ? (
                   <div className="flex items-center space-x-2">
@@ -460,11 +480,11 @@ const Contact = () => {
 
           {/* Already have account link */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Already have an account?{' '}
               <Link
                 to="/login"
-                className="font-medium text-emerald-600 hover:text-emerald-500 transition-colors"
+                className="font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors"
               >
                 Sign in here
               </Link>
@@ -473,11 +493,11 @@ const Contact = () => {
         </div>
 
         {/* Footer */}
-        <div className="text-center mt-6 pt-4 border-t border-gray-200">
-          <p className="text-xs text-gray-500 mb-1">
+        <div className="text-center mt-6 pt-4 border-t border-gray-200 dark:border-slate-700">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
             Your enquiry will be stored locally for administrator review
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 dark:text-gray-500">
             © {new Date().getFullYear()} NatureMark Systems. All rights reserved.
           </p>
         </div>

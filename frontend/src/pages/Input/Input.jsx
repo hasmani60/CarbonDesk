@@ -10,8 +10,15 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
-import { saveEmission } from '../../utils/localStorage';
 import toast from 'react-hot-toast';
+
+/** DB/JWT may store scope ids as strings — avoid .includes(1) failing on ["1"] */
+function scopeAllowListIncludes(list, scopeVal) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const t = parseInt(String(scopeVal), 10);
+  if (!Number.isFinite(t)) return false;
+  return list.some((s) => parseInt(String(s), 10) === t);
+}
 
 const Input = () => {
   const { user, canAccessScope, canAccessActivity, getAllowedScopes, getAllowedActivities } = useAuth();
@@ -261,7 +268,7 @@ const Input = () => {
       console.log(`[RBAC Debug] Allowed activities:`, allowedActivities);
       
       // Check if user has full scope access
-      const hasFullScopeAccess = allowedScopes && allowedScopes.includes(parseInt(activeScope));
+      const hasFullScopeAccess = allowedScopes && scopeAllowListIncludes(allowedScopes, activeScope);
       
       if (hasFullScopeAccess) {
         console.log(`[RBAC Debug] User has FULL access to Scope ${activeScope}`);
@@ -307,7 +314,7 @@ const Input = () => {
       }
       
       // Check if has full scope access
-      if (allowedScopes && allowedScopes.includes(parseInt(activeScope))) {
+      if (allowedScopes && scopeAllowListIncludes(allowedScopes, activeScope)) {
         return true;
       }
       
@@ -381,64 +388,6 @@ const Input = () => {
       });
   };
 
-  const handleEmissionSubmit = async (emissionData) => {
-    try {
-      if (!canAccessScope(activeScope) || !canAccessActivity(selectedActivity.name)) {
-        toast.error('Access denied. Insufficient permissions to create this emission record.');
-        return;
-      }
-
-      const emissionRecord = {
-        id: `emission_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        scope: parseInt(activeScope),
-        category: selectedActivity.name,
-        type: emissionData.source || emissionData.selectedType,
-        amount: parseFloat(emissionData.amount),
-        unit: emissionData.unit,
-        startDate: emissionData.startDate,
-        endDate: emissionData.endDate,
-        location: emissionData.location,
-        description: emissionData.description,
-        factor: emissionData.emissionFactor,
-        calculatedEmissions: emissionData.calculatedEmissions,
-        user: user.id,
-        userName: user.name,
-        createdAt: new Date().toISOString(),
-        status: 'submitted',
-        activityType: selectedActivity.activityType,
-        activityData: emissionData.activityData
-      };
-      
-      await saveEmission(emissionRecord);
-      
-      logEmissionAction('created', emissionRecord.id, 
-        `Created emission record: ${selectedActivity.name}`, {
-          scope: activeScope,
-          activity: selectedActivity.name,
-          activityType: selectedActivity.activityType,
-          amount: emissionData.amount,
-          unit: emissionData.unit,
-          calculatedEmissions: emissionData.calculatedEmissions
-        });
-
-      toast.success('Emission data saved successfully!');
-      setShowEmissionForm(false);
-      setSelectedActivity(null);
-      
-      window.dispatchEvent(new CustomEvent('emissionSaved', { detail: emissionRecord }));
-    } catch (error) {
-      toast.error('Failed to save emission data');
-      console.error('Emission submission error:', error);
-      
-      logEmissionAction('creation_failed', null, 
-        `Failed to create emission record: ${error.message}`, {
-          scope: activeScope,
-          activity: selectedActivity?.name,
-          error: error.message
-        });
-    }
-  };
-
   // Task Widget Integration - Handle task clicks to navigate to relevant scope/activity
   const handleTaskClick = (task) => {
     if (!task) return;
@@ -484,21 +433,21 @@ const Input = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
-        <span className="ml-3 text-lg text-gray-600">Loading...</span>
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-gray-200 dark:border-slate-600 border-t-emerald-600"></div>
+        <span className="ml-3 text-lg text-gray-600 dark:text-gray-400">Loading...</span>
       </div>
     );
   }
 
   if (!user || !['admin', 'contributor'].includes(user.role)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
+        <div className="max-w-md w-full bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-8 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Shield className="w-8 h-8 text-red-600" />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Restricted</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Access Restricted</h1>
           
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <div className="flex items-center">
@@ -514,7 +463,7 @@ const Input = () => {
             </div>
           </div>
 
-          <div className="text-sm text-gray-600 mb-6">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             <p><strong>Input page is available to:</strong></p>
             <ul className="mt-2 space-y-1">
               <li>• Admin (full access)</li>
@@ -537,13 +486,13 @@ const Input = () => {
 
   if (accessDenied || availableScopes.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
+        <div className="max-w-md w-full bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-8 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Lock className="w-8 h-8 text-red-600" />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Scope Access Restricted</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Scope Access Restricted</h1>
           
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <div className="flex items-center">
@@ -559,7 +508,7 @@ const Input = () => {
             </div>
           </div>
 
-          <div className="text-sm text-gray-600 mb-6">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             <p>Contact your administrator to request access to emission scopes.</p>
           </div>
 
@@ -583,7 +532,7 @@ const Input = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <PageHeader 
         title="Add Emission"
         breadcrumb={[
@@ -603,12 +552,12 @@ const Input = () => {
       )}
 
       {user?.role === 'contributor' && user?.restrictions && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Shield className="w-5 h-5 text-blue-600" />
-            <h3 className="font-medium text-blue-900">Your Access Permissions</h3>
+            <h3 className="font-medium text-blue-900 dark:text-blue-100">Your Access Permissions</h3>
           </div>
-          <div className="text-sm text-blue-800 space-y-1">
+          <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
             {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
               <p>• <strong>Full Scope Access:</strong> Scopes {user.restrictions.allowedScopes.join(', ')}</p>
             )}
@@ -620,14 +569,14 @@ const Input = () => {
               <p>• <strong>No restrictions</strong> - Full access to all activities</p>
             )}
           </div>
-          <div className="mt-2 text-xs text-blue-600">
+          <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
             ℹ️ You can only see and add emissions for activities you have permission to access
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="flex items-center justify-between p-4 border-b">
+      <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
+        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <div className="flex space-x-1">
             {availableScopes.map((scope) => (
               <button
@@ -636,7 +585,7 @@ const Input = () => {
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                   activeScope === scope.id
                     ? 'bg-emerald-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100'
                 }`}
               >
                 {scope.label}
@@ -651,15 +600,15 @@ const Input = () => {
               placeholder="Search Activities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
         </div>
 
-        <div className="p-4 bg-emerald-50 border-b">
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
           <div className="flex items-center space-x-2">
             <Info className="w-4 h-4 text-emerald-600" />
-            <span className="text-sm text-emerald-800">
+            <span className="text-sm text-emerald-800 dark:text-emerald-300">
               {scopes.find(s => s.id === activeScope)?.description}
             </span>
           </div>
@@ -680,18 +629,18 @@ const Input = () => {
                     <button
                       onClick={() => hasActivityAccess ? toggleActivityExpansion(activity.name) : null}
                       disabled={!hasActivityAccess}
-                      className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-gray-50"
+                      className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-gray-50 dark:bg-gray-900/50"
                     >
                       <div className="flex items-center space-x-3">
                         <span className="text-2xl">{activity.icon}</span>
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-gray-900">{activity.name}</h3>
-                            <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
+                            <h3 className="font-medium text-gray-900 dark:text-white">{activity.name}</h3>
+                            <span className="text-xs bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-full">
                               {activity.sources.length} sources
                             </span>
                           </div>
-                          <p className="text-sm text-gray-500">{activity.description}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{activity.description}</p>
                         </div>
                       </div>
                       {expandedActivities[activity.name] ? (
@@ -702,25 +651,13 @@ const Input = () => {
                     </button>
 
                     {expandedActivities[activity.name] && hasActivityAccess && (
-                      <div className="border-t bg-gray-50 p-4">
-                        <button
-                          onClick={() => handleActivitySelect(activity)}
-                          className="w-full p-4 bg-emerald-50 border-2 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 rounded-lg text-left transition-all group"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="text-base font-medium text-emerald-900">
-                                Add {activity.name} Data
-                              </span>
-                              <p className="text-sm text-emerald-700 mt-1">
-                                Click to open the emission form
-                              </p>
-                            </div>
-                            <div className="text-emerald-600 group-hover:translate-x-1 transition-transform">
-                              →
-                            </div>
-                          </div>
-                        </button>
+                      <div className="border-t bg-gray-50 dark:bg-gray-900/50 p-4">
+                        <EmissionForm
+                          activity={activity}
+                          scope={activeScope}
+                          onClose={() => toggleActivityExpansion(activity.name)}
+                          isInline={true}
+                        />
                       </div>
                     )}
                   </div>
@@ -732,7 +669,7 @@ const Input = () => {
               <div className="text-gray-400 mb-2">
                 {activities.length === 0 ? 'No activities available for your access level' : 'No activities found'}
               </div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {activities.length === 0 ? 
                   'Contact your administrator to request access to additional activities.' :
                   'Try adjusting your search terms or select a different scope.'
@@ -754,17 +691,7 @@ const Input = () => {
         </div>
       </div>
 
-      {showEmissionForm && selectedActivity && (
-        <EmissionForm
-          activity={selectedActivity}
-          scope={activeScope}
-          onSubmit={handleEmissionSubmit}
-          onClose={() => {
-            setShowEmissionForm(false);
-            setSelectedActivity(null);
-          }}
-        />
-      )}
+
     </div>
   );
 };

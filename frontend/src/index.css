@@ -3,6 +3,26 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+@layer components {
+  /* Shared surface: aligns Analytics with glass-style pages (Dashboard, Monitor) */
+  .app-card {
+    @apply bg-white/95 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl border border-gray-200/90 dark:border-slate-700/90 shadow-sm dark:shadow-none;
+  }
+
+  .app-card-interactive {
+    @apply motion-safe:hover:shadow-md motion-safe:transition-[box-shadow,transform] motion-safe:duration-300 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:transform-none;
+  }
+
+  .analytics-section-title {
+    @apply text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2;
+  }
+
+  /* Form density: stacked auth / admin forms */
+  .form-stack {
+    @apply space-y-5;
+  }
+}
+
 :root {
   /* Professional Green Conservation Theme */
   --background: 142 20% 97%;              /* Soft sage white */
@@ -55,13 +75,13 @@
 }
 
 .dark {
-  /* Dark mode: Deep forest night theme */
-  --background: 150 25% 12%;              /* Deep forest night */
-  --foreground: 142 20% 95%;              /* Light sage text */
-  --card: 150 20% 15%;                    /* Dark forest card */
-  --card-foreground: 142 20% 95%;
-  --popover: 150 20% 15%;
-  --popover-foreground: 142 20% 95%;
+  /* Dark mode: Premium deep slate theme */
+  --background: 222 47% 11%;              /* Slate 900: #0f172a */
+  --foreground: 210 40% 98%;              /* Slate 50: #f8fafc */
+  --card: 222 47% 11%;                    /* Slate 900 */
+  --card-foreground: 210 40% 98%;
+  --popover: 222 47% 11%;
+  --popover-foreground: 210 40% 98%;
   
   --primary: 142 60% 55%;                 /* Brighter green for dark mode */
   --primary-foreground: 150 30% 10%;
@@ -72,15 +92,15 @@
   --muted: 150 15% 20%;
   --muted-foreground: 142 15% 65%;
   
-  --accent: 142 65% 50%;
-  --accent-foreground: 150 30% 10%;
+  --accent: 142 70% 50%;
+  --accent-foreground: 222 47% 11%;
   
-  --destructive: 0 60% 45%;
-  --destructive-foreground: 142 20% 95%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
   
-  --border: 150 15% 25%;
-  --input: 150 15% 20%;
-  --ring: 142 60% 55%;
+  --border: 217 33% 17%;                  /* Slate 800: #1e293b */
+  --input: 217 33% 17%;
+  --ring: 142 70% 50%;
   
   /* Dark mode chart colors */
   --chart-1: 142 60% 55%;
@@ -102,6 +122,8 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

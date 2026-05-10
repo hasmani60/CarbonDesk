@@ -202,7 +202,7 @@ const Register = () => {
               />
               <span className="ml-2 text-sm text-gray-600">
                 I agree to the{' '}
-                <Link to="/terms" className="text-emerald-600 hover:text-emerald-700">
+                <Link to="/terms" className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300">
                   Terms of Service
                 </Link>{' '}
                 and{' '}
@@ -226,7 +226,7 @@ const Register = () => {
               Already have an account?{' '}
               <Link
                 to="/login"
-                className="text-emerald-600 hover:text-emerald-700 font-medium"
+                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 font-medium"
               >
                 Sign in
               </Link>

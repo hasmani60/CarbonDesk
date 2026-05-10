@@ -1,9 +1,12 @@
-// ===== backend/routes/monitor.js =====
+// routes/monitor.js - MongoDB-compatible monitor routes
 const express = require('express');
 const router = express.Router();
+const { authorizeRoles } = require('../middleware/auth');
 
-// Placeholder monitor routes
-router.get('/activities', (req, res) => {
+// All routes protected by authenticateToken + addOrganisationContext in server.js
+
+// Placeholder monitor routes - extend with actual controllers as needed
+router.get('/activities', authorizeRoles('admin', 'analyst', 'viewer'), (req, res) => {
   res.json({ 
     success: true, 
     data: [],
@@ -15,14 +18,14 @@ router.get('/activities', (req, res) => {
   });
 });
 
-router.get('/tasks', (req, res) => {
+router.get('/tasks', authorizeRoles('admin', 'analyst', 'contributor', 'viewer'), (req, res) => {
   res.json({ 
     success: true, 
     data: [] 
   });
 });
 
-router.post('/tasks', (req, res) => {
+router.post('/tasks', authorizeRoles('admin'), (req, res) => {
   res.json({ 
     success: true, 
     message: 'Task created successfully',

@@ -1,12 +1,67 @@
 // backend/services/analysisService.js
-// Advanced analytics service for Scope Migration and Hotspot Pareto Analysis
+// Advanced analytics — MongoDB (Emission collection). SQLite/localDB removed for production parity.
 
-const localDB = require('../database/localDB');
+const Emission = require('../models/Emission');
+
+function coerceDate(val) {
+  if (val == null || val === '') return null;
+  if (val instanceof Date) return val;
+  const d = new Date(val);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function buildEmissionMatch(filters) {
+  const match = {};
+
+  if (filters.organisationId) {
+    match.organisation_id = filters.organisationId;
+  }
+  const start = coerceDate(filters.startDate);
+  const end = coerceDate(filters.endDate);
+  if (start || end) {
+    match.date = {};
+    if (start) match.date.$gte = start;
+    if (end) match.date.$lte = end;
+  }
+  if (filters.department) match.department = filters.department;
+  if (filters.site) match.site = filters.site;
+  if (filters.asset) match.asset = filters.asset;
+
+  const scopeNum = filters.scope != null ? parseInt(filters.scope, 10) : NaN;
+  if (!Number.isNaN(scopeNum) && scopeNum >= 1 && scopeNum <= 3) {
+    match.scope = scopeNum;
+  }
+  if (filters.category) {
+    match.category = filters.category;
+  }
+
+  return match;
+}
+
+/** Period label helpers for aggregation */
+function periodExpression(interval) {
+  if (interval === 'year') {
+    return { $dateToString: { format: '%Y', date: '$date', timezone: 'UTC' } };
+  }
+  if (interval === 'quarter') {
+    return {
+      $concat: [
+        { $toString: { $year: '$date' } },
+        '-Q',
+        {
+          $toString: {
+            $ceil: { $divide: [{ $month: '$date' }, 3] }
+          }
+        }
+      ]
+    };
+  }
+  return { $dateToString: { format: '%Y-%m', date: '$date', timezone: 'UTC' } };
+}
 
 class AnalysisService {
   /**
    * Calculate Scope Migration Analysis
-   * Tracks emissions moving between scopes over time
    */
   async calculateScopeMigration(filters = {}) {
     const {
@@ -16,50 +71,59 @@ class AnalysisService {
       department,
       site,
       asset,
-      timeInterval = 'month' // month, quarter, year
+      timeInterval = 'month'
     } = filters;
 
     try {
-      // Build WHERE clause
-      const whereConditions = ['organisation_id = ?'];
-      const params = [organisationId];
-
-      if (startDate) {
-        whereConditions.push('date >= ?');
-        params.push(startDate);
-      }
-      if (endDate) {
-        whereConditions.push('date <= ?');
-        params.push(endDate);
-      }
-      if (department) {
-        whereConditions.push('department = ?');
-        params.push(department);
-      }
-      if (site) {
-        whereConditions.push('site = ?');
-        params.push(site);
-      }
-      if (asset) {
-        whereConditions.push('asset = ?');
-        params.push(asset);
+      if (!organisationId) {
+        throw new Error('organisationId is required for scope migration analysis');
       }
 
-      const whereClause = whereConditions.join(' AND ');
+      const match = buildEmissionMatch({
+        startDate,
+        endDate,
+        organisationId,
+        department,
+        site,
+        asset
+      });
 
-      // Get time-series data grouped by scope
-      const timeSeriesData = await this._getTimeSeriesData(whereClause, params, timeInterval);
+      const periodField = periodExpression(timeInterval);
 
-      // Calculate scope totals per period
+      const pipeline = [
+        { $match: match },
+        {
+          $project: {
+            scope: 1,
+            co2e: { $ifNull: ['$co2e', 0] },
+            period: periodField,
+            date: 1
+          }
+        },
+        { $match: { period: { $ne: null } } },
+        {
+          $group: {
+            _id: { period: '$period', scope: '$scope' },
+            total_co2e: { $sum: '$co2e' },
+            count: { $sum: 1 },
+            avg_co2e: { $avg: '$co2e' }
+          }
+        },
+        { $sort: { '_id.period': 1, '_id.scope': 1 } }
+      ];
+
+      const rows = await Emission.aggregate(pipeline).allowDiskUse(true);
+      const timeSeriesData = rows.map((r) => ({
+        period: r._id.period,
+        scope: r._id.scope,
+        total_co2e: r.total_co2e,
+        count: r.count,
+        avg_co2e: r.avg_co2e
+      }));
+
       const scopeTotals = this._calculateScopeTotals(timeSeriesData);
-
-      // Detect burden shifting
       const burdenShifts = this._detectBurdenShifting(scopeTotals);
-
-      // Generate Sankey diagram data
       const sankeyData = this._generateSankeyData(scopeTotals, burdenShifts);
-
-      // Calculate metrics
       const metrics = this._calculateMigrationMetrics(scopeTotals, burdenShifts);
 
       return {
@@ -67,12 +131,11 @@ class AnalysisService {
         data: {
           sankey: sankeyData,
           timeSeries: scopeTotals,
-          burdenShifts: burdenShifts,
-          metrics: metrics,
-          filters: filters
+          burdenShifts,
+          metrics,
+          filters
         }
       };
-
     } catch (error) {
       console.error('Scope migration analysis error:', error);
       throw error;
@@ -81,7 +144,6 @@ class AnalysisService {
 
   /**
    * Calculate Hotspot Pareto Analysis
-   * Identifies top emission sources following 80/20 rule
    */
   async calculateHotspotPareto(filters = {}) {
     const {
@@ -90,134 +152,154 @@ class AnalysisService {
       organisationId,
       scope,
       category,
-      drillDownLevel = 'activity' // scope, category, activity, asset
+      drillDownLevel = 'activity'
     } = filters;
 
     try {
-      // Build WHERE clause
-      const whereConditions = ['organisation_id = ?'];
-      const params = [organisationId];
-
-      if (startDate) {
-        whereConditions.push('date >= ?');
-        params.push(startDate);
-      }
-      if (endDate) {
-        whereConditions.push('date <= ?');
-        params.push(endDate);
-      }
-      if (scope) {
-        whereConditions.push('scope = ?');
-        params.push(scope);
-      }
-      if (category) {
-        whereConditions.push('category = ?');
-        params.push(category);
+      if (!organisationId) {
+        throw new Error('organisationId is required for hotspot analysis');
       }
 
-      const whereClause = whereConditions.join(' AND ');
+      const match = buildEmissionMatch({
+        startDate,
+        endDate,
+        organisationId,
+        scope,
+        category
+      });
 
-      // Get aggregated emissions by hierarchy
-      const aggregatedData = await this._getHierarchicalAggregation(
-        whereClause, 
-        params, 
-        drillDownLevel
-      );
-
-      // Calculate Pareto analysis
+      const aggregatedData = await this._getHierarchicalAggregationMongo(match, drillDownLevel);
       const paretoData = this._calculatePareto(aggregatedData);
-
-      // Identify hotspots (top 20% contributing to 80%)
       const hotspots = this._identifyHotspots(paretoData);
-
-      // Calculate concentration risk
       const concentrationMetrics = this._calculateConcentrationRisk(paretoData);
-
-      // Generate drill-down hierarchy
-      const drillDown = await this._generateDrillDownHierarchy(
-        whereClause, 
-        params, 
-        hotspots
-      );
+      const drillDown = await this._generateDrillDownHierarchyMongo(match, hotspots);
 
       return {
         success: true,
         data: {
           pareto: paretoData,
-          hotspots: hotspots,
+          hotspots,
           concentration: concentrationMetrics,
-          drillDown: drillDown,
-          filters: filters
+          drillDown,
+          filters
         }
       };
-
     } catch (error) {
       console.error('Hotspot pareto analysis error:', error);
       throw error;
     }
   }
 
-  // ============================================
-  // PRIVATE HELPER METHODS - SCOPE MIGRATION
-  // ============================================
+  async _getHierarchicalAggregationMongo(match, level) {
+    const safeMatch = match;
 
-  _getTimeSeriesData(whereClause, params, interval) {
-    return new Promise((resolve, reject) => {
-      // Determine date grouping based on interval
-      let dateGroup;
-      switch (interval) {
-        case 'quarter':
-          dateGroup = "strftime('%Y-Q', date, 'start of month', printf('-%d month', (cast(strftime('%m', date) as integer) - 1) % 3))";
-          break;
-        case 'year':
-          dateGroup = "strftime('%Y', date)";
-          break;
-        default: // month
-          dateGroup = "strftime('%Y-%m', date)";
+    let groupId;
+    switch (level) {
+      case 'scope':
+        groupId = { scope: '$scope' };
+        break;
+      case 'category':
+        groupId = { scope: '$scope', category: { $ifNull: ['$category', 'Uncategorized'] } };
+        break;
+      case 'asset':
+        groupId = {
+          scope: '$scope',
+          category: { $ifNull: ['$category', ''] },
+          activity: { $ifNull: ['$activity', ''] },
+          assetKey: {
+            $ifNull: [{ $trim: { input: '$notes' } }, { $concat: ['asset-', { $toString: '$_id' }] }]
+          }
+        };
+        break;
+      default:
+        groupId = {
+          scope: '$scope',
+          category: { $ifNull: ['$category', 'Uncategorized'] },
+          activity: { $ifNull: ['$activity', 'Unknown'] }
+        };
+    }
+
+    const nameExpr = (() => {
+      switch (level) {
+        case 'scope':
+          return { $toString: '$_id.scope' };
+        case 'category':
+          return {
+            $concat: [
+              { $toString: '$_id.scope' },
+              ' - ',
+              { $ifNull: ['$_id.category', ''] }
+            ]
+          };
+        case 'asset':
+          return '$_id.activity';
+        default:
+          return '$_id.activity';
       }
+    })();
 
-      const query = `
-        SELECT 
-          ${dateGroup} as period,
-          scope,
-          SUM(co2e) as total_co2e,
-          COUNT(*) as count,
-          AVG(co2e) as avg_co2e
-        FROM emissions
-        WHERE ${whereClause}
-        GROUP BY period, scope
-        ORDER BY period, scope
-      `;
+    const pipeline = [
+      { $match: safeMatch },
+      {
+        $group: {
+          _id: groupId,
+          total_co2e: { $sum: { $ifNull: ['$co2e', 0] } },
+          count: { $sum: 1 },
+          avg_co2e: { $avg: { $ifNull: ['$co2e', 0] } },
+          earliest_date: { $min: '$date' },
+          latest_date: { $max: '$date' },
+          scope: { $first: '$scope' },
+          category: { $first: '$category' },
+          activity: { $first: '$activity' }
+        }
+      },
+      {
+        $project: {
+          scope: '$scope',
+          category: '$category',
+          activity: '$activity',
+          name: nameExpr,
+          total_co2e: 1,
+          count: 1,
+          avg_co2e: 1,
+          earliest_date: 1,
+          latest_date: 1
+        }
+      },
+      { $sort: { total_co2e: -1 } }
+    ];
 
-      localDB.db.all(query, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      });
-    });
+    return Emission.aggregate(pipeline).allowDiskUse(true);
   }
 
+  // ============================================
+  // PRIVATE — scope migration (unchanged logic)
+  // ============================================
+
   _calculateScopeTotals(timeSeriesData) {
-    // Group by period
     const periodMap = {};
 
-    timeSeriesData.forEach(row => {
-      if (!periodMap[row.period]) {
-        periodMap[row.period] = {
-          period: row.period,
+    timeSeriesData.forEach((row) => {
+      const p = row.period;
+      if (!periodMap[p]) {
+        periodMap[p] = {
+          period: p,
           scope1: 0,
           scope2: 0,
           scope3: 0,
           total: 0
         };
       }
-
-      const scopeKey = `scope${row.scope}`;
-      periodMap[row.period][scopeKey] = parseFloat(row.total_co2e || 0);
-      periodMap[row.period].total += parseFloat(row.total_co2e || 0);
+      const s = parseInt(row.scope, 10);
+      const scopeKey = `scope${Number.isFinite(s) ? s : ''}`;
+      if (['scope1', 'scope2', 'scope3'].includes(scopeKey)) {
+        periodMap[p][scopeKey] = parseFloat(row.total_co2e || 0);
+        periodMap[p].total += parseFloat(row.total_co2e || 0);
+      }
     });
 
-    return Object.values(periodMap).sort((a, b) => 
-      a.period.localeCompare(b.period)
+    return Object.values(periodMap).sort((a, b) =>
+      String(a.period).localeCompare(String(b.period))
     );
   }
 
@@ -228,19 +310,15 @@ class AnalysisService {
       const current = scopeTotals[i];
       const previous = scopeTotals[i - 1];
 
-      // Detect Scope 1 decrease with Scope 3 increase (burden shifting)
       const scope1Change = current.scope1 - previous.scope1;
       const scope3Change = current.scope3 - previous.scope3;
 
       if (scope1Change < 0 && scope3Change > 0) {
-        const scope1ChangePercent = previous.scope1 > 0 
-          ? (scope1Change / previous.scope1) * 100 
-          : 0;
-        const scope3ChangePercent = previous.scope3 > 0 
-          ? (scope3Change / previous.scope3) * 100 
-          : 0;
+        const scope1ChangePercent =
+          previous.scope1 > 0 ? (scope1Change / previous.scope1) * 100 : 0;
+        const scope3ChangePercent =
+          previous.scope3 > 0 ? (scope3Change / previous.scope3) * 100 : 0;
 
-        // Significant burden shift if >10% change
         if (Math.abs(scope1ChangePercent) > 10 && scope3ChangePercent > 10) {
           shifts.push({
             period: current.period,
@@ -249,19 +327,20 @@ class AnalysisService {
             scope3Increase: scope3Change.toFixed(2),
             scope1PercentChange: scope1ChangePercent.toFixed(1),
             scope3PercentChange: scope3ChangePercent.toFixed(1),
-            severity: this._calculateShiftSeverity(Math.abs(scope1ChangePercent), scope3ChangePercent)
+            severity: this._calculateShiftSeverity(
+              Math.abs(scope1ChangePercent),
+              scope3ChangePercent
+            )
           });
         }
       }
 
-      // Detect Scope 2 to Scope 1 shift (e.g., on-site generation)
       const scope2Change = current.scope2 - previous.scope2;
       const scope1Increase = scope1Change > 0 ? scope1Change : 0;
 
       if (scope2Change < 0 && scope1Increase > 0) {
-        const scope2ChangePercent = previous.scope2 > 0 
-          ? (scope2Change / previous.scope2) * 100 
-          : 0;
+        const scope2ChangePercent =
+          previous.scope2 > 0 ? (scope2Change / previous.scope2) * 100 : 0;
 
         if (Math.abs(scope2ChangePercent) > 10) {
           shifts.push({
@@ -270,8 +349,10 @@ class AnalysisService {
             scope2Decrease: Math.abs(scope2Change).toFixed(2),
             scope1Increase: scope1Increase.toFixed(2),
             scope2PercentChange: scope2ChangePercent.toFixed(1),
-            severity: this._calculateShiftSeverity(Math.abs(scope2ChangePercent), 
-              (scope1Increase / previous.scope1) * 100)
+            severity: this._calculateShiftSeverity(
+              Math.abs(scope2ChangePercent),
+              (previous.scope1 ? (scope1Increase / previous.scope1) * 100 : 0)
+            )
           });
         }
       }
@@ -288,19 +369,16 @@ class AnalysisService {
   }
 
   _generateSankeyData(scopeTotals, burdenShifts) {
-    // Generate nodes (scopes across periods)
     const nodes = [];
     const links = [];
     const nodeMap = {};
     let nodeIndex = 0;
 
-    // Create nodes for each scope in each period
-    scopeTotals.forEach((period, periodIdx) => {
-      ['scope1', 'scope2', 'scope3'].forEach(scope => {
+    scopeTotals.forEach((period) => {
+      ['scope1', 'scope2', 'scope3'].forEach((scope) => {
         const nodeId = `${period.period}_${scope}`;
-        const scopeNum = scope.replace('scope', '');
-        
         nodeMap[nodeId] = nodeIndex;
+        const scopeNum = scope.replace('scope', '');
         nodes.push({
           id: nodeIndex,
           name: `Scope ${scopeNum}`,
@@ -312,35 +390,32 @@ class AnalysisService {
       });
     });
 
-    // Create links between periods
     for (let i = 0; i < scopeTotals.length - 1; i++) {
       const currentPeriod = scopeTotals[i];
       const nextPeriod = scopeTotals[i + 1];
 
-      ['scope1', 'scope2', 'scope3'].forEach(scope => {
+      ['scope1', 'scope2', 'scope3'].forEach((scope) => {
         const sourceId = `${currentPeriod.period}_${scope}`;
         const targetId = `${nextPeriod.period}_${scope}`;
-        
         const value = Math.min(currentPeriod[scope], nextPeriod[scope]);
-        
+
         if (value > 0) {
           links.push({
             source: nodeMap[sourceId],
             target: nodeMap[targetId],
-            value: value,
+            value,
             period: `${currentPeriod.period} → ${nextPeriod.period}`
           });
         }
       });
 
-      // Add burden shift flows
-      const periodShifts = burdenShifts.filter(s => s.period === nextPeriod.period);
-      periodShifts.forEach(shift => {
+      const periodShifts = burdenShifts.filter((s) => s.period === nextPeriod.period);
+      periodShifts.forEach((shift) => {
         if (shift.type === 'scope1_to_scope3') {
           links.push({
             source: nodeMap[`${currentPeriod.period}_scope1`],
             target: nodeMap[`${nextPeriod.period}_scope3`],
-            value: parseFloat(shift.scope3Increase) * 0.3, // Proportion of shift
+            value: parseFloat(shift.scope3Increase) * 0.3,
             type: 'burden_shift',
             color: '#ef4444'
           });
@@ -391,7 +466,7 @@ class AnalysisService {
         }
       },
       burdenShiftCount: burdenShifts.length,
-      highSeverityShifts: burdenShifts.filter(s => s.severity === 'high').length,
+      highSeverityShifts: burdenShifts.filter((s) => s.severity === 'high').length,
       dominantScope: this._getDominantScope(last)
     };
   }
@@ -407,80 +482,34 @@ class AnalysisService {
   }
 
   _getScopeColor(scopeNum) {
-    const colors = {
-      '1': '#ef4444', // red
-      '2': '#f59e0b', // amber
-      '3': '#3b82f6'  // blue
-    };
-    return colors[scopeNum] || '#6b7280';
+    const colors = { '1': '#ef4444', '2': '#f59e0b', '3': '#3b82f6' };
+    const k = String(scopeNum).replace(/\D/g, '') || String(scopeNum);
+    return colors[k] || '#6b7280';
   }
 
   // ============================================
-  // PRIVATE HELPER METHODS - HOTSPOT PARETO
+  // Pareto (unchanged + Mongo drill-down)
   // ============================================
-
-  _getHierarchicalAggregation(whereClause, params, level) {
-    return new Promise((resolve, reject) => {
-      // Determine grouping based on drill-down level
-      let groupBy, selectFields;
-      
-      switch (level) {
-        case 'scope':
-          groupBy = 'scope';
-          selectFields = 'scope as name, scope';
-          break;
-        case 'category':
-          groupBy = 'scope, category';
-          selectFields = 'scope, category, (scope || \' - \' || COALESCE(category, \'Uncategorized\')) as name';
-          break;
-        case 'asset':
-          groupBy = 'scope, category, activity, notes';
-          selectFields = 'scope, category, activity, COALESCE(notes, \'Asset \' || id) as name';
-          break;
-        default: // activity
-          groupBy = 'scope, category, activity';
-          selectFields = 'scope, category, activity, activity as name';
-      }
-
-      const query = `
-        SELECT 
-          ${selectFields},
-          SUM(co2e) as total_co2e,
-          COUNT(*) as count,
-          AVG(co2e) as avg_co2e,
-          MIN(date) as earliest_date,
-          MAX(date) as latest_date
-        FROM emissions
-        WHERE ${whereClause}
-        GROUP BY ${groupBy}
-        ORDER BY total_co2e DESC
-      `;
-
-      localDB.db.all(query, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      });
-    });
-  }
 
   _calculatePareto(aggregatedData) {
     if (!aggregatedData || aggregatedData.length === 0) {
       return [];
     }
 
-    // Calculate total emissions
-    const totalEmissions = aggregatedData.reduce((sum, item) => 
-      sum + parseFloat(item.total_co2e || 0), 0
+    const totalEmissions = aggregatedData.reduce(
+      (sum, item) => sum + parseFloat(item.total_co2e || 0),
+      0
+    );
+    if (totalEmissions === 0) {
+      return [];
+    }
+
+    const sortedData = [...aggregatedData].sort(
+      (a, b) => parseFloat(b.total_co2e || 0) - parseFloat(a.total_co2e || 0)
     );
 
-    // Sort by emissions descending (should already be sorted)
-    const sortedData = [...aggregatedData].sort((a, b) => 
-      parseFloat(b.total_co2e) - parseFloat(a.total_co2e)
-    );
-
-    // Calculate cumulative percentages
     let cumulativeEmissions = 0;
-    const paretoData = sortedData.map((item, index) => {
+    return sortedData.map((item, index) => {
       const emissions = parseFloat(item.total_co2e || 0);
       const percentage = (emissions / totalEmissions) * 100;
       cumulativeEmissions += emissions;
@@ -490,26 +519,23 @@ class AnalysisService {
         rank: index + 1,
         name: item.name,
         scope: item.scope,
-        category: item.category || null,
-        activity: item.activity || null,
+        category: item.category ?? null,
+        activity: item.activity ?? null,
         emissions: parseFloat(emissions.toFixed(2)),
         percentage: parseFloat(percentage.toFixed(2)),
         cumulativeEmissions: parseFloat(cumulativeEmissions.toFixed(2)),
         cumulativePercentage: parseFloat(cumulativePercentage.toFixed(2)),
         count: item.count,
-        avgEmissions: parseFloat((item.avg_co2e || 0).toFixed(2)),
+        avgEmissions: parseFloat((parseFloat(item.avg_co2e) || 0).toFixed(2)),
         dateRange: {
           start: item.earliest_date,
           end: item.latest_date
         }
       };
     });
-
-    return paretoData;
   }
 
   _identifyHotspots(paretoData) {
-    // Find sources contributing to 80% of emissions
     const hotspots = {
       top80Percent: [],
       top20Percent: [],
@@ -517,17 +543,12 @@ class AnalysisService {
     };
 
     paretoData.forEach((item, index) => {
-      // Top 80% cumulative emissions
       if (item.cumulativePercentage <= 80) {
         hotspots.top80Percent.push(item);
       }
-
-      // Top 20% of sources
       if (index < Math.ceil(paretoData.length * 0.2)) {
         hotspots.top20Percent.push(item);
       }
-
-      // Critical sources (>10% individual contribution)
       if (item.percentage > 10) {
         hotspots.criticalSources.push(item);
       }
@@ -540,9 +561,10 @@ class AnalysisService {
         sourcesIn80Percent: hotspots.top80Percent.length,
         sourcesIn20Percent: hotspots.top20Percent.length,
         criticalSourceCount: hotspots.criticalSources.length,
-        paretoRatio: hotspots.top20Percent.length > 0 
-          ? (hotspots.top20Percent.reduce((sum, s) => sum + s.percentage, 0)).toFixed(1)
-          : 0
+        paretoRatio:
+          hotspots.top20Percent.length > 0
+            ? hotspots.top20Percent.reduce((sum, s) => sum + s.percentage, 0).toFixed(1)
+            : 0
       }
     };
   }
@@ -550,20 +572,12 @@ class AnalysisService {
   _calculateConcentrationRisk(paretoData) {
     if (paretoData.length === 0) return null;
 
-    // Herfindahl-Hirschman Index (HHI) for concentration
-    const hhi = paretoData.reduce((sum, item) => 
-      sum + Math.pow(item.percentage, 2), 0
-    );
-
-    // Gini coefficient for inequality
-    const gini = this._calculateGiniCoefficient(
-      paretoData.map(d => d.emissions)
-    );
-
-    // Top N concentration
+    const hhi = paretoData.reduce((sum, item) => sum + Math.pow(item.percentage, 2), 0);
+    const gini = this._calculateGiniCoefficient(paretoData.map((d) => d.emissions));
     const top3 = paretoData.slice(0, 3).reduce((sum, s) => sum + s.percentage, 0);
     const top5 = paretoData.slice(0, 5).reduce((sum, s) => sum + s.percentage, 0);
-    const top10 = paretoData.slice(0, Math.min(10, paretoData.length))
+    const top10 = paretoData
+      .slice(0, Math.min(10, paretoData.length))
       .reduce((sum, s) => sum + s.percentage, 0);
 
     return {
@@ -585,7 +599,7 @@ class AnalysisService {
 
     const sorted = [...values].sort((a, b) => a - b);
     const sum = sorted.reduce((a, b) => a + b, 0);
-    
+
     if (sum === 0) return 0;
 
     let numerator = 0;
@@ -604,7 +618,7 @@ class AnalysisService {
 
   _assessConcentrationRisk(hhi, gini, top3Percent) {
     const risks = [];
-    
+
     if (hhi > 2500) {
       risks.push('High emission concentration detected');
     }
@@ -617,7 +631,7 @@ class AnalysisService {
 
     return {
       level: risks.length > 2 ? 'high' : risks.length > 0 ? 'medium' : 'low',
-      risks: risks,
+      risks,
       recommendation: this._getConcentrationRecommendation(risks.length)
     };
   }
@@ -632,49 +646,49 @@ class AnalysisService {
     return 'Emission distribution is balanced. Continue regular monitoring';
   }
 
-  async _generateDrillDownHierarchy(whereClause, params, hotspots) {
-    // Get detailed breakdown for top hotspots
+  async _generateDrillDownHierarchyMongo(match, hotspots) {
     const topSources = hotspots.top80Percent.slice(0, 10);
-    
+    const safeBase = match;
+
     const drillDown = await Promise.all(
       topSources.map(async (source) => {
-        // Get sub-level details
-        const subQuery = `
-          SELECT 
-            activity,
-            COALESCE(notes, 'Asset ' || id) as asset,
-            SUM(co2e) as total_co2e,
-            COUNT(*) as count
-          FROM emissions
-          WHERE ${whereClause}
-            AND scope = ?
-            ${source.category ? 'AND category = ?' : ''}
-            ${source.activity ? 'AND activity = ?' : ''}
-          GROUP BY activity, asset
-          ORDER BY total_co2e DESC
-          LIMIT 10
-        `;
+        const subMatch = { ...safeBase, scope: source.scope };
 
-        const subParams = [...params, source.scope];
-        if (source.category) subParams.push(source.category);
-        if (source.activity) subParams.push(source.activity);
+        if (source.category) {
+          subMatch.category = source.category;
+        }
+        if (source.activity) {
+          subMatch.activity = source.activity;
+        }
 
-        const subData = await new Promise((resolve, reject) => {
-          localDB.db.all(subQuery, subParams, (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          });
-        });
+        const subData = await Emission.aggregate([
+          { $match: subMatch },
+          {
+            $group: {
+              _id: { activity: '$activity', asset: '$notes' },
+              total_co2e: { $sum: { $ifNull: ['$co2e', 0] } },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { total_co2e: -1 } },
+          { $limit: 10 }
+        ]);
 
         return {
           parent: source.name,
           parentEmissions: source.emissions,
-          children: subData.map(child => ({
-            name: child.asset || child.activity,
-            emissions: parseFloat((child.total_co2e || 0).toFixed(2)),
-            count: child.count,
-            percentOfParent: ((child.total_co2e / source.emissions) * 100).toFixed(1)
-          }))
+          children: subData.map((child) => {
+            const emissions = parseFloat((child.total_co2e || 0).toFixed(2));
+            return {
+              name: child._id.asset?.trim?.() ? child._id.asset : child._id.activity,
+              emissions,
+              count: child.count,
+              percentOfParent:
+                source.emissions > 0
+                  ? ((child.total_co2e || 0) / source.emissions * 100).toFixed(1)
+                  : '0'
+            };
+          })
         };
       })
     );

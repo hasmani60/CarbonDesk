@@ -4,6 +4,60 @@ import { authAPI } from '../services/api';
 import { emissionFactors } from '../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
 
+/** Mongo/API may store scope ids as strings; normalize for comparisons */
+function parseScopeNum(val) {
+  const n = parseInt(String(val), 10);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function allowedScopeListIncludes(list, scopeVal) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const target = parseScopeNum(scopeVal);
+  if (!Number.isFinite(target)) return false;
+  return list.some((item) => parseScopeNum(item) === target);
+}
+
+function isLeafFactorRow(node) {
+  return (
+    node &&
+    typeof node === 'object' &&
+    typeof node.factor === 'number' &&
+    !Array.isArray(node)
+  );
+}
+
+/** Category or fuel-line key → scope / category metadata (aligned with backend RBAC). */
+function locateEmissionFactorKey(name) {
+  if (!name || typeof name !== 'string') return null;
+  const key = name.trim();
+  if (!key) return null;
+
+  for (let s = 1; s <= 3; s += 1) {
+    const scopeData = emissionFactors[`scope${s}`];
+    if (!scopeData) continue;
+
+    for (const catKey of Object.keys(scopeData)) {
+      const catVal = scopeData[catKey];
+      if (catKey === key) {
+        if (isLeafFactorRow(catVal)) {
+          return { scope: s, categoryKey: catKey, subKey: catKey, kind: 'line' };
+        }
+        return { scope: s, categoryKey: catKey, kind: 'category' };
+      }
+      if (catVal && typeof catVal === 'object' && !isLeafFactorRow(catVal)) {
+        const subKeys = Object.keys(catVal);
+        for (let i = 0; i < subKeys.length; i += 1) {
+          const subKey = subKeys[i];
+          if (subKey === key && isLeafFactorRow(catVal[subKey])) {
+            return { scope: s, categoryKey: catKey, subKey, kind: 'line' };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 const AuthContext = createContext({});
 
 export const useAuth = () => {
@@ -119,9 +173,10 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData };
     } catch (error) {
       console.error('Login error in AuthContext:', error);
-      
+
       let message = 'Login failed';
-      
+      const code = error.code || error.response?.data?.code;
+
       if (error.response?.data?.message) {
         message = error.response.data.message;
       } else if (error.message && error.message !== 'Login failed') {
@@ -129,10 +184,14 @@ export const AuthProvider = ({ children }) => {
       } else if (error.status === 'NETWORK_ERROR') {
         message = 'Unable to connect to server. Please check if the backend is running.';
       }
-      
+
       console.error('Final error message:', message);
-      toast.error(message);
-      throw new Error(message);
+      if (code !== 'EMAIL_NOT_VERIFIED') {
+        toast.error(message);
+      }
+      const err = new Error(message);
+      err.code = code;
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -166,24 +225,32 @@ export const AuthProvider = ({ children }) => {
 
   const updateProfile = async (profileData) => {
     try {
-      const response = await authAPI.updateProfile(profileData);
-      const updatedUser = response.data || response;
-      setUser(updatedUser);
-      toast.success('Profile updated successfully');
-      return updatedUser;
+      const updatedUser = await authAPI.updateProfile(profileData);
+      const next = updatedUser?.data ?? updatedUser;
+      if (next && typeof next === 'object') {
+        setUser((prev) => ({ ...(prev || {}), ...next }));
+      }
+      toast.success('Saved successfully');
+      return next;
     } catch (error) {
-      const message = error.response?.data?.message || 'Profile update failed';
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Could not save changes';
       toast.error(message);
       throw error;
     }
   };
 
-  const changePassword = async (passwordData) => {
+  const changePassword = async ({ currentPassword, newPassword }) => {
     try {
-      await authAPI.changePassword(passwordData);
-      toast.success('Password changed successfully');
+      await authAPI.changePassword({ currentPassword, newPassword });
+      toast.success('Password updated successfully');
     } catch (error) {
-      const message = error.response?.data?.message || 'Password change failed';
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Could not update password';
       toast.error(message);
       throw error;
     }
@@ -210,16 +277,10 @@ export const AuthProvider = ({ children }) => {
     return hasPermission(permissionKey);
   };
 
-  // CRITICAL FIX: Helper to get which scope an activity belongs to
+  /** Scope (1–3) for a factor category key or fuel line (e.g. Diesel … (tonnes)). */
   const getScopeForActivity = (activityName) => {
-    for (let scope = 1; scope <= 3; scope++) {
-      const scopeKey = `scope${scope}`;
-      const scopeData = emissionFactors[scopeKey];
-      if (scopeData && Object.keys(scopeData).includes(activityName)) {
-        return scope;
-      }
-    }
-    return null;
+    const loc = locateEmissionFactorKey(activityName);
+    return loc ? loc.scope : null;
   };
 
   // RBAC: Check if user can access specific scope
@@ -241,7 +302,7 @@ export const AuthProvider = ({ children }) => {
       const { allowedScopes, allowedActivities } = user.restrictions;
       
       // Check if scope is explicitly allowed
-      if (allowedScopes && allowedScopes.length > 0 && allowedScopes.includes(parseInt(scope))) {
+      if (allowedScopes && allowedScopes.length > 0 && allowedScopeListIncludes(allowedScopes, scope)) {
         return true;
       }
       
@@ -287,15 +348,34 @@ export const AuthProvider = ({ children }) => {
       
       const { allowedScopes, allowedActivities } = user.restrictions;
       
-      // If user has specific activity restrictions, check if this activity is allowed
+      // Granular permissions: entries may be category keys or fuel-line keys
       if (allowedActivities && Array.isArray(allowedActivities) && allowedActivities.length > 0) {
-        return allowedActivities.includes(activity);
+        if (allowedActivities.includes(activity)) return true;
+        const loc = locateEmissionFactorKey(activity);
+        if (!loc) return false;
+        return allowedActivities.some((raw) => {
+          const a = String(raw).trim();
+          if (a === activity) return true;
+          const aloc = locateEmissionFactorKey(a);
+          if (!aloc) return false;
+          if (aloc.scope !== loc.scope) return false;
+          if (aloc.kind === 'category' && loc.kind === 'category') {
+            return aloc.categoryKey === loc.categoryKey;
+          }
+          if (aloc.kind === 'category' && loc.kind === 'line') {
+            return aloc.categoryKey === loc.categoryKey;
+          }
+          if (aloc.kind === 'line' && loc.kind === 'category') {
+            return aloc.categoryKey === loc.categoryKey;
+          }
+          return aloc.categoryKey === loc.categoryKey && aloc.subKey === loc.subKey;
+        });
       }
       
       // If no specific activity restrictions, check scope-level access
       const activityScope = getScopeForActivity(activity);
       if (activityScope && allowedScopes && Array.isArray(allowedScopes)) {
-        return allowedScopes.includes(activityScope);
+        return allowedScopeListIncludes(allowedScopes, activityScope);
       }
       
       // Default: if no explicit restrictions, allow access
@@ -314,9 +394,9 @@ export const AuthProvider = ({ children }) => {
     
     // Define role-based page access
     const rolePageAccess = {
-      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings'],
-      contributor: ['/dashboard', '/input', '/monitor', '/settings'],
-      viewer: ['/dashboard', '/monitor']
+      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings', '/organisation'],
+      contributor: ['/dashboard', '/input', '/monitor', '/settings', '/organisation'],
+      viewer: ['/dashboard', '/monitor', '/organisation']
     };
     
     const allowedPages = rolePageAccess[user?.role] || [];
@@ -354,7 +434,10 @@ export const AuthProvider = ({ children }) => {
       
       // Add explicitly allowed scopes
       if (allowedScopes && Array.isArray(allowedScopes)) {
-        allowedScopes.forEach(scope => effectiveScopes.add(scope));
+        allowedScopes.forEach((s) => {
+          const n = parseScopeNum(s);
+          if (Number.isFinite(n)) effectiveScopes.add(n);
+        });
       }
       
       // CRITICAL FIX: Add scopes that have allowed activities
@@ -409,20 +492,24 @@ export const AuthProvider = ({ children }) => {
       const { allowedScopes, allowedActivities } = user.restrictions;
       
       // If scope is explicitly allowed, return all activities in that scope
-      if (allowedScopes && Array.isArray(allowedScopes) && allowedScopes.includes(scope)) {
+      if (allowedScopes && Array.isArray(allowedScopes) && allowedScopeListIncludes(allowedScopes, scope)) {
         const scopeKey = `scope${scope}`;
         const scopeData = emissionFactors[scopeKey];
         return scopeData ? Object.keys(scopeData) : [];
       }
       
-      // Otherwise, return only allowed activities for this scope
+      // Granular: restriction entries may be category keys or fuel lines — return category tabs only
       if (allowedActivities && Array.isArray(allowedActivities) && allowedActivities.length > 0) {
-        const scopeKey = `scope${scope}`;
-        const scopeData = emissionFactors[scopeKey];
-        if (!scopeData) return [];
-        
-        const activitiesInScope = Object.keys(scopeData);
-        return allowedActivities.filter(activity => activitiesInScope.includes(activity));
+        const scopeNum = parseScopeNum(scope);
+        if (!Number.isFinite(scopeNum)) return [];
+        const categories = new Set();
+        allowedActivities.forEach((raw) => {
+          const loc = locateEmissionFactorKey(String(raw).trim());
+          if (loc && loc.scope === scopeNum) {
+            categories.add(loc.categoryKey);
+          }
+        });
+        return Array.from(categories);
       }
       
       return [];

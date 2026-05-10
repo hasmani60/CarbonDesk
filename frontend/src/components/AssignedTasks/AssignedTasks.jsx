@@ -16,6 +16,7 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { monitorAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const AssignedTasks = ({ 
@@ -50,44 +51,21 @@ const AssignedTasks = ({
         return;
       }
       
-      const params = new URLSearchParams();
+      // FIXED: Use API client
+      const paramsObj = {};
       if (filter && filter !== 'all') {
         if (filter === 'overdue') {
-          params.append('status', 'pending');
+          paramsObj.status = 'pending';
         } else {
-          params.append('status', filter);
+          paramsObj.status = filter;
         }
       }
       if (maxTasks) {
-        params.append('limit', maxTasks.toString());
+        paramsObj.limit = maxTasks;
       }
       
-      // FIXED: Use absolute URL with proper backend reference
-      const url = `${BACKEND_URL}/api/tasks?${params.toString()}`;
-      console.log('📋 Loading tasks from:', url);
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      console.log('📡 Response status:', response.status);
-      
-      if (!response.ok) {
-        const responseText = await response.text();
-        console.error('❌ Error response:', responseText.substring(0, 200));
-        toast.error(`Failed to load tasks: ${response.statusText}`);
-        setTasks([]);
-        return;
-      }
-      
-      const result = await response.json();
-      console.log('✅ Tasks loaded:', result.data?.length || 0);
-      
-      let tasksData = result.data || [];
+      const result = await monitorAPI.getTasks(paramsObj);
+      let tasksData = Array.isArray(result) ? result : (result?.data || []);
       
       // Apply client-side overdue filtering if needed
       if (filter === 'overdue') {
@@ -115,26 +93,11 @@ const AssignedTasks = ({
         return;
       }
 
-      // FIXED: Use absolute URL
-      const url = `${BACKEND_URL}/api/tasks/stats`;
-      console.log('📊 Loading stats from:', url);
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data) {
-          setStats(result.data);
-          console.log('✅ Stats loaded:', result.data);
-        }
-      } else {
-        console.warn('⚠️ Failed to load stats:', response.statusText);
+      const result = await monitorAPI.getTaskStats();
+      const statsData = result.data || result;
+      if (statsData) {
+        setStats(statsData);
+        console.log('✅ Stats loaded:', statsData);
       }
     } catch (error) {
       console.warn('⚠️ Error loading task stats:', error.message);
@@ -156,25 +119,15 @@ const AssignedTasks = ({
         updateData.comments = comments.trim();
       }
       
-      // FIXED: Use absolute URL
-      const url = `${BACKEND_URL}/api/tasks/${taskId}`;
       console.log('⚙️ Updating task:', taskId, 'with status:', newStatus);
       
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(updateData)
-      });
+      const result = await monitorAPI.updateTask(taskId, updateData);
+      const updatedTask = result.data || result;
       
-      if (response.ok) {
-        const result = await response.json();
-        
+      if (updatedTask) {
         // Update local state
         setTasks(prev => prev.map(task => 
-          task.id === taskId ? result.data : task
+          (task._id === taskId || task.id === taskId) ? updatedTask : task
         ));
         
         toast.success(`Task marked as ${newStatus.replace('_', ' ')}`);
@@ -185,18 +138,7 @@ const AssignedTasks = ({
         
         // Notify parent component if callback provided
         if (onTaskUpdate) {
-          onTaskUpdate(result.data);
-        }
-        
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Error response:', errorText.substring(0, 200));
-        
-        try {
-          const error = JSON.parse(errorText);
-          toast.error(error.message || 'Failed to update task');
-        } catch {
-          toast.error(`Failed to update task: ${response.statusText}`);
+          onTaskUpdate(updatedTask);
         }
       }
     } catch (error) {
@@ -213,7 +155,7 @@ const AssignedTasks = ({
     
     switch (task.status) {
       case 'completed':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-green-100 dark:bg-green-950/35 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800';
       case 'in_progress':
         return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'cancelled':
@@ -261,7 +203,7 @@ const AssignedTasks = ({
 
   const getScopeColor = (scope) => {
     switch (scope) {
-      case 1: return 'bg-emerald-100 text-emerald-800';
+      case 1: return 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300';
       case 2: return 'bg-blue-100 text-blue-800';
       case 3: return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -327,19 +269,19 @@ const AssignedTasks = ({
           {stats && (
             <div className="mt-4 grid grid-cols-4 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{stats.pending_tasks || 0}</div>
+                <div className="text-2xl font-bold text-gray-900">{stats.pending || stats.pending_tasks || 0}</div>
                 <div className="text-xs text-gray-600">Pending</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{stats.in_progress_tasks || 0}</div>
+                <div className="text-2xl font-bold text-blue-600">{stats.in_progress || stats.in_progress_tasks || 0}</div>
                 <div className="text-xs text-gray-600">In Progress</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">{stats.overdue_tasks || 0}</div>
+                <div className="text-2xl font-bold text-red-600">{stats.overdue || stats.overdue_tasks || 0}</div>
                 <div className="text-xs text-gray-600">Overdue</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.completed_tasks || 0}</div>
+                <div className="text-2xl font-bold text-green-600">{stats.completed || stats.completed_tasks || 0}</div>
                 <div className="text-xs text-gray-600">Completed</div>
               </div>
             </div>
@@ -365,7 +307,7 @@ const AssignedTasks = ({
           <div className="space-y-4">
             {filteredTasks.map((task) => (
               <div
-                key={task.id}
+                key={task._id || task.id}
                 className="border rounded-lg p-4 hover:shadow-md transition-shadow"
               >
                 {/* Task Header */}
@@ -448,7 +390,7 @@ const AssignedTasks = ({
                     <button
                       onClick={() => updateTaskStatus(task.id, 'completed')}
                       disabled={updating[task.id]}
-                      className="flex items-center px-3 py-1 text-sm bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
+                      className="flex items-center px-3 py-1 text-sm bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50"
                     >
                       {updating[task.id] ? (
                         <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600 mr-1" />

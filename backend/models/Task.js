@@ -1,42 +1,42 @@
-// backend/models/Task.js - MongoDB Task Schema
+// backend/models/Task.js - MongoDB-compatible with ObjectId references
 const mongoose = require('mongoose');
 
 const taskSchema = new mongoose.Schema({
   assigned_to: {
     type: mongoose.Schema.Types.ObjectId,
-    required: [true, 'Assigned to is required'],
-    ref: 'User',
-    index: true
+    required: true,
+    index: true,
+    ref: 'User'
   },
   assigned_by: {
     type: mongoose.Schema.Types.ObjectId,
-    required: [true, 'Assigned by is required'],
+    required: true,
+    index: true,
     ref: 'User'
   },
-  assigned_to_name: String,
-  assigned_by_name: String,
   scope: {
     type: Number,
-    required: [true, 'Scope is required'],
+    required: true,
     min: 1,
-    max: 3
+    max: 3,
+    index: true
   },
   activity: {
     type: String,
-    required: [true, 'Activity is required']
+    required: true
   },
   source: String,
   start_date: {
     type: Date,
-    required: [true, 'Start date is required']
+    required: true
   },
   end_date: {
     type: Date,
-    required: [true, 'End date is required']
+    required: true
   },
   deadline: {
     type: Date,
-    required: [true, 'Deadline is required'],
+    required: true,
     index: true
   },
   comments: String,
@@ -53,43 +53,34 @@ const taskSchema = new mongoose.Schema({
   },
   organisation_id: {
     type: String,
-    required: [true, 'Organisation ID is required'],
-    ref: 'Organisation',
-    index: true
+    required: true,
+    index: true,
+    ref: 'Organisation'
   },
-  completed_at: Date,
-  created_at: {
-    type: Date,
-    default: Date.now
-  },
-  updated_at: {
-    type: Date,
-    default: Date.now
-  }
+  completed_at: Date
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
 
-// Indexes for efficient queries
-taskSchema.index({ assigned_to: 1, status: 1 });
+// Compound indexes
+taskSchema.index({ organisation_id: 1, assigned_to: 1 });
+taskSchema.index({ organisation_id: 1, status: 1 });
 taskSchema.index({ organisation_id: 1, deadline: 1 });
-taskSchema.index({ scope: 1 });
-taskSchema.index({ deadline: 1, status: 1 });
 
-// Virtual for days until deadline
-taskSchema.virtual('days_until_deadline').get(function() {
-  const now = new Date();
-  const diffTime = this.deadline - now;
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+// Virtual for assignee details (populated)
+taskSchema.virtual('assignee', {
+  ref: 'User',
+  localField: 'assigned_to',
+  foreignField: '_id',
+  justOne: true
 });
 
-// Virtual for display status
-taskSchema.virtual('display_status').get(function() {
-  if (this.status === 'completed') return 'completed';
-  if (this.status === 'cancelled') return 'cancelled';
-
-  if (this.deadline < new Date()) return 'overdue';
-  return this.status;
+// Virtual for assigner details (populated)
+taskSchema.virtual('assigner', {
+  ref: 'User',
+  localField: 'assigned_by',
+  foreignField: '_id',
+  justOne: true
 });
 
 // Ensure virtuals are included in JSON

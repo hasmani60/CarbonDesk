@@ -1,12 +1,16 @@
 // backend/controllers/emissionController.js
-// Updated to work with new emission factors database structure
-// Version 2.1 - Enhanced with new emission factor fields
+// MongoDB Version - Completely rewritten to use Mongoose
+// Version 3.0 - Full MongoDB Integration with Activity Sync
 
-const localDB = require('../database/localDB');
-const { scopeQuery, addOrganisationToData } = require('../middleware/organisationScope');
+const Emission = require('../models/Emission');
+const Activity = require('../models/ActivityLog');
+const EmissionFactor = require('../models/EmissionFactor');
+const { addOrganisationToData } = require('../middleware/organisationScope');
+const { contributorMaySubmitEmission } = require('../utils/contributorEmissionAccess');
+const { notifyAdminsAnalystsNewEmission } = require('../services/notificationService');
 const logger = require('../utils/logger');
 
-// Import emission factors from new database
+// Import emission factors from database
 const { emissionFactors } = require('../data/complete_emission_factors_db');
 
 // ============================================
@@ -14,9 +18,33 @@ const { emissionFactors } = require('../data/complete_emission_factors_db');
 // ============================================
 
 /**
- * Get emission factor from new database structure
+ * Get emission factor from database with static fallback
  */
-const getEmissionFactor = (scope, category, source) => {
+const getEmissionFactor = async (scope, category, source) => {
+  // Try database lookup first
+  try {
+    const factorDoc = await EmissionFactor.findOne({
+      scope: parseInt(scope),
+      category: category,
+      subcategory: source,
+      isActive: true
+    });
+    
+    if (factorDoc) {
+      return {
+        factor: factorDoc.factor,
+        unit: factorDoc.unit,
+        co2: factorDoc.co2,
+        ch4: factorDoc.ch4,
+        n2o: factorDoc.n2o,
+        description: factorDoc.description
+      };
+    }
+  } catch (err) {
+    logger.warn('Failed to lookup emission factor from DB', { scope, category, source, error: err.message });
+  }
+
+  // Fallback to static structure
   const scopeKey = `scope${scope}`;
   const scopeData = emissionFactors[scopeKey];
 
@@ -29,10 +57,10 @@ const getEmissionFactor = (scope, category, source) => {
 };
 
 /**
- * Calculate emissions using new emission factor structure
+ * Calculate emissions using emission factor database/structure
  */
-const calculateEmissions = (quantity, scope, category, source) => {
-  const factorData = getEmissionFactor(scope, category, source);
+const calculateEmissions = async (quantity, scope, category, source) => {
+  const factorData = await getEmissionFactor(scope, category, source);
 
   if (!factorData) {
     logger.error('Cannot calculate emissions: factor not found');
@@ -56,6 +84,33 @@ const calculateEmissions = (quantity, scope, category, source) => {
 };
 
 /**
+ * Sync emission to Activity collection for monitoring
+ */
+const syncToActivity = async (emission, user, action = 'emission_created') => {
+  try {
+    const activityData = {
+      user_id: user.id || user._id?.toString() || 'system',
+      action: action,
+      resource_type: 'emission',
+      resource_id: emission._id.toString(),
+      details: `Emission for ${emission.category} (${emission.quantity} ${emission.unit}) - Scope ${emission.scope}`,
+      ip_address: user.ip_address || 'unknown',
+      user_agent: user.user_agent || 'unknown'
+    };
+    
+    await Activity.create(activityData);
+    logger.info('Emission synced to ActivityLog', { emissionId: emission._id });
+    return true;
+  } catch (error) {
+    logger.warn('Failed to sync to Activity', { 
+      emissionId: emission._id, 
+      error: error.message 
+    });
+    return false;
+  }
+};
+
+/**
  * Validate organisation context exists
  */
 const validateOrganisationContext = (req) => {
@@ -72,98 +127,44 @@ const validateOrganisationContext = (req) => {
 };
 
 /**
- * Build emission query with filters
+ * Build MongoDB filter query
  */
-const buildEmissionQuery = (req, baseQuery, baseParams) => {
-  let query = baseQuery;
-  const params = [...baseParams];
+const buildEmissionFilter = (req, baseFilter = {}) => {
+  const filter = { ...baseFilter };
   
   // Optional filters
   if (req.query.scope) {
-    query += ' AND scope = ?';
-    params.push(parseInt(req.query.scope));
+    filter.scope = parseInt(req.query.scope);
   }
   
   if (req.query.category) {
-    query += ' AND category LIKE ?';
-    params.push(`%${req.query.category}%`);
+    filter.category = { $regex: req.query.category, $options: 'i' };
   }
   
   if (req.query.activity) {
-    query += ' AND activity LIKE ?';
-    params.push(`%${req.query.activity}%`);
+    filter.activity = { $regex: req.query.activity, $options: 'i' };
   }
   
   if (req.query.status) {
-    query += ' AND status = ?';
-    params.push(req.query.status);
+    filter.status = req.query.status;
   }
   
-  if (req.query.startDate) {
-    query += ' AND date >= ?';
-    params.push(req.query.startDate);
-  }
-  
-  if (req.query.endDate) {
-    query += ' AND date <= ?';
-    params.push(req.query.endDate);
+  if (req.query.startDate || req.query.endDate) {
+    filter.date = {};
+    if (req.query.startDate) {
+      filter.date.$gte = new Date(req.query.startDate);
+    }
+    if (req.query.endDate) {
+      filter.date.$lte = new Date(req.query.endDate);
+    }
   }
   
   // User-specific filter (contributors see only their own unless super_admin)
   if (req.user.role === 'contributor' && !req.user.restrictions?.is_super_admin) {
-    query += ' AND created_by = ?';
-    params.push(req.user.id);
+    filter.created_by = req.user.id;
   }
   
-  return { query, params };
-};
-
-/**
- * Execute database query with promise
- */
-const executeQuery = (query, params = []) => {
-  return new Promise((resolve, reject) => {
-    localDB.db.all(query, params, (err, rows) => {
-      if (err) {
-        logger.error('Database query error', err);
-        reject(err);
-      } else {
-        resolve(rows || []);
-      }
-    });
-  });
-};
-
-/**
- * Execute single row query
- */
-const executeGetQuery = (query, params = []) => {
-  return new Promise((resolve, reject) => {
-    localDB.db.get(query, params, (err, row) => {
-      if (err) {
-        logger.error('Database query error', err);
-        reject(err);
-      } else {
-        resolve(row);
-      }
-    });
-  });
-};
-
-/**
- * Execute database insert/update/delete
- */
-const executeRun = (query, params = []) => {
-  return new Promise((resolve, reject) => {
-    localDB.db.run(query, params, function(err) {
-      if (err) {
-        logger.error('Database run error', err);
-        reject(err);
-      } else {
-        resolve(this);
-      }
-    });
-  });
+  return filter;
 };
 
 // ============================================
@@ -199,23 +200,20 @@ const getEmissions = async (req, res) => {
       });
     }
     
-    // Build base query with organisation filter
-    const baseQuery = 'SELECT * FROM emissions WHERE organisation_id = ?';
-    const baseParams = [req.organisationId];
+    // Build base filter with organisation
+    const baseFilter = { organisation_id: req.organisationId };
     
     // Add additional filters
-    const { query: finalQuery, params: finalParams } = buildEmissionQuery(req, baseQuery, baseParams);
+    const filter = buildEmissionFilter(req, baseFilter);
     
-    // Add ordering
-    let orderedQuery = finalQuery + ' ORDER BY date DESC, created_at DESC';
-
-    // Add limit
+    // Get limit
     const limit = parseInt(req.query.limit) || 100;
-    orderedQuery += ' LIMIT ?';
-    finalParams.push(limit);
-
-    // Execute query
-    const emissions = await executeQuery(orderedQuery, finalParams);
+    
+    // Execute query with MongoDB
+    const emissions = await Emission.find(filter)
+      .sort({ date: -1, created_at: -1 })
+      .limit(limit)
+      .lean();
 
     logger.info('Emissions retrieved', {
       count: emissions.length,
@@ -269,11 +267,11 @@ const getEmissionById = async (req, res) => {
       });
     }
     
-    // Build query with organisation filter
-    const query = 'SELECT * FROM emissions WHERE id = ? AND organisation_id = ?';
-    const params = [id, req.organisationId];
-    
-    const emission = await executeGetQuery(query, params);
+    // Find emission by ID and organisation
+    const emission = await Emission.findOne({
+      _id: id,
+      organisation_id: req.organisationId
+    }).lean();
     
     if (!emission) {
       return res.status(404).json({
@@ -281,7 +279,6 @@ const getEmissionById = async (req, res) => {
         message: 'Emission not found or you do not have access to it'
       });
     }
-    
     
     res.json({
       success: true,
@@ -307,8 +304,11 @@ const createEmission = async (req, res) => {
     logger.debug('Create emission request', {
       user: req.user.email,
       role: req.user.role,
-      organisationId: req.organisationId
+      organisationId: req.organisationId,
+      body: req.body
     });
+    
+    console.log('📝 Received emission data:', JSON.stringify(req.body, null, 2));
     
     // Validate organisation context FIRST
     if (!validateOrganisationContext(req)) {
@@ -325,9 +325,19 @@ const createEmission = async (req, res) => {
     
     // Validate required fields
     if (!emissionData.scope || (!emissionData.activity && !emissionData.source)) {
+      console.log('❌ Validation failed - missing required fields:', {
+        scope: emissionData.scope,
+        activity: emissionData.activity,
+        source: emissionData.source
+      });
       return res.status(400).json({
         success: false,
-        message: 'Scope and activity/source are required'
+        message: 'Scope and activity/source are required',
+        received: {
+          scope: emissionData.scope,
+          activity: emissionData.activity,
+          source: emissionData.source
+        }
       });
     }
     
@@ -344,9 +354,9 @@ const createEmission = async (req, res) => {
     const category = emissionData.category || emissionData.activityType;
     const source = emissionData.source || emissionData.subcategory;
     
-    // Calculate emissions using new emission factor database
+    // Calculate emissions using emission factor database
     const quantity = parseFloat(emissionData.quantity || emissionData.amount || 0);
-    const emissionsCalc = calculateEmissions(
+    const emissionsCalc = await calculateEmissions(
       quantity,
       parseInt(emissionData.scope),
       category,
@@ -372,114 +382,141 @@ const createEmission = async (req, res) => {
         code: 'ORG_ASSIGNMENT_FAILED'
       });
     }
-    
-    // Add user info
-    emissionData.created_by = req.user.id;
-    emissionData.created_by_name = req.user.name;
-    emissionData.status = emissionData.status || 'draft';
-    emissionData.date = emissionData.date || emissionData.startDate || new Date().toISOString().split('T')[0];
-    emissionData.created_at = new Date().toISOString();
-    
-    // Check RBAC restrictions for contributors
-    if (req.user.role === 'contributor' && req.user.restrictions) {
-      const allowedScopes = req.user.restrictions.allowedScopes || [1, 2, 3];
-      if (!allowedScopes.includes(parseInt(emissionData.scope))) {
-        return res.status(403).json({
-          success: false,
-          message: `You don't have access to Scope ${emissionData.scope}`,
-          code: 'SCOPE_RESTRICTED'
-        });
+
+    if (req.user.role === 'viewer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Viewers cannot create emissions'
+      });
+    }
+
+    const allowedStatuses = ['draft', 'submitted', 'verified', 'rejected'];
+    let resolvedStatus = emissionData.status;
+    if (!resolvedStatus || !allowedStatuses.includes(resolvedStatus)) {
+      if (req.user.role === 'contributor') {
+        resolvedStatus = 'submitted';
+      } else if (req.user.role === 'admin' || req.user.role === 'analyst') {
+        resolvedStatus = 'verified';
+      } else {
+        resolvedStatus = 'submitted';
       }
-      
-      // Check activity restrictions
-      const allowedActivities = req.user.restrictions.allowedActivities || [];
-      if (allowedActivities.length > 0 && !allowedActivities.includes(activity)) {
+    }
+    if (req.user.role === 'contributor' && resolvedStatus === 'verified') {
+      resolvedStatus = 'submitted';
+    }
+    
+    // Contributor RBAC: match frontend — full scope via allowedScopes, or granular via allowedActivities (category keys)
+    if (req.user.role === 'contributor' && req.user.restrictions) {
+      const scopeNum = parseInt(emissionData.scope, 10);
+      if (
+        !contributorMaySubmitEmission(
+          req.user.restrictions,
+          scopeNum,
+          category,
+          source
+        )
+      ) {
+        const hasActs =
+          Array.isArray(req.user.restrictions.allowedActivities) &&
+          req.user.restrictions.allowedActivities.length > 0;
         return res.status(403).json({
           success: false,
-          message: `You don't have access to activity: ${activity}`,
-          code: 'ACTIVITY_RESTRICTED'
+          message: hasActs
+            ? `You don't have permission to submit this emission for Scope ${scopeNum}${
+                category ? ` (${category})` : ''
+              }. Check your assigned activities.`
+            : `You don't have access to Scope ${scopeNum}`,
+          code: 'SCOPE_RESTRICTED'
         });
       }
     }
     
-    
-    // Insert into database with new fields
-    const query = `
-      INSERT INTO emissions (
-        scope, category, activity, quantity, unit, co2e,
-        emissions_co2, emissions_ch4, emissions_n2o,
-        emission_factor, emission_factor_unit, emission_factor_description,
-        date, status, notes, verified_by, verified_at,
-        organisation_id, organisation_name, 
-        created_by, created_by_name, created_at,
-        location, description
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    
-    const result = await executeRun(query, [
-      emissionData.scope,
-      category,
-      activity,
-      quantity,
-      emissionsCalc.unit,
-      emissionsCalc.total,
-      emissionsCalc.co2,
-      emissionsCalc.ch4,
-      emissionsCalc.n2o,
-      emissionsCalc.factor,
-      emissionsCalc.unit,
-      emissionsCalc.description,
-      emissionData.date,
-      emissionData.status,
-      emissionData.notes || emissionData.description || null,
-      null, // verified_by
-      null, // verified_at
-      emissionData.organisation_id,
-      emissionData.organisation_name || req.organisation?.name,
-      emissionData.created_by,
-      emissionData.created_by_name,
-      emissionData.created_at,
-      emissionData.location || null,
-      emissionData.description || null
-    ]);
-    
-    const createdEmission = {
-      id: result.lastID,
-      ...emissionData,
-      category,
-      activity,
-      quantity,
+    // Create new emission document (persist source/subcategory explicitly — UI Monitor/Analytics use these)
+    const newEmission = new Emission({
+      scope: parseInt(emissionData.scope),
+      category: category,
+      subcategory: source,
+      source: source,
+      activityType: category,
+      activity: activity,
+      quantity: quantity,
+      amount: quantity,
       unit: emissionsCalc.unit,
       co2e: emissionsCalc.total,
-      emissions_co2: emissionsCalc.co2,
-      emissions_ch4: emissionsCalc.ch4,
-      emissions_n2o: emissionsCalc.n2o,
-      emission_factor: emissionsCalc.factor,
-      emission_factor_unit: emissionsCalc.unit,
-      emission_factor_description: emissionsCalc.description
-    };
+      date: emissionData.date || emissionData.startDate || new Date(),
+      status: resolvedStatus,
+      notes: emissionData.notes || emissionData.description || null,
+      organisation_id: emissionData.organisation_id,
+      organisation_name: emissionData.organisation_name || req.organisation?.name,
+      created_by: req.user.id, // This might be a string, MongoDB will convert it
+      created_by_name: req.user.name || 'Unknown User'
+    });
+    
+    console.log('💾 About to save emission:', {
+      scope: newEmission.scope,
+      category: newEmission.category,
+      organisation_id: newEmission.organisation_id,
+      created_by: newEmission.created_by,
+      created_by_type: typeof newEmission.created_by
+    });
+    
+    // Save to MongoDB
+    let savedEmission;
+    try {
+      savedEmission = await newEmission.save();
+      console.log('✅ Emission saved successfully:', savedEmission._id);
+    } catch (saveError) {
+      console.error('❌ MongoDB Save Error:', {
+        name: saveError.name,
+        message: saveError.message,
+        errors: saveError.errors,
+        code: saveError.code
+      });
+      throw saveError; // Re-throw to be caught by outer catch
+    }
     
     logger.info('Emission created successfully', {
-      id: result.lastID,
-      organisationId: emissionData.organisation_id,
+      id: savedEmission._id,
+      organisationId: savedEmission.organisation_id,
       co2e: emissionsCalc.total.toFixed(4)
     });
     
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
-      action: 'emission_created',
-      resourceType: 'emission',
-      resourceId: result.lastID,
-      details: `Created emission: ${activity} (Scope ${emissionData.scope}) - ${emissionsCalc.total.toFixed(2)} kg CO2e`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    // Sync to Activity collection for monitoring (non-blocking)
+    syncToActivity(savedEmission, req.user).catch(err => {
+      logger.warn('Activity sync failed but emission created', { 
+        emissionId: savedEmission._id,
+        error: err.message 
+      });
     });
-    
+
+    const emissionOrgIds = [
+      savedEmission.organisation_id,
+      req.organisationId,
+      req.organisation?.id,
+      typeof req.organisation?._id?.toString === 'function'
+        ? req.organisation._id.toString()
+        : req.organisation?._id,
+      req.user?.organisation_id
+    ].filter(Boolean);
+
+    notifyAdminsAnalystsNewEmission({
+      organisationIds: emissionOrgIds,
+      organisationId: savedEmission.organisation_id,
+      actorUserId: req.user.id,
+      actorName: req.user.name || 'User',
+      emission: typeof savedEmission.toObject === 'function'
+        ? savedEmission.toObject()
+        : savedEmission
+    }).catch((err) => {
+      logger.warn('Notification enqueue failed but emission created', {
+        emissionId: savedEmission._id,
+        error: err.message
+      });
+    });
     
     res.status(201).json({
       success: true,
-      data: createdEmission,
+      data: savedEmission,
       message: 'Emission created successfully',
       calculations: {
         quantity: quantity,
@@ -496,6 +533,24 @@ const createEmission = async (req, res) => {
     
   } catch (error) {
     logger.error('Create emission error', error);
+    
+    // Handle MongoDB duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate emission entry detected'
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(e => e.message)
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create emission'
@@ -513,7 +568,6 @@ const updateEmission = async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     
-    
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
       return res.status(403).json({
@@ -524,8 +578,10 @@ const updateEmission = async (req, res) => {
     }
     
     // Get the emission to check ownership and organisation
-    const query = 'SELECT * FROM emissions WHERE id = ? AND organisation_id = ?';
-    const emission = await executeGetQuery(query, [id, req.organisationId]);
+    const emission = await Emission.findOne({
+      _id: id,
+      organisation_id: req.organisationId
+    });
     
     if (!emission) {
       return res.status(404).json({
@@ -533,26 +589,44 @@ const updateEmission = async (req, res) => {
         message: 'Emission not found or you do not have access to it'
       });
     }
+
+    if (req.user.role === 'viewer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Viewers cannot update emissions'
+      });
+    }
     
     // Check ownership for contributors
-    if (req.user.role === 'contributor' && emission.created_by !== req.user.id) {
+    if (req.user.role === 'contributor' && emission.created_by.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'You can only update your own emissions',
         code: 'OWNERSHIP_REQUIRED'
       });
     }
-    
-    // Build update query
-    const fields = [];
-    const updateParams = [];
-    
-    // Only update allowed fields
-    const allowedFields = ['scope', 'category', 'activity', 'quantity', 'unit', 'date', 'status', 'notes', 'location', 'description'];
+
+    if (
+      req.user.role === 'contributor' &&
+      emission.status === 'verified'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Verified emissions cannot be edited. Ask an admin or analyst to make changes.',
+        code: 'VERIFIED_LOCKED'
+      });
+    }
     
     // Check if we need to recalculate emissions
     let needsRecalculation = false;
-    if (updates.quantity !== undefined || updates.scope !== undefined || updates.category !== undefined || updates.activity !== undefined) {
+    if (
+      updates.quantity !== undefined ||
+      updates.scope !== undefined ||
+      updates.category !== undefined ||
+      updates.activity !== undefined ||
+      updates.subcategory !== undefined ||
+      updates.source !== undefined
+    ) {
       needsRecalculation = true;
     }
     
@@ -561,74 +635,76 @@ const updateEmission = async (req, res) => {
       const newQuantity = parseFloat(updates.quantity || emission.quantity);
       const newScope = parseInt(updates.scope || emission.scope);
       const newCategory = updates.category || emission.category;
-      const newActivity = updates.activity || emission.activity;
-      
-      const emissionsCalc = calculateEmissions(newQuantity, newScope, newCategory, newActivity);
+      const factorSource =
+        updates.subcategory ??
+        updates.source ??
+        emission.subcategory ??
+        emission.source ??
+        updates.activity ??
+        emission.activity;
+
+      const emissionsCalc = await calculateEmissions(newQuantity, newScope, newCategory, factorSource);
       
       if (emissionsCalc.factor) {
         updates.co2e = emissionsCalc.total;
-        updates.emissions_co2 = emissionsCalc.co2;
-        updates.emissions_ch4 = emissionsCalc.ch4;
-        updates.emissions_n2o = emissionsCalc.n2o;
-        updates.emission_factor = emissionsCalc.factor;
-        updates.emission_factor_unit = emissionsCalc.unit;
-        updates.emission_factor_description = emissionsCalc.description;
-        
-        allowedFields.push('co2e', 'emissions_co2', 'emissions_ch4', 'emissions_n2o', 'emission_factor', 'emission_factor_unit', 'emission_factor_description');
+        updates.unit = emissionsCalc.unit;
       }
     }
     
+    // Update only allowed fields
+    const allowedFields = [
+      'scope', 'category', 'subcategory', 'source', 'activityType', 'activity',
+      'quantity', 'amount', 'unit', 'co2e',
+      'date', 'status', 'notes', 'location', 'description'
+    ];
+    
+    const updateData = {};
     allowedFields.forEach(field => {
       if (updates[field] !== undefined) {
-        fields.push(`${field} = ?`);
-        updateParams.push(updates[field]);
+        updateData[field] = updates[field];
       }
     });
-    
-    if (fields.length === 0) {
+
+    if (updateData.quantity !== undefined) {
+      updateData.amount = updateData.quantity;
+    } else if (updateData.amount !== undefined && updateData.quantity === undefined) {
+      updateData.quantity = updateData.amount;
+    }
+
+    if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No fields to update'
       });
     }
     
-    // Add updated timestamp
-    fields.push('updated_at = ?');
-    updateParams.push(new Date().toISOString());
+    // Perform update
+    const updatedEmission = await Emission.findOneAndUpdate(
+      { _id: id, organisation_id: req.organisationId },
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
     
-    // Add ID and organisation_id to params
-    updateParams.push(id);
-    updateParams.push(req.organisationId);
-    
-    // Update query
-    const updateQuery = `UPDATE emissions SET ${fields.join(', ')} WHERE id = ? AND organisation_id = ?`;
-    
-    const result = await executeRun(updateQuery, updateParams);
-    
-    if (result.changes === 0) {
+    if (!updatedEmission) {
       return res.status(404).json({
         success: false,
-        message: 'Emission not found or no changes made'
+        message: 'Emission not found'
       });
     }
     
-    // Get updated emission
-    const updatedEmission = await executeGetQuery(
-      'SELECT * FROM emissions WHERE id = ? AND organisation_id = ?', 
-      [id, req.organisationId]
-    );
-    
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
-      action: 'emission_updated',
-      resourceType: 'emission',
-      resourceId: id,
-      details: `Updated emission: ${updatedEmission.activity}${needsRecalculation ? ' (recalculated)' : ''}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    logger.info('Emission updated successfully', {
+      id: updatedEmission._id,
+      recalculated: needsRecalculation
     });
+    
+    // Sync update to Activity collection (non-blocking)
+    syncToActivity(updatedEmission, req.user, 'emission_updated').catch(err => {
+      logger.warn('Activity sync failed but emission updated', { 
+        emissionId: updatedEmission._id,
+        error: err.message 
+      });
+    });
+
     
     res.json({
       success: true,
@@ -639,6 +715,15 @@ const updateEmission = async (req, res) => {
     
   } catch (error) {
     logger.error('Update emission error', error);
+    
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(e => e.message)
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update emission'
@@ -655,7 +740,6 @@ const deleteEmission = async (req, res) => {
   try {
     const { id } = req.params;
     
-    
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
       return res.status(403).json({
@@ -666,8 +750,10 @@ const deleteEmission = async (req, res) => {
     }
     
     // Get the emission to check ownership
-    const query = 'SELECT * FROM emissions WHERE id = ? AND organisation_id = ?';
-    const emission = await executeGetQuery(query, [id, req.organisationId]);
+    const emission = await Emission.findOne({
+      _id: id,
+      organisation_id: req.organisationId
+    });
     
     if (!emission) {
       return res.status(404).json({
@@ -675,9 +761,16 @@ const deleteEmission = async (req, res) => {
         message: 'Emission not found or you do not have access to it'
       });
     }
+
+    if (req.user.role === 'viewer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Viewers cannot delete emissions'
+      });
+    }
     
     // Check ownership for contributors
-    if (req.user.role === 'contributor' && emission.created_by !== req.user.id) {
+    if (req.user.role === 'contributor' && emission.created_by.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'You can only delete your own emissions',
@@ -686,28 +779,12 @@ const deleteEmission = async (req, res) => {
     }
     
     // Delete emission
-    const deleteResult = await executeRun(
-      'DELETE FROM emissions WHERE id = ? AND organisation_id = ?',
-      [id, req.organisationId]
-    );
+    await Emission.deleteOne({ _id: id, organisation_id: req.organisationId });
     
-    if (deleteResult.changes === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Emission not found'
-      });
-    }
-    
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
-      action: 'emission_deleted',
-      resourceType: 'emission',
-      resourceId: id,
-      details: `Deleted emission: ${emission.activity} (${emission.co2e} kg CO2e)`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    logger.info('Emission deleted successfully', {
+      id: id,
+      activity: emission.activity,
+      co2e: emission.co2e
     });
     
     res.json({
@@ -734,7 +811,6 @@ const verifyEmission = async (req, res) => {
     const { id } = req.params;
     const { verified } = req.body;
     
-    
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
       return res.status(403).json({
@@ -745,10 +821,10 @@ const verifyEmission = async (req, res) => {
     }
     
     // Get emission
-    const emission = await executeGetQuery(
-      'SELECT * FROM emissions WHERE id = ? AND organisation_id = ?',
-      [id, req.organisationId]
-    );
+    const emission = await Emission.findOne({
+      _id: id,
+      organisation_id: req.organisationId
+    });
     
     if (!emission) {
       return res.status(404).json({
@@ -757,45 +833,41 @@ const verifyEmission = async (req, res) => {
       });
     }
     
-    // Update verification status
-    const status = verified ? 'verified' : 'draft';
-    const verifiedBy = verified ? req.user.id : null;
-    const verifiedAt = verified ? new Date().toISOString() : null;
+    const isVerified = verified === true || verified === 'true';
+    const status = isVerified ? 'verified' : 'rejected';
+    const verifiedBy = isVerified ? req.user.id : null;
+    const verifiedAt = isVerified ? new Date() : null;
     
-    const result = await executeRun(
-      'UPDATE emissions SET status = ?, verified_by = ?, verified_at = ?, updated_at = ? WHERE id = ? AND organisation_id = ?',
-      [status, verifiedBy, verifiedAt, new Date().toISOString(), id, req.organisationId]
+    const updatedEmission = await Emission.findOneAndUpdate(
+      { _id: id, organisation_id: req.organisationId },
+      {
+        $set: {
+          status,
+          verified_by: verifiedBy,
+          verified_at: verifiedAt
+        }
+      },
+      { new: true }
     );
     
-    if (result.changes === 0) {
+    if (!updatedEmission) {
       return res.status(404).json({
         success: false,
         message: 'Emission not found'
       });
     }
     
-    // Get updated emission
-    const updatedEmission = await executeGetQuery(
-      'SELECT * FROM emissions WHERE id = ?',
-      [id]
-    );
-    
-    
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
-      action: verified ? 'emission_verified' : 'emission_unverified',
-      resourceType: 'emission',
-      resourceId: id,
-      details: `${verified ? 'Verified' : 'Unverified'} emission: ${emission.activity}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    logger.info('Emission verification status updated', {
+      id: updatedEmission._id,
+      status: status
     });
     
     res.json({
       success: true,
       data: updatedEmission,
-      message: `Emission ${verified ? 'verified' : 'unverified'} successfully`
+      message: isVerified
+        ? 'Emission verified successfully'
+        : 'Emission rejected'
     });
     
   } catch (error) {
@@ -814,7 +886,6 @@ const verifyEmission = async (req, res) => {
  */
 const getEmissionStats = async (req, res) => {
   try {
-    
     // Validate organisation context
     if (!validateOrganisationContext(req)) {
       return res.status(403).json({
@@ -824,96 +895,101 @@ const getEmissionStats = async (req, res) => {
       });
     }
     
-    // Get stats by scope
-    const scopeStats = await executeQuery(`
-      SELECT 
-        scope,
-        COUNT(*) as count,
-        SUM(co2e) as total_co2e,
-        SUM(emissions_co2) as total_co2,
-        SUM(emissions_ch4) as total_ch4,
-        SUM(emissions_n2o) as total_n2o,
-        AVG(co2e) as avg_co2e,
-        MIN(co2e) as min_co2e,
-        MAX(co2e) as max_co2e
-      FROM emissions
-      WHERE organisation_id = ?
-      GROUP BY scope
-      ORDER BY scope
-    `, [req.organisationId]);
+    // Get stats by scope using MongoDB aggregation
+    const scopeStats = await Emission.aggregate([
+      { $match: { organisation_id: req.organisationId } },
+      {
+        $group: {
+          _id: '$scope',
+          count: { $sum: 1 },
+          total_co2e: { $sum: '$co2e' },
+          avg_co2e: { $avg: '$co2e' },
+          min_co2e: { $min: '$co2e' },
+          max_co2e: { $max: '$co2e' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
     
     // Get total stats
-    const totalStats = await executeGetQuery(`
-      SELECT 
-        COUNT(*) as total_emissions,
-        SUM(co2e) as total_co2e,
-        SUM(emissions_co2) as total_co2,
-        SUM(emissions_ch4) as total_ch4,
-        SUM(emissions_n2o) as total_n2o,
-        AVG(co2e) as avg_co2e,
-        MIN(date) as earliest_date,
-        MAX(date) as latest_date
-      FROM emissions
-      WHERE organisation_id = ?
-    `, [req.organisationId]);
+    const totalStats = await Emission.aggregate([
+      { $match: { organisation_id: req.organisationId } },
+      {
+        $group: {
+          _id: null,
+          total_emissions: { $sum: 1 },
+          total_co2e: { $sum: '$co2e' },
+          avg_co2e: { $avg: '$co2e' },
+          earliest_date: { $min: '$date' },
+          latest_date: { $max: '$date' }
+        }
+      }
+    ]);
     
     // Get status breakdown
-    const statusStats = await executeQuery(`
-      SELECT 
-        status,
-        COUNT(*) as count,
-        SUM(co2e) as total_co2e
-      FROM emissions
-      WHERE organisation_id = ?
-      GROUP BY status
-    `, [req.organisationId]);
+    const statusStats = await Emission.aggregate([
+      { $match: { organisation_id: req.organisationId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          total_co2e: { $sum: '$co2e' }
+        }
+      }
+    ]);
     
     // Get category breakdown (top 10)
-    const categoryStats = await executeQuery(`
-      SELECT 
-        category,
-        COUNT(*) as count,
-        SUM(co2e) as total_co2e
-      FROM emissions
-      WHERE organisation_id = ? AND category IS NOT NULL
-      GROUP BY category
-      ORDER BY total_co2e DESC
-      LIMIT 10
-    `, [req.organisationId]);
+    const categoryStats = await Emission.aggregate([
+      { 
+        $match: { 
+          organisation_id: req.organisationId,
+          category: { $ne: null }
+        } 
+      },
+      {
+        $group: {
+          _id: '$category',
+          count: { $sum: 1 },
+          total_co2e: { $sum: '$co2e' }
+        }
+      },
+      { $sort: { total_co2e: -1 } },
+      { $limit: 10 }
+    ]);
     
     res.json({
       success: true,
       data: {
         by_scope: scopeStats.map(s => ({
-          scope: s.scope,
+          scope: s._id,
           count: s.count,
           total_co2e: parseFloat((s.total_co2e || 0).toFixed(2)),
-          total_co2: parseFloat((s.total_co2 || 0).toFixed(2)),
-          total_ch4: parseFloat((s.total_ch4 || 0).toFixed(4)),
-          total_n2o: parseFloat((s.total_n2o || 0).toFixed(4)),
           avg_co2e: parseFloat((s.avg_co2e || 0).toFixed(2)),
           min_co2e: parseFloat((s.min_co2e || 0).toFixed(2)),
           max_co2e: parseFloat((s.max_co2e || 0).toFixed(2))
         })),
         by_status: statusStats.map(s => ({
-          status: s.status,
+          status: s._id,
           count: s.count,
           total_co2e: parseFloat((s.total_co2e || 0).toFixed(2))
         })),
         by_category: categoryStats.map(c => ({
-          category: c.category,
+          category: c._id,
           count: c.count,
           total_co2e: parseFloat((c.total_co2e || 0).toFixed(2))
         })),
-        totals: {
-          total_emissions: totalStats.total_emissions || 0,
-          total_co2e: parseFloat((totalStats.total_co2e || 0).toFixed(2)),
-          total_co2: parseFloat((totalStats.total_co2 || 0).toFixed(2)),
-          total_ch4: parseFloat((totalStats.total_ch4 || 0).toFixed(4)),
-          total_n2o: parseFloat((totalStats.total_n2o || 0).toFixed(4)),
-          avg_co2e: parseFloat((totalStats.avg_co2e || 0).toFixed(2)),
-          earliest_date: totalStats.earliest_date,
-          latest_date: totalStats.latest_date
+        totals: totalStats.length > 0 ? {
+          total_emissions: totalStats[0].total_emissions || 0,
+          total_co2e: parseFloat((totalStats[0].total_co2e || 0).toFixed(2)),
+          avg_co2e: parseFloat((totalStats[0].avg_co2e || 0).toFixed(2)),
+          earliest_date: totalStats[0].earliest_date,
+          latest_date: totalStats[0].latest_date
+        } : {
+          total_emissions: 0,
+          total_co2e: 0,
+          avg_co2e: 0,
+          earliest_date: null,
+          latest_date: null
         },
         organisation: {
           id: req.organisation.id,
@@ -948,17 +1024,14 @@ const getEmissionCategories = async (req, res) => {
     }
     
     // Get unique categories for this organisation
-    const categories = await executeQuery(
-      `SELECT DISTINCT category 
-       FROM emissions 
-       WHERE organisation_id = ? AND category IS NOT NULL
-       ORDER BY category`,
-      [req.organisationId]
-    );
+    const categories = await Emission.distinct('category', {
+      organisation_id: req.organisationId,
+      category: { $ne: null }
+    });
     
     res.json({
       success: true,
-      data: categories.map(c => c.category)
+      data: categories.sort()
     });
     
   } catch (error) {
@@ -1046,12 +1119,13 @@ const getUserAllowedActivities = async (req, res) => {
     
     // Contributor with restrictions
     if (req.user.role === 'contributor' && req.user.restrictions) {
+      const r = req.user.restrictions;
       return res.json({
         success: true,
         data: {
           all: false,
-          allowedScopes: req.user.restrictions.allowedScopes || [1, 2, 3],
-          allowedActivities: req.user.restrictions.allowedActivities || []
+          allowedScopes: Array.isArray(r.allowedScopes) ? r.allowedScopes : [],
+          allowedActivities: Array.isArray(r.allowedActivities) ? r.allowedActivities : []
         }
       });
     }
@@ -1082,51 +1156,34 @@ const getUserAllowedActivities = async (req, res) => {
  */
 const getDiagnostics = async (req, res) => {
   try {
-    
-    // Get user info
-    const userInfo = await localDB.findUserById(req.user.id);
-    
-    // Count emissions by organisation
-    const emissionsByOrg = await executeQuery(`
-      SELECT 
-        organisation_id, 
-        organisation_name,
-        COUNT(*) as count,
-        SUM(co2e) as total_co2e
-      FROM emissions
-      GROUP BY organisation_id, organisation_name
-      ORDER BY count DESC
-    `);
+    // Get emissions count by organisation
+    const emissionsByOrg = await Emission.aggregate([
+      {
+        $group: {
+          _id: {
+            organisation_id: '$organisation_id',
+            organisation_name: '$organisation_name'
+          },
+          count: { $sum: 1 },
+          total_co2e: { $sum: '$co2e' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
     
     // Count emissions created by this user
-    const userEmissions = await executeGetQuery(
-      `SELECT 
-        COUNT(*) as count,
-        SUM(co2e) as total_co2e
-      FROM emissions
-      WHERE created_by = ?`,
-      [req.user.id]
-    );
+    const userEmissions = await Emission.countDocuments({
+      created_by: req.user.id
+    });
     
     // Count emissions visible to this user (with org filter)
-    const visibleEmissions = await executeGetQuery(
-      req.organisationId
-        ? 'SELECT COUNT(*) as count FROM emissions WHERE organisation_id = ?'
-        : 'SELECT 0 as count',
-      req.organisationId ? [req.organisationId] : []
-    );
-    
-    // Check for orphaned emissions
-    const orphanedEmissions = await executeQuery(`
-      SELECT COUNT(*) as count
-      FROM emissions e
-      LEFT JOIN organisations o ON e.organisation_id = o.id
-      WHERE o.id IS NULL AND e.organisation_id IS NOT NULL
-    `);
+    const visibleEmissions = req.organisationId
+      ? await Emission.countDocuments({ organisation_id: req.organisationId })
+      : 0;
     
     // Build issues list
     const issues = [];
-    if (!userInfo.organisation_id) {
+    if (!req.user.organisation_id) {
       issues.push({
         severity: 'critical',
         message: 'User has no organisation_id in database',
@@ -1140,40 +1197,32 @@ const getDiagnostics = async (req, res) => {
         impact: 'All data queries will fail'
       });
     }
-    if (userInfo.organisation_id !== req.organisationId) {
+    if (req.user.organisation_id !== req.organisationId) {
       issues.push({
         severity: 'critical',
         message: 'User org_id does not match request org_id',
         impact: 'Data visibility mismatch'
       });
     }
-    if (visibleEmissions.count === 0 && userEmissions.count > 0) {
+    if (visibleEmissions === 0 && userEmissions > 0) {
       issues.push({
         severity: 'critical',
         message: 'User created emissions but cannot see them',
-        impact: 'Data appears lost (org mismatch)',
-        action: 'Run fix script: node backend/scripts/fix-emissions-data.js'
-      });
-    }
-    if (orphanedEmissions[0]?.count > 0) {
-      issues.push({
-        severity: 'warning',
-        message: `${orphanedEmissions[0].count} emissions have invalid organisation_id`,
-        impact: 'These emissions are invisible to all users',
-        action: 'Run fix script to reassign to valid organisations'
+        impact: 'Data appears lost (org mismatch)'
       });
     }
     
     res.json({
       success: true,
       diagnostics: {
+        database: 'MongoDB',
         user: {
-          id: userInfo.id,
-          email: userInfo.email,
-          name: userInfo.name,
-          role: userInfo.role,
-          organisation_id: userInfo.organisation_id,
-          has_organisation: !!userInfo.organisation_id
+          id: req.user.id,
+          email: req.user.email,
+          name: req.user.name,
+          role: req.user.role,
+          organisation_id: req.user.organisation_id,
+          has_organisation: !!req.user.organisation_id
         },
         request_context: {
           organisationId: req.organisationId,
@@ -1182,23 +1231,18 @@ const getDiagnostics = async (req, res) => {
         },
         emission_counts: {
           total_in_database: emissionsByOrg.reduce((sum, org) => sum + org.count, 0),
-          created_by_user: userEmissions.count || 0,
-          visible_to_user: visibleEmissions.count || 0,
+          created_by_user: userEmissions,
+          visible_to_user: visibleEmissions,
           by_organisation: emissionsByOrg.map(org => ({
-            organisation_id: org.organisation_id,
-            organisation_name: org.organisation_name,
+            organisation_id: org._id.organisation_id,
+            organisation_name: org._id.organisation_name,
             count: org.count,
             total_co2e: parseFloat((org.total_co2e || 0).toFixed(2))
           }))
         },
         health: {
           status: issues.filter(i => i.severity === 'critical').length > 0 ? 'unhealthy' : 'healthy',
-          issues: issues,
-          recommendations: [
-            'Ensure all users are assigned to organisations',
-            'Run diagnostic script: node backend/scripts/diagnose-data-loss.js',
-            'Run fix script if issues found: node backend/scripts/fix-emissions-data.js'
-          ]
+          issues: issues
         }
       }
     });
@@ -1208,6 +1252,90 @@ const getDiagnostics = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Sync existing emissions to Activity collection (one-time migration)
+ * @route   POST /api/emissions/sync-to-activities
+ * @access  Private (Admin only)
+ */
+const syncEmissionsToActivities = async (req, res) => {
+  try {
+    logger.info('Starting emission to activity sync', { 
+      organisationId: req.organisationId 
+    });
+    
+    // Get all emissions for this organisation
+    const emissions = await Emission.find({ 
+      organisation_id: req.organisationId 
+    });
+    
+    console.log(`🔄 Found ${emissions.length} emissions to sync`);
+    
+    let syncedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    
+    for (const emission of emissions) {
+      try {
+        // Check if already synced
+        const existingActivity = await Activity.findOne({
+          'metadata.emissionId': emission._id.toString()
+        });
+        
+        if (existingActivity) {
+          skippedCount++;
+          continue;
+        }
+        
+        // Sync to Activity
+        const synced = await syncToActivity(emission, {
+          id: emission.created_by,
+          name: emission.created_by_name || 'Unknown',
+          email: '',
+          role: 'contributor'
+        });
+        
+        if (synced) {
+          syncedCount++;
+        } else {
+          errorCount++;
+        }
+        
+      } catch (error) {
+        logger.error('Failed to sync emission', { 
+          emissionId: emission._id, 
+          error: error.message 
+        });
+        errorCount++;
+      }
+    }
+    
+    logger.info('Sync complete', { 
+      total: emissions.length,
+      synced: syncedCount,
+      skipped: skippedCount,
+      errors: errorCount
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        total: emissions.length,
+        synced: syncedCount,
+        skipped: skippedCount,
+        errors: errorCount
+      },
+      message: `Synced ${syncedCount} emissions to activities`
+    });
+    
+  } catch (error) {
+    logger.error('Sync error', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync emissions'
     });
   }
 };
@@ -1227,5 +1355,6 @@ module.exports = {
   getEmissionCategories,
   getEmissionFactors,
   getUserAllowedActivities,
-  getDiagnostics
+  getDiagnostics,
+  syncEmissionsToActivities
 };

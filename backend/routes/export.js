@@ -1,8 +1,10 @@
-// ===== backend/routes/export.js =====
+// routes/export.js - MongoDB-compatible export routes
 const express = require('express');
 const router = express.Router();
+const { authorizeRoles } = require('../middleware/auth');
 
-router.get('/emissions', (req, res) => {
+// Placeholder export routes - extend with actual export controllers as needed
+router.get('/emissions', authorizeRoles('admin', 'analyst'), (req, res) => {
   const { format = 'csv' } = req.query;
   
   if (format === 'csv') {
@@ -17,7 +19,7 @@ router.get('/emissions', (req, res) => {
   }
 });
 
-router.get('/activities', (req, res) => {
+router.get('/activities', authorizeRoles('admin'), (req, res) => {
   const { format = 'csv' } = req.query;
   
   if (format === 'csv') {

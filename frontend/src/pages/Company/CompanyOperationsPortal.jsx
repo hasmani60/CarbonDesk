@@ -1,27 +1,37 @@
+// frontend/src/pages/Company/CompanyOperationsPortal.jsx - MongoDB Compatible
 import React, { useState, useEffect } from 'react';
-import { Building2, Users, Activity, Plus, Search, Filter, Eye, Edit, Trash2, CheckCircle, XCircle, BarChart3, Shield, Lock } from 'lucide-react';
-
-// This component is HIDDEN from regular users
-// Access only via: /company-portal (not linked anywhere in the app)
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const CompanyOperationsPortal = () => {
+  const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [operator, setOperator] = useState(null);
-  const [currentView, setCurrentView] = useState('dashboard');
-  const [organisations, setOrganisations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState(null);
-  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
 
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  // Login state
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const [newOrg, setNewOrg] = useState({
-    // Basic Information
+  // Dashboard state
+  const [dashboardStats, setDashboardStats] = useState(null);
+  const [recentOrganisations, setRecentOrganisations] = useState([]);
+
+  // Organisation list state
+  const [organisations, setOrganisations] = useState([]);
+  const [filteredOrgs, setFilteredOrgs] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterIndustry, setFilterIndustry] = useState('all');
+
+  // Create organisation state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createFormData, setCreateFormData] = useState({
     name: '',
     display_name: '',
-    industry_type: 'Manufacturing',
+    industry_type: '',
     location: '',
     contact_email: '',
     contact_phone: '',
@@ -29,337 +39,370 @@ const CompanyOperationsPortal = () => {
     website: '',
     subscription_tier: 'standard',
     max_users: 50,
-    
-    // Organisation Details (NEW)
+    max_storage_gb: 10,
     registered_name: '',
     cin_number: '',
     registered_address: '',
     gst_number: '',
     current_employees: '',
-    
-    // Super Admin Details
     super_admin_name: '',
     super_admin_email: '',
     super_admin_password: '',
     notes: ''
   });
+  const [createError, setCreateError] = useState('');
+  const [creating, setCreating] = useState(false);
 
-  const [formErrors, setFormErrors] = useState({});
+  // Organisation detail state
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [orgStats, setOrgStats] = useState(null);
+  const [showOrgDetail, setShowOrgDetail] = useState(false);
 
-  const API_BASE = 'http://localhost:5001/api/company';
+  // Note: VITE_API_URL should be 'http://localhost:5001' NOT 'http://localhost:5001/api'
+  // The /api prefix is added in the routes below
+  const API_BASE_URL = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL.replace(/\/api$/, '') // Remove trailing /api if present
+    : 'http://localhost:5001';
 
+  // Check authentication on mount
   useEffect(() => {
-    const token = localStorage.getItem('company_token');
-    if (token) verifyToken(token);
+    checkAuth();
   }, []);
 
+  // Filter organisations
   useEffect(() => {
-    if (isAuthenticated && currentView === 'dashboard') loadDashboard();
-  }, [isAuthenticated, currentView]);
+    filterOrganisations();
+  }, [organisations, searchTerm, filterStatus, filterIndustry]);
 
-  const verifyToken = async (token) => {
-    try {
-      const response = await fetch(`${API_BASE}/auth/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setOperator(data.data);
+  const checkAuth = () => {
+    const token = localStorage.getItem('company_token');
+    const operatorData = localStorage.getItem('company_operator');
+
+    if (token && operatorData) {
+      try {
+        const parsedOperator = JSON.parse(operatorData);
+        setOperator(parsedOperator);
         setIsAuthenticated(true);
-      } else {
-        localStorage.removeItem('company_token');
+        loadDashboard();
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        handleLogout();
       }
-    } catch (error) {
-      localStorage.removeItem('company_token');
     }
+    setLoading(false);
   };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    setLoading(true);
+    setLoggingIn(true);
 
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword })
-      });
+      const response = await axios.post(
+        `${API_BASE_URL}/api/company/auth/login`,
+        loginForm,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
 
-      const data = await response.json();
-
-      if (data.success) {
-        localStorage.setItem('company_token', data.data.token);
-        setOperator(data.data.operator);
+      if (response.data.success) {
+        const { token, operator: operatorData } = response.data.data;
+        
+        // Store token and operator data
+        localStorage.setItem('company_token', token);
+        localStorage.setItem('company_operator', JSON.stringify(operatorData));
+        
+        setOperator(operatorData);
         setIsAuthenticated(true);
-      } else {
-        setLoginError(data.message || 'Login failed');
+        setLoginForm({ email: '', password: '' });
+        
+        // Load dashboard
+        await loadDashboard();
       }
     } catch (error) {
-      setLoginError('Unable to connect to server');
+      console.error('Login error:', error);
+      setLoginError(
+        error.response?.data?.message || 'Login failed. Please check your credentials.'
+      );
     } finally {
-      setLoading(false);
+      setLoggingIn(false);
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('company_token');
+    localStorage.removeItem('company_operator');
     setIsAuthenticated(false);
     setOperator(null);
-    setCurrentView('dashboard');
+    setActiveTab('dashboard');
+  };
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('company_token');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
   };
 
   const loadDashboard = async () => {
-    setLoading(true);
     try {
-      const token = localStorage.getItem('company_token');
-      const response = await fetch(`${API_BASE}/dashboard`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.data.stats);
-        setOrganisations(data.data.organisations);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/company/dashboard`,
+        { headers: getAuthHeaders() }
+      );
+
+      if (response.data.success) {
+        setDashboardStats(response.data.data.stats);
+        setRecentOrganisations(response.data.data.organisations || []);
       }
     } catch (error) {
-      console.error('Dashboard load failed:', error);
-    } finally {
-      setLoading(false);
+      console.error('Failed to load dashboard:', error);
+      if (error.response?.status === 401) {
+        handleLogout();
+      }
     }
   };
 
-  const validateForm = () => {
-    const errors = {};
+  const loadOrganisations = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/company/organisations`,
+        { headers: getAuthHeaders() }
+      );
 
-    // Basic Information Validation
-    if (!newOrg.name.trim()) {
-      errors.name = 'Organisation name is required';
+      if (response.data.success) {
+        setOrganisations(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load organisations:', error);
+      if (error.response?.status === 401) {
+        handleLogout();
+      }
+    }
+  };
+
+  const filterOrganisations = () => {
+    let filtered = [...organisations];
+
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(org => 
+        org.name?.toLowerCase().includes(term) ||
+        org.display_name?.toLowerCase().includes(term) ||
+        org.contact_email?.toLowerCase().includes(term)
+      );
     }
 
-    if (!newOrg.contact_email.trim()) {
-      errors.contact_email = 'Contact email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newOrg.contact_email)) {
-      errors.contact_email = 'Invalid email format';
+    // Status filter
+    if (filterStatus !== 'all') {
+      const isActive = filterStatus === 'active';
+      filtered = filtered.filter(org => org.is_active === isActive);
     }
 
-    // Organisation Details Validation (NEW)
-    if (!newOrg.registered_address.trim()) {
-      errors.registered_address = 'Registered address is required';
-    } else if (newOrg.registered_address.trim().length < 10) {
-      errors.registered_address = 'Address must be at least 10 characters';
+    // Industry filter
+    if (filterIndustry !== 'all') {
+      filtered = filtered.filter(org => org.industry_type === filterIndustry);
     }
 
-    if (!newOrg.current_employees || parseInt(newOrg.current_employees) < 1) {
-      errors.current_employees = 'Number of employees must be at least 1';
-    }
-
-    // CIN Number validation (if provided)
-    if (newOrg.cin_number && newOrg.cin_number.length > 21) {
-      errors.cin_number = 'CIN number cannot exceed 21 characters';
-    }
-
-    // GST Number validation (if provided)
-    if (newOrg.gst_number && newOrg.gst_number.length !== 15) {
-      errors.gst_number = 'GST number must be exactly 15 characters';
-    }
-
-    // Super Admin Validation
-    if (!newOrg.super_admin_name.trim()) {
-      errors.super_admin_name = 'Super Admin name is required';
-    }
-
-    if (!newOrg.super_admin_email.trim()) {
-      errors.super_admin_email = 'Super Admin email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newOrg.super_admin_email)) {
-      errors.super_admin_email = 'Invalid email format';
-    }
-
-    if (!newOrg.super_admin_password.trim()) {
-      errors.super_admin_password = 'Super Admin password is required';
-    } else if (newOrg.super_admin_password.length < 8) {
-      errors.super_admin_password = 'Password must be at least 8 characters';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    setFilteredOrgs(filtered);
   };
 
   const handleCreateOrganisation = async (e) => {
     e.preventDefault();
-    
-    // Validate form
-    if (!validateForm()) {
-      alert('Please fix the errors in the form before submitting');
+    setCreateError('');
+    setCreating(true);
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/company/organisations`,
+        createFormData,
+        { headers: getAuthHeaders() }
+      );
+
+      if (response.data.success) {
+        alert('Organisation created successfully!');
+        setShowCreateModal(false);
+        resetCreateForm();
+        
+        // Reload organisations
+        if (activeTab === 'organisations') {
+          await loadOrganisations();
+        } else {
+          await loadDashboard();
+        }
+      }
+    } catch (error) {
+      console.error('Create organisation error:', error);
+      setCreateError(
+        error.response?.data?.message || 'Failed to create organisation'
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const resetCreateForm = () => {
+    setCreateFormData({
+      name: '',
+      display_name: '',
+      industry_type: '',
+      location: '',
+      contact_email: '',
+      contact_phone: '',
+      address: '',
+      website: '',
+      subscription_tier: 'standard',
+      max_users: 50,
+      max_storage_gb: 10,
+      registered_name: '',
+      cin_number: '',
+      registered_address: '',
+      gst_number: '',
+      current_employees: '',
+      super_admin_name: '',
+      super_admin_email: '',
+      super_admin_password: '',
+      notes: ''
+    });
+    setCreateError('');
+  };
+
+  const loadOrganisationDetails = async (orgId) => {
+    try {
+      const [detailsResponse, statsResponse] = await Promise.all([
+        axios.get(
+          `${API_BASE_URL}/api/company/organisations/${orgId}`,
+          { headers: getAuthHeaders() }
+        ),
+        axios.get(
+          `${API_BASE_URL}/api/company/organisations/${orgId}/stats`,
+          { headers: getAuthHeaders() }
+        )
+      ]);
+
+      if (detailsResponse.data.success) {
+        setSelectedOrg(detailsResponse.data.data);
+      }
+      
+      if (statsResponse.data.success) {
+        setOrgStats(statsResponse.data.data.stats);
+      }
+      
+      setShowOrgDetail(true);
+    } catch (error) {
+      console.error('Failed to load organisation details:', error);
+      alert('Failed to load organisation details');
+    }
+  };
+
+  const handleDeactivateOrganisation = async (orgId) => {
+    if (!confirm('Are you sure you want to deactivate this organisation?')) {
       return;
     }
 
-    setLoading(true);
-
     try {
-      const token = localStorage.getItem('company_token');
-      const response = await fetch(`${API_BASE}/organisations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newOrg)
-      });
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/company/organisations/${orgId}`,
+        { headers: getAuthHeaders() }
+      );
 
-      const data = await response.json();
-
-      if (data.success) {
-        alert(`✅ Organisation created successfully!\n\nOrg ID: ${data.data.organisation.id}\nSuper Admin: ${data.data.super_admin.email}\n\nThe Super Admin can now log in using their credentials.`);
+      if (response.data.success) {
+        alert('Organisation deactivated successfully');
+        setShowOrgDetail(false);
         
-        // Reset form
-        setNewOrg({
-          name: '',
-          display_name: '',
-          industry_type: 'Manufacturing',
-          location: '',
-          contact_email: '',
-          contact_phone: '',
-          address: '',
-          website: '',
-          subscription_tier: 'standard',
-          max_users: 50,
-          registered_name: '',
-          cin_number: '',
-          registered_address: '',
-          gst_number: '',
-          current_employees: '',
-          super_admin_name: '',
-          super_admin_email: '',
-          super_admin_password: '',
-          notes: ''
-        });
-        
-        setFormErrors({});
-        setCurrentView('dashboard');
-        
-        // Reload dashboard
-        await loadDashboard();
-      } else {
-        alert(`❌ Error: ${data.message}`);
+        if (activeTab === 'organisations') {
+          await loadOrganisations();
+        } else {
+          await loadDashboard();
+        }
       }
     } catch (error) {
-      alert('Failed to create organisation: ' + error.message);
-    } finally {
-      setLoading(false);
+      console.error('Deactivation error:', error);
+      alert('Failed to deactivate organisation');
     }
   };
 
-  const handleInputChange = (field, value) => {
-    setNewOrg(prev => ({ ...prev, [field]: value }));
+  const handleTabChange = async (tab) => {
+    setActiveTab(tab);
     
-    // Clear error for this field when user starts typing
-    if (formErrors[field]) {
-      setFormErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
+    if (tab === 'organisations' && organisations.length === 0) {
+      await loadOrganisations();
     }
   };
 
-  // LOGIN SCREEN
+  // Render login page
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-          <div className="mb-6 bg-red-900 border border-red-700 rounded-lg p-4 text-center">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <Shield className="w-5 h-5 text-red-300" />
-              <span className="text-red-100 font-bold">RESTRICTED ACCESS</span>
-            </div>
-            <p className="text-red-200 text-sm">Company Operations Portal - Internal Use Only</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Company Operations</h1>
+            <p className="text-gray-600">Internal Management Portal</p>
           </div>
 
-          <div className="bg-gray-800 shadow-2xl rounded-lg p-8 border border-gray-700">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Lock className="w-8 h-8 text-white" />
+          <form onSubmit={handleLogin} className="space-y-6">
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                {loginError}
               </div>
-              <h1 className="text-2xl font-bold text-white mb-2">Company Portal</h1>
-              <p className="text-gray-400 text-sm">Carbon Track Operations</p>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="operator@company.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-
-              {loginError && (
-                <div className="bg-red-900 border border-red-700 rounded-lg p-3 text-red-200 text-sm">
-                  {loginError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Authenticating...' : 'Access Portal'}
-              </button>
-            </form>
-
-            <div className="mt-6 pt-6 border-t border-gray-700">
-              <p className="text-xs text-gray-500 text-center">
-                Default: admin@carbontrack-company.com / CompanyAdmin2025!
-              </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password
+              </label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
             </div>
-          </div>
+
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+            >
+              {loggingIn ? 'Logging in...' : 'Login'}
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
-  // MAIN PORTAL
+  // Main portal interface
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gray-900 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
-              <Building2 className="w-6 h-6" />
-            </div>
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-xl font-bold">Company Operations Portal</h1>
-              <p className="text-sm text-gray-400">Multi-Tenant Management System</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{operator?.name}</p>
-              <p className="text-xs text-gray-400 capitalize">{operator?.role}</p>
+              <h1 className="text-2xl font-bold text-gray-900">Company Operations Portal</h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Logged in as: {operator?.name} ({operator?.role})
+              </p>
             </div>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               Logout
             </button>
@@ -367,548 +410,707 @@ const CompanyOperationsPortal = () => {
         </div>
       </header>
 
-      {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex space-x-1">
+      {/* Navigation Tabs */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8">
             <button
-              onClick={() => setCurrentView('dashboard')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                currentView === 'dashboard'
-                  ? 'border-emerald-600 text-emerald-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              onClick={() => handleTabChange('dashboard')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'dashboard'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <span className="flex items-center space-x-2">
-                <BarChart3 className="w-4 h-4" />
-                <span>Dashboard</span>
-              </span>
+              Dashboard
             </button>
             <button
-              onClick={() => setCurrentView('create')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                currentView === 'create'
-                  ? 'border-emerald-600 text-emerald-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              onClick={() => handleTabChange('organisations')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'organisations'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <span className="flex items-center space-x-2">
-                <Plus className="w-4 h-4" />
-                <span>Create Organisation</span>
-              </span>
+              Organisations
             </button>
-          </div>
+            <button
+              onClick={() => handleTabChange('profile')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'profile'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Profile
+            </button>
+          </nav>
         </div>
-      </nav>
+      </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* DASHBOARD VIEW */}
-        {currentView === 'dashboard' && stats && (
+      {/* Content Area */}
+      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {/* Dashboard Tab */}
+        {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Total Organisations</p>
-                    <p className="text-3xl font-bold text-gray-900">{stats.total_organisations || 0}</p>
-                  </div>
-                  <Building2 className="w-10 h-10 text-blue-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Active Organisations</p>
-                    <p className="text-3xl font-bold text-green-600">{stats.active_organisations || 0}</p>
-                  </div>
-                  <CheckCircle className="w-10 h-10 text-green-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Total Users</p>
-                    <p className="text-3xl font-bold text-gray-900">{stats.total_users || 0}</p>
-                  </div>
-                  <Users className="w-10 h-10 text-purple-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Active Users</p>
-                    <p className="text-3xl font-bold text-emerald-600">{stats.active_users || 0}</p>
-                  </div>
-                  <Activity className="w-10 h-10 text-emerald-500" />
-                </div>
-              </div>
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Dashboard Overview</h2>
+              {operator?.permissions?.canCreateOrgs && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  + Create Organisation
+                </button>
+              )}
             </div>
+
+            {/* Stats Cards */}
+            {dashboardStats && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-sm font-medium text-gray-500">Total Organisations</h3>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {dashboardStats.total_organisations || 0}
+                  </p>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-sm font-medium text-gray-500">Active Organisations</h3>
+                  <p className="text-3xl font-bold text-green-600 mt-2">
+                    {dashboardStats.active_organisations || 0}
+                  </p>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-sm font-medium text-gray-500">Total Users</h3>
+                  <p className="text-3xl font-bold text-blue-600 mt-2">
+                    {dashboardStats.total_users || 0}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Recent Organisations */}
             <div className="bg-white rounded-lg shadow">
               <div className="p-6 border-b border-gray-200">
-                <h2 className="text-lg font-bold text-gray-900">Recent Organisations</h2>
+                <h3 className="text-lg font-semibold text-gray-900">Recent Organisations</h3>
               </div>
-              <div className="p-6">
-                {organisations && organisations.length > 0 ? (
-                  <div className="space-y-3">
-                    {organisations.slice(0, 10).map((org) => (
-                      <div key={org.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-                            <Building2 className="w-6 h-6 text-emerald-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{org.display_name}</p>
-                            <p className="text-sm text-gray-500">{org.industry_type} • {org.contact_email}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900">
-                            {org.stats?.totalUsers || 0} users
-                          </p>
-                          <p className="text-xs text-gray-500 capitalize">{org.subscription_tier || 'standard'}</p>
-                        </div>
-                      </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Industry</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {recentOrganisations.map((org) => (
+                      <tr key={org.id || org._id}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{org.display_name || org.name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {org.industry_type}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {org.contact_email}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                            org.is_active 
+                              ? 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {org.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <button
+                            onClick={() => loadOrganisationDetails(org.id)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
                     ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">No organisations yet</p>
-                    <button
-                      onClick={() => setCurrentView('create')}
-                      className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                    >
-                      Create First Organisation
-                    </button>
-                  </div>
-                )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
         )}
 
-        {/* CREATE ORGANISATION VIEW */}
-        {currentView === 'create' && (
-          <form onSubmit={handleCreateOrganisation} className="space-y-6">
-            {/* Section 1: Basic Information */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center">
-                <Building2 className="w-5 h-5 mr-2 text-emerald-600" />
-                Basic Information
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Organisation Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Organisation Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.name ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="e.g., Acme Corporation"
-                  />
-                  {formErrors.name && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>
-                  )}
-                </div>
+        {/* Organisations Tab */}
+        {activeTab === 'organisations' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">All Organisations</h2>
+              {operator?.permissions?.canCreateOrgs && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  + Create Organisation
+                </button>
+              )}
+            </div>
 
-                {/* Display Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.display_name}
-                    onChange={(e) => handleInputChange('display_name', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Optional - defaults to Organisation Name"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">If empty, will use Organisation Name</p>
-                </div>
-
-                {/* Industry Type */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Industry Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={newOrg.industry_type}
-                    onChange={(e) => handleInputChange('industry_type', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="Manufacturing">Manufacturing</option>
-                    <option value="Technology">Technology</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Healthcare">Healthcare</option>
-                    <option value="Education">Education</option>
-                    <option value="Retail">Retail</option>
-                    <option value="Hospitality">Hospitality</option>
-                    <option value="Construction">Construction</option>
-                    <option value="Transportation">Transportation</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {/* Contact Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Contact Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={newOrg.contact_email}
-                    onChange={(e) => handleInputChange('contact_email', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.contact_email ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="contact@company.com"
-                  />
-                  {formErrors.contact_email && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.contact_email}</p>
-                  )}
-                </div>
-
-                {/* Contact Phone */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Contact Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={newOrg.contact_phone}
-                    onChange={(e) => handleInputChange('contact_phone', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="+91 1234567890"
-                  />
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Location
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.location}
-                    onChange={(e) => handleInputChange('location', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="City, State, Country"
-                  />
-                </div>
-
-                {/* Website */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Website
-                  </label>
-                  <input
-                    type="url"
-                    value={newOrg.website}
-                    onChange={(e) => handleInputChange('website', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="https://company.com"
-                  />
-                </div>
-
-                {/* Address */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    General Address
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.address}
-                    onChange={(e) => handleInputChange('address', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Street Address"
-                  />
-                </div>
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-lg shadow space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input
+                  type="text"
+                  placeholder="Search organisations..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <select
+                  value={filterIndustry}
+                  onChange={(e) => setFilterIndustry(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Industries</option>
+                  <option value="manufacturing">Manufacturing</option>
+                  <option value="technology">Technology</option>
+                  <option value="retail">Retail</option>
+                  <option value="healthcare">Healthcare</option>
+                  <option value="finance">Finance</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
             </div>
 
-            {/* Section 2: Organisation Details (NEW) */}
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-emerald-500">
-              <div className="flex items-center mb-6">
-                <Shield className="w-5 h-5 text-emerald-600 mr-2" />
-                <h2 className="text-lg font-bold text-gray-900">Organisation Details</h2>
-                <span className="ml-2 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded">NEW</span>
+            {/* Organisations Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Industry</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tier</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredOrgs.map((org) => (
+                      <tr key={org.id || org._id}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{org.display_name || org.name}</div>
+                          <div className="text-sm text-gray-500">{org.name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {org.industry_type}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{org.contact_email}</div>
+                          <div className="text-sm text-gray-500">{org.contact_phone}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {org.subscription_tier}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                            org.is_active 
+                              ? 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {org.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(org.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <button
+                            onClick={() => loadOrganisationDetails(org.id)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Registered Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Registered Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.registered_name}
-                    onChange={(e) => handleInputChange('registered_name', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Legal registered name"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Legal name as registered with authorities (defaults to Organisation Name if empty)
-                  </p>
+              {filteredOrgs.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No organisations found
                 </div>
+              )}
+            </div>
+          </div>
+        )}
 
-                {/* CIN Number */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    CIN Number
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.cin_number}
-                    onChange={(e) => handleInputChange('cin_number', e.target.value.toUpperCase())}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.cin_number ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="U12345AB1234PTC123456"
-                    maxLength={21}
-                  />
-                  {formErrors.cin_number && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.cin_number}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Corporate Identity Number (optional but recommended, 21 characters max)
-                  </p>
-                </div>
-
-                {/* Registered Address */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Registered Address <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={newOrg.registered_address}
-                    onChange={(e) => handleInputChange('registered_address', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.registered_address ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Complete registered address as per incorporation documents&#10;Example: Plot No. 123, Sector 15, Industrial Area&#10;Mumbai, Maharashtra 400001, India"
-                    rows={3}
-                  />
-                  {formErrors.registered_address && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.registered_address}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Full registered address including street, city, state, and PIN code
-                  </p>
-                </div>
-
-                {/* GST Number */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    GST Number
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.gst_number}
-                    onChange={(e) => handleInputChange('gst_number', e.target.value.toUpperCase())}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.gst_number ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="22AAAAA0000A1Z5"
-                    maxLength={15}
-                  />
-                  {formErrors.gst_number && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.gst_number}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    15-digit GST identification number (optional)
-                  </p>
-                </div>
-
-                {/* Current Number of Employees */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Current Number of Employees <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={newOrg.current_employees}
-                    onChange={(e) => handleInputChange('current_employees', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.current_employees ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="e.g., 250"
-                    min="1"
-                  />
-                  {formErrors.current_employees && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.current_employees}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Total number of employees currently in the organisation
-                  </p>
+        {/* Profile Tab */}
+        {activeTab === 'profile' && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Operator Profile</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Name</label>
+                <p className="mt-1 text-sm text-gray-900">{operator?.name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <p className="mt-1 text-sm text-gray-900">{operator?.email}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Role</label>
+                <p className="mt-1 text-sm text-gray-900">{operator?.role}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Permissions</label>
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center">
+                    <span className={`w-3 h-3 rounded-full mr-2 ${operator?.permissions?.canCreateOrgs ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    <span className="text-sm text-gray-900">Create Organisations</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={`w-3 h-3 rounded-full mr-2 ${operator?.permissions?.canManageOrgs ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    <span className="text-sm text-gray-900">Manage Organisations</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={`w-3 h-3 rounded-full mr-2 ${operator?.permissions?.canViewAllOrgs ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    <span className="text-sm text-gray-900">View All Organisations</span>
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Section 3: Super Admin Account */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center">
-                <Users className="w-5 h-5 mr-2 text-emerald-600" />
-                Super Admin Account
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Admin Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newOrg.super_admin_name}
-                    onChange={(e) => handleInputChange('super_admin_name', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.super_admin_name ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="John Doe"
-                  />
-                  {formErrors.super_admin_name && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.super_admin_name}</p>
-                  )}
-                </div>
-
-                {/* Admin Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={newOrg.super_admin_email}
-                    onChange={(e) => handleInputChange('super_admin_email', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.super_admin_email ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="admin@company.com"
-                  />
-                  {formErrors.super_admin_email && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.super_admin_email}</p>
-                  )}
-                </div>
-
-                {/* Admin Password */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Password <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={newOrg.super_admin_password}
-                    onChange={(e) => handleInputChange('super_admin_password', e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                      formErrors.super_admin_password ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Strong password"
-                  />
-                  {formErrors.super_admin_password && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.super_admin_password}</p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-500">
-                    Minimum 8 characters recommended
-                  </p>
-                </div>
-
-                {/* Subscription Tier */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subscription Tier
-                  </label>
-                  <select
-                    value={newOrg.subscription_tier}
-                    onChange={(e) => handleInputChange('subscription_tier', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="basic">Basic</option>
-                    <option value="standard">Standard</option>
-                    <option value="premium">Premium</option>
-                  </select>
-                </div>
-
-                {/* Max Users */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Max Users
-                  </label>
-                  <input
-                    type="number"
-                    value={newOrg.max_users}
-                    onChange={(e) => handleInputChange('max_users', parseInt(e.target.value))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    min="1"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Maximum number of users allowed in this organisation
-                  </p>
-                </div>
-
-                {/* Notes */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notes
-                  </label>
-                  <textarea
-                    value={newOrg.notes}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Additional notes about this organisation (optional)"
-                    rows={3}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex justify-end space-x-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setCurrentView('dashboard');
-                  setFormErrors({});
-                }}
-                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center transition-colors"
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-5 h-5 mr-2" />
-                    Create Organisation
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+          </div>
         )}
       </main>
+
+      {/* Create Organisation Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold text-gray-900">Create New Organisation</h3>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  resetCreateForm();
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateOrganisation} className="p-6 space-y-6">
+              {createError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                  {createError}
+                </div>
+              )}
+
+              {/* Basic Information */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">Basic Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Organisation Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.name}
+                      onChange={(e) => setCreateFormData({ ...createFormData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Display Name
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.display_name}
+                      onChange={(e) => setCreateFormData({ ...createFormData, display_name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Industry Type *
+                    </label>
+                    <select
+                      value={createFormData.industry_type}
+                      onChange={(e) => setCreateFormData({ ...createFormData, industry_type: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Select Industry</option>
+                      <option value="manufacturing">Manufacturing</option>
+                      <option value="technology">Technology</option>
+                      <option value="retail">Retail</option>
+                      <option value="healthcare">Healthcare</option>
+                      <option value="finance">Finance</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Location
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.location}
+                      onChange={(e) => setCreateFormData({ ...createFormData, location: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">Contact Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={createFormData.contact_email}
+                      onChange={(e) => setCreateFormData({ ...createFormData, contact_email: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Phone
+                    </label>
+                    <input
+                      type="tel"
+                      value={createFormData.contact_phone}
+                      onChange={(e) => setCreateFormData({ ...createFormData, contact_phone: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Address
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.address}
+                      onChange={(e) => setCreateFormData({ ...createFormData, address: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Website
+                    </label>
+                    <input
+                      type="url"
+                      value={createFormData.website}
+                      onChange={(e) => setCreateFormData({ ...createFormData, website: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Legal Information */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">Legal Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Registered Name
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.registered_name}
+                      onChange={(e) => setCreateFormData({ ...createFormData, registered_name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CIN Number
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.cin_number}
+                      onChange={(e) => setCreateFormData({ ...createFormData, cin_number: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Registered Address *
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.registered_address}
+                      onChange={(e) => setCreateFormData({ ...createFormData, registered_address: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      GST Number
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.gst_number}
+                      onChange={(e) => setCreateFormData({ ...createFormData, gst_number: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Current Employees *
+                    </label>
+                    <input
+                      type="number"
+                      value={createFormData.current_employees}
+                      onChange={(e) => setCreateFormData({ ...createFormData, current_employees: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Subscription Details */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">Subscription Details</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Subscription Tier
+                    </label>
+                    <select
+                      value={createFormData.subscription_tier}
+                      onChange={(e) => setCreateFormData({ ...createFormData, subscription_tier: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="basic">Basic</option>
+                      <option value="standard">Standard</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max Users
+                    </label>
+                    <input
+                      type="number"
+                      value={createFormData.max_users}
+                      onChange={(e) => setCreateFormData({ ...createFormData, max_users: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max Storage (GB)
+                    </label>
+                    <input
+                      type="number"
+                      value={createFormData.max_storage_gb}
+                      onChange={(e) => setCreateFormData({ ...createFormData, max_storage_gb: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Super Admin Details */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">Super Admin Details</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Super Admin Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={createFormData.super_admin_name}
+                      onChange={(e) => setCreateFormData({ ...createFormData, super_admin_name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Super Admin Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={createFormData.super_admin_email}
+                      onChange={(e) => setCreateFormData({ ...createFormData, super_admin_email: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Super Admin Password *
+                    </label>
+                    <input
+                      type="password"
+                      value={createFormData.super_admin_password}
+                      onChange={(e) => setCreateFormData({ ...createFormData, super_admin_password: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  value={createFormData.notes}
+                  onChange={(e) => setCreateFormData({ ...createFormData, notes: e.target.value })}
+                  rows="3"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    resetCreateForm();
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {creating ? 'Creating...' : 'Create Organisation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Organisation Detail Modal */}
+      {showOrgDetail && selectedOrg && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold text-gray-900">Organisation Details</h3>
+              <button
+                onClick={() => {
+                  setShowOrgDetail(false);
+                  setSelectedOrg(null);
+                  setOrgStats(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Organisation Name</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.name}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Display Name</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.display_name}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Industry</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.industry_type}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Status</label>
+                  <span className={`inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full ${
+                    selectedOrg.is_active 
+                      ? 'bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {selectedOrg.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Contact Email</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.contact_email}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Contact Phone</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.contact_phone || 'N/A'}</p>
+                </div>
+              </div>
+
+              {/* Stats */}
+              {orgStats && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Statistics</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-500">Total Users</p>
+                      <p className="text-2xl font-bold text-gray-900">{orgStats.totalUsers || 0}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              {operator?.permissions?.canManageOrgs && (
+                <div className="border-t border-gray-200 pt-4 flex justify-end space-x-3">
+                  {selectedOrg.is_active && (
+                    <button
+                      onClick={() => handleDeactivateOrganisation(selectedOrg.id)}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    >
+                      Deactivate Organisation
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

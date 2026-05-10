@@ -1,6 +1,7 @@
 // Enhanced ActivityContext.jsx with integrated admin monitoring and user activity tracking
 import { createContext, useContext, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { activityAPI } from '../services/api';
 
 const ActivityContext = createContext();
 
@@ -118,29 +119,20 @@ export const ActivityProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Send activity to backend
-  const sendActivityToBackend = async (activityData) => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+// Send activity to backend
+const sendActivityToBackend = async (activityData) => {
+  const token = localStorage.getItem('token');
+  if (!token) return;
 
-    try {
-      const response = await fetch('/api/activities/log', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(activityData)
-      });
+  try {
+    const result = await activityAPI.logActivity(activityData);
+    console.log('Activity logged to backend:', result);
+  } catch (error) {
+    // Activity logging is non-critical, don't throw or block UI
+    console.warn('Backend activity logging failed (non-critical):', error.message);
+  }
+};
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      // Re-throw to be caught by the caller
-      throw error;
-    }
-  };
 
   // Queue failed activities for retry
   const queueFailedActivity = (activityData) => {

@@ -1,27 +1,27 @@
-// backend/controllers/analyticsController.js - COMPLETE REPLACEMENT
-// Uses existing organization filtering pattern from your codebase
+// backend/controllers/analyticsController.js
+// MongoDB-backed analytics controller with organization isolation
 
 const advancedAnalyticsService = require('../services/advancedAnalyticsService');
 
-// @desc    Get emissions trajectory analysis
-// @route   GET /api/analysis/emissions-trajectory
-// @access  Private (Admin, Analyst, Viewer)
+/**
+ * @desc    Get emissions trajectory analysis
+ * @route   GET /api/analysis/emissions-trajectory
+ * @access  Private (All authenticated users)
+ */
 const getEmissionsTrajectory = async (req, res) => {
   try {
-    console.log('📈 Trajectory analysis requested by:', req.user?.email, 'Org:', req.organisationId);
+    const organisationId = req.user.organisation_id;
+    
+    console.log('📈 Trajectory analysis requested by:', req.user?.email, 'Org:', organisationId);
     
     const { startDate, endDate, targetScenario = '1.5C' } = req.query;
     
-    // Match existing validation pattern
     if (!startDate || !endDate) {
       return res.status(400).json({
         success: false,
         message: 'startDate and endDate are required'
       });
     }
-    
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
     
     if (!organisationId) {
       return res.status(403).json({
@@ -37,12 +37,11 @@ const getEmissionsTrajectory = async (req, res) => {
       targetScenario
     });
     
-    console.log(`✅ Trajectory calculated for org: ${req.organisation?.name}, periods: ${result.historical.length}`);
+    console.log(`✅ Trajectory calculated, periods: ${result.historical.length}`);
     
     res.json({
       success: true,
-      data: result,
-      organisation: req.organisation?.name || 'N/A'
+      data: result
     });
   } catch (error) {
     console.error('❌ Emissions trajectory error:', error);
@@ -53,25 +52,25 @@ const getEmissionsTrajectory = async (req, res) => {
   }
 };
 
-// @desc    Get emissions velocity and acceleration
-// @route   GET /api/analysis/emissions-velocity
-// @access  Private (Admin, Analyst, Viewer)
+/**
+ * @desc    Get emissions velocity and acceleration
+ * @route   GET /api/analysis/emissions-velocity
+ * @access  Private (All authenticated users)
+ */
 const getEmissionsVelocity = async (req, res) => {
   try {
-    console.log('⚡ Velocity analysis requested by:', req.user?.email, 'Org:', req.organisationId);
+    const organisationId = req.user.organisation_id;
+    
+    console.log('⚡ Velocity analysis requested by:', req.user?.email, 'Org:', organisationId);
     
     const { startDate, endDate } = req.query;
     
-    // Match existing validation pattern
     if (!startDate || !endDate) {
       return res.status(400).json({
         success: false,
         message: 'startDate and endDate are required'
       });
     }
-    
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
     
     if (!organisationId) {
       return res.status(403).json({
@@ -86,12 +85,11 @@ const getEmissionsVelocity = async (req, res) => {
       organisationId
     });
     
-    console.log(`✅ Velocity calculated for org: ${req.organisation?.name}, periods: ${result.periods.length}`);
+    console.log(`✅ Velocity calculated, periods: ${result.periods.length}`);
     
     res.json({
       success: true,
-      data: result,
-      organisation: req.organisation?.name || 'N/A'
+      data: result
     });
   } catch (error) {
     console.error('❌ Emissions velocity error:', error);
@@ -102,17 +100,18 @@ const getEmissionsVelocity = async (req, res) => {
   }
 };
 
-// @desc    Get MACC analysis
-// @route   GET /api/analysis/macc
-// @access  Private (Admin, Analyst, Viewer)
+/**
+ * @desc    Get MACC analysis
+ * @route   GET /api/analysis/macc
+ * @access  Private (All authenticated users)
+ */
 const getMACCAnalysis = async (req, res) => {
   try {
-    console.log('💰 MACC analysis requested by:', req.user?.email, 'Org:', req.organisationId);
+    const organisationId = req.user.organisation_id;
+    
+    console.log('💰 MACC analysis requested by:', req.user?.email, 'Org:', organisationId);
     
     const { scope, category } = req.query;
-    
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
     
     if (!organisationId) {
       return res.status(403).json({
@@ -127,12 +126,11 @@ const getMACCAnalysis = async (req, res) => {
       category
     });
     
-    console.log(`✅ MACC calculated for org: ${req.organisation?.name}, opportunities: ${result.opportunities.length}`);
+    console.log(`✅ MACC calculated, opportunities: ${result.opportunities.length}`);
     
     res.json({
       success: true,
-      data: result,
-      organisation: req.organisation?.name || 'N/A'
+      data: result
     });
   } catch (error) {
     console.error('❌ MACC analysis error:', error);
@@ -143,17 +141,18 @@ const getMACCAnalysis = async (req, res) => {
   }
 };
 
-// @desc    Get MACC opportunities
-// @route   GET /api/analysis/macc/opportunities
-// @access  Private (Admin, Analyst)
+/**
+ * @desc    Get MACC opportunities
+ * @route   GET /api/analysis/macc/opportunities
+ * @access  Private (All authenticated users)
+ */
 const getMACCOpportunities = async (req, res) => {
   try {
-    console.log('📋 MACC opportunities requested by:', req.user?.email, 'Org:', req.organisationId);
+    const organisationId = req.user.organisation_id;
+    
+    console.log('📋 MACC opportunities requested by:', req.user?.email, 'Org:', organisationId);
     
     const { scope, category } = req.query;
-    
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
     
     if (!organisationId) {
       return res.status(403).json({
@@ -168,13 +167,12 @@ const getMACCOpportunities = async (req, res) => {
       category
     );
     
-    console.log(`✅ Found ${opportunities.length} MACC opportunities for org: ${req.organisation?.name}`);
+    console.log(`✅ Found ${opportunities.length} MACC opportunities`);
     
     res.json({
       success: true,
       data: opportunities,
-      total: opportunities.length,
-      organisation: req.organisation?.name || 'N/A'
+      total: opportunities.length
     });
   } catch (error) {
     console.error('❌ Get MACC opportunities error:', error);
@@ -185,15 +183,16 @@ const getMACCOpportunities = async (req, res) => {
   }
 };
 
-// @desc    Save MACC opportunity
-// @route   POST /api/analysis/macc/opportunities
-// @access  Private (Admin, Analyst)
+/**
+ * @desc    Save MACC opportunity
+ * @route   POST /api/analysis/macc/opportunities
+ * @access  Private (Admin, Analyst)
+ */
 const saveMACCOpportunity = async (req, res) => {
   try {
-    console.log('➕ Creating MACC opportunity by:', req.user?.email, 'Org:', req.organisationId);
+    const organisationId = req.user.organisation_id;
     
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
+    console.log('➕ Creating MACC opportunity by:', req.user?.email, 'Org:', organisationId);
     
     if (!organisationId) {
       return res.status(403).json({
@@ -202,21 +201,21 @@ const saveMACCOpportunity = async (req, res) => {
       });
     }
     
-    // Add organisation data (same pattern as emissionController.js createEmission)
     const data = {
       ...req.body,
-      organisationId
+      organisationId,
+      createdBy: req.user?.id,
+      userId: req.user?.id
     };
     
     const result = await advancedAnalyticsService.saveMACCOpportunity(data);
     
-    console.log(`✅ MACC opportunity created: ${result.name} for org: ${req.organisation?.name}`);
+    console.log(`✅ MACC opportunity created: ${result.name || 'N/A'}`);
     
     res.status(201).json({
       success: true,
       data: result,
-      message: 'MACC opportunity saved successfully',
-      organisation: req.organisation?.name || 'N/A'
+      message: 'MACC opportunity saved successfully'
     });
   } catch (error) {
     console.error('❌ Save MACC opportunity error:', error);
@@ -227,17 +226,17 @@ const saveMACCOpportunity = async (req, res) => {
   }
 };
 
-// @desc    Delete MACC opportunity
-// @route   DELETE /api/analysis/macc/opportunities/:id
-// @access  Private (Admin, Analyst)
+/**
+ * @desc    Delete MACC opportunity
+ * @route   DELETE /api/analysis/macc/opportunities/:id
+ * @access  Private (Admin, Analyst)
+ */
 const deleteMACCOpportunity = async (req, res) => {
   try {
     const { id } = req.params;
+    const organisationId = req.user.organisation_id;
     
-    console.log('🗑️ Deleting MACC opportunity:', id, 'by:', req.user?.email, 'Org:', req.organisationId);
-    
-    // Use organisationId from middleware (same as emissionController.js)
-    const organisationId = req.organisationId;
+    console.log('🗑️ Deleting MACC opportunity:', id, 'by:', req.user?.email, 'Org:', organisationId);
     
     if (!organisationId) {
       return res.status(403).json({
@@ -255,7 +254,7 @@ const deleteMACCOpportunity = async (req, res) => {
       });
     }
     
-    console.log(`✅ MACC opportunity deleted: ${id} from org: ${req.organisation?.name}`);
+    console.log(`✅ MACC opportunity deleted: ${id}`);
     
     res.json({
       success: true,

@@ -4,9 +4,19 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
+        // Semantic tokens — same hsl variables as index.css (:root / .dark)
+        app: {
+          bg: 'hsl(var(--background))',
+          fg: 'hsl(var(--foreground))',
+          card: 'hsl(var(--card))',
+          muted: 'hsl(var(--muted))',
+          'muted-fg': 'hsl(var(--muted-foreground))',
+          border: 'hsl(var(--border))',
+        },
         // Primary Brand Colors (from Figma)
         'primary-teal': '#006C54',
         'primary-dark': '#0A3124',
@@ -50,6 +60,22 @@ export default {
         'scope-1': '#006C54',
         'scope-2': '#263238',
         'scope-3': '#D58745',
+        
+        // Status Colors (Traffic Light System) - WCAG AA compliant
+        'status-green': '#15803d', // Tailwind green-700
+        'status-green-bg': '#dcfce7', // Tailwind green-100
+        'status-amber': '#b45309', // Tailwind amber-700
+        'status-amber-bg': '#fef3c7', // Tailwind amber-100
+        'status-red': '#b91c1c', // Tailwind red-700
+        'status-red-bg': '#fee2e2', // Tailwind red-100
+
+        // Premium Dark Mode palette (Slate/Gray blend)
+        slate: {
+          750: '#293548',
+          850: '#162032',
+          900: '#0F172A',
+          950: '#020617',
+        }
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
@@ -73,7 +99,15 @@ export default {
         'teal-md': '0 4px 6px -1px rgba(0, 108, 84, 0.1)',
         'teal-lg': '0 10px 15px -3px rgba(0, 108, 84, 0.1)',
         'teal-xl': '0 20px 25px -5px rgba(0, 108, 84, 0.1)',
+        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.05)',
+        'glass-dark': '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+        'glow': '0 0 15px rgba(16, 185, 129, 0.3)',
       },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'glass-gradient': 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+        'glass-gradient-dark': 'linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(2, 6, 23, 0.9) 100%)',
+      }
     },
   },
   plugins: [],

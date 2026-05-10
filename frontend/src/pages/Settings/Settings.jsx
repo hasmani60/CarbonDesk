@@ -1,37 +1,75 @@
-// pages/Settings/Settings.jsx
-import { useState } from 'react';
-import { 
-  User, 
-  Lock, 
-  Bell, 
-  Globe, 
-  Palette, 
-  Download,
-  Upload,
-  Save,
-  Camera
+// pages/Settings/Settings.jsx — profile, password, notifications, preferences persisted via API
+import { useEffect, useState } from 'react';
+import {
+  User,
+  Lock,
+  Bell,
+  Globe,
+  Palette,
+  Save
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
 
 const Settings = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, changePassword } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
+
   const [profileData, setProfileData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: '',
+    email: '',
     phone: '',
     company: '',
     position: '',
     bio: ''
   });
+
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
+
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    emailNotifications: true,
+    taskReminders: true,
+    systemUpdates: false
+  });
+
+  const [appPreferences, setAppPreferences] = useState({
+    timezone: 'America/New_York',
+    language: 'en',
+    dateFormat: 'YYYY-MM-DD',
+    appearance: 'light'
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const prof = user.settings?.profile || {};
+    setProfileData({
+      name: user.name || '',
+      email: user.email || '',
+      phone: prof.phone ?? '',
+      company: prof.company ?? '',
+      position: prof.position ?? '',
+      bio: prof.bio ?? ''
+    });
+    const n = user.settings?.notifications || {};
+    setNotificationPrefs({
+      emailNotifications: n.emailNotifications !== false,
+      taskReminders: n.taskReminders !== false,
+      systemUpdates: n.systemUpdates === true
+    });
+    const p = user.settings?.preferences || {};
+    setAppPreferences({
+      timezone: p.timezone || 'America/New_York',
+      language: p.language || 'en',
+      dateFormat: p.dateFormat || 'YYYY-MM-DD',
+      appearance: p.appearance || 'light'
+    });
+  }, [user]);
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -44,9 +82,16 @@ const Settings = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      await updateProfile(profileData);
-    } catch (error) {
-      console.error('Profile update error:', error);
+      await updateProfile({
+        name: profileData.name.trim(),
+        email: profileData.email.trim(),
+        phone: profileData.phone,
+        company: profileData.company,
+        position: profileData.position,
+        bio: profileData.bio
+      });
+    } catch {
+      /* toast in context */
     } finally {
       setLoading(false);
     }
@@ -54,18 +99,64 @@ const Settings = () => {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
+    if (passwordData.newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters');
+      return;
+    }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.error('New passwords do not match');
       return;
     }
     try {
       setLoading(true);
-      // await authAPI.changePassword(passwordData);
-      toast.success('Password changed successfully');
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (error) {
-      console.error('Password change error:', error);
-      toast.error('Failed to change password');
+      await changePassword({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch {
+      /* toast in context */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNotificationSave = async (e) => {
+    e?.preventDefault?.();
+    try {
+      setLoading(true);
+      await updateProfile({
+        notifications: {
+          emailNotifications: notificationPrefs.emailNotifications,
+          taskReminders: notificationPrefs.taskReminders,
+          systemUpdates: notificationPrefs.systemUpdates
+        }
+      });
+    } catch {
+      /* toast in context */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePreferencesSave = async (e) => {
+    e?.preventDefault?.();
+    try {
+      setLoading(true);
+      await updateProfile({
+        preferences: {
+          timezone: appPreferences.timezone,
+          language: appPreferences.language,
+          dateFormat: appPreferences.dateFormat,
+          appearance: appPreferences.appearance
+        }
+      });
+    } catch {
+      /* toast in context */
     } finally {
       setLoading(false);
     }
@@ -77,19 +168,25 @@ const Settings = () => {
         return (
           <div className="space-y-6">
             <div className="flex items-center space-x-6">
-              <div className="relative">
-                <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-2xl font-bold">
-                    {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'JD'}
-                  </span>
-                </div>
-                <button className="absolute bottom-0 right-0 bg-white rounded-full p-2 shadow-lg border">
-                  <Camera className="w-4 h-4 text-gray-600" />
-                </button>
+              <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center">
+                <span className="text-white text-2xl font-bold">
+                  {user?.name
+                    ? user.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 3)
+                    : '?'}
+                </span>
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Profile Picture</h3>
-                <p className="text-sm text-gray-500">Upload a new profile picture</p>
+                <h3 className="text-lg font-semibold text-gray-900">Avatar</h3>
+                <p className="text-sm text-gray-500">
+                  Initials from your name. Organisation:{' '}
+                  <span className="font-medium text-gray-700">
+                    {user?.organisation_id || 'Not set'}
+                  </span>
+                </p>
               </div>
             </div>
 
@@ -97,13 +194,17 @@ const Settings = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name
+                    Full name
                   </label>
                   <input
                     type="text"
                     value={profileData.name}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) =>
+                      setProfileData((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    placeholder="Your full name"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    required
                   />
                 </div>
                 <div>
@@ -113,44 +214,68 @@ const Settings = () => {
                   <input
                     type="email"
                     value={profileData.email}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={(e) =>
+                      setProfileData((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    placeholder="you@company.com"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    required
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone Number
+                    Phone
                   </label>
                   <input
                     type="tel"
                     value={profileData.phone}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, phone: e.target.value }))}
+                    onChange={(e) =>
+                      setProfileData((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    placeholder="+44 … or local number"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Company
+                    Company / site
                   </label>
                   <input
                     type="text"
                     value={profileData.company}
-                    onChange={(e) => setProfileData(prev => ({ ...prev, company: e.target.value }))}
+                    onChange={(e) =>
+                      setProfileData((prev) => ({ ...prev, company: e.target.value }))
+                    }
+                    placeholder="Company or division name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role / position
+                  </label>
+                  <input
+                    type="text"
+                    value={profileData.position}
+                    onChange={(e) =>
+                      setProfileData((prev) => ({ ...prev, position: e.target.value }))
+                    }
+                    placeholder="Job title"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bio
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
                 <textarea
                   value={profileData.bio}
-                  onChange={(e) => setProfileData(prev => ({ ...prev, bio: e.target.value }))}
+                  onChange={(e) =>
+                    setProfileData((prev) => ({ ...prev, bio: e.target.value }))
+                  }
                   rows={4}
+                  placeholder="Optional note for your team (not shown publicly)"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  placeholder="Tell us about yourself..."
                 />
               </div>
 
@@ -161,7 +286,7 @@ const Settings = () => {
                   className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{loading ? 'Saving...' : 'Save Changes'}</span>
+                  <span>{loading ? 'Saving…' : 'Save profile'}</span>
                 </button>
               </div>
             </form>
@@ -171,114 +296,167 @@ const Settings = () => {
       case 'security':
         return (
           <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
-              <form onSubmit={handlePasswordChange} className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Password</h3>
+            <form onSubmit={handlePasswordChange} className="space-y-4 max-w-xl">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Current password
+                </label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordData.currentPassword}
+                  onChange={(e) =>
+                    setPasswordData((prev) => ({
+                      ...prev,
+                      currentPassword: e.target.value
+                    }))
+                  }
+                  placeholder="Enter your current password"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Current Password
+                    New password
                   </label>
                   <input
                     type="password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                    autoComplete="new-password"
+                    value={passwordData.newPassword}
+                    onChange={(e) =>
+                      setPasswordData((prev) => ({
+                        ...prev,
+                        newPassword: e.target.value
+                      }))
+                    }
+                    placeholder="At least 6 characters"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm new password
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) =>
+                      setPasswordData((prev) => ({
+                        ...prev,
+                        confirmPassword: e.target.value
+                      }))
+                    }
+                    placeholder="Repeat new password"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     required
                   />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      New Password
-                    </label>
-                    <input
-                      type="password"
-                      value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Confirm New Password
-                    </label>
-                    <input
-                      type="password"
-                      value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                      required
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {loading ? 'Updating...' : 'Update Password'}
-                </button>
-              </form>
-            </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                <Lock className="w-4 h-4" />
+                <span>{loading ? 'Updating…' : 'Update password'}</span>
+              </button>
+            </form>
           </div>
         );
 
       case 'notifications':
         return (
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900">Notification Preferences</h3>
+          <form onSubmit={handleNotificationSave} className="space-y-6">
+            <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+            <p className="text-sm text-gray-500">
+              These choices are saved to your account. Email delivery depends on server
+              configuration.
+            </p>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium text-gray-900">Email Notifications</h4>
-                  <p className="text-sm text-gray-500">Receive notifications via email</p>
+              {[
+                {
+                  key: 'emailNotifications',
+                  title: 'Email notifications',
+                  desc: 'Product updates & summaries by email'
+                },
+                {
+                  key: 'taskReminders',
+                  title: 'Task reminders',
+                  desc: 'Reminders for assigned tasks'
+                },
+                {
+                  key: 'systemUpdates',
+                  title: 'System updates',
+                  desc: 'Maintenance and release notes'
+                }
+              ].map(({ key, title, desc }) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900">{title}</h4>
+                    <p className="text-sm text-gray-500">{desc}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={notificationPrefs[key]}
+                      onChange={(e) =>
+                        setNotificationPrefs((prev) => ({
+                          ...prev,
+                          [key]: e.target.checked
+                        }))
+                      }
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 relative" />
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" defaultChecked />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium text-gray-900">Task Reminders</h4>
-                  <p className="text-sm text-gray-500">Get reminded about upcoming tasks</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" defaultChecked />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium text-gray-900">System Updates</h4>
-                  <p className="text-sm text-gray-500">Notifications about system updates</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
+              ))}
             </div>
-          </div>
+            <div className="flex justify-end pt-4">
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                <Save className="w-4 h-4" />
+                <span>{loading ? 'Saving…' : 'Save notification settings'}</span>
+              </button>
+            </div>
+          </form>
         );
 
       case 'preferences':
         return (
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900">App Preferences</h3>
-            <div className="space-y-4">
+          <form onSubmit={handlePreferencesSave} className="space-y-6">
+            <h3 className="text-lg font-semibold text-gray-900">Regional & display</h3>
+
+            <div className="space-y-4 max-w-xl">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Timezone
+                  Time zone
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  <option>UTC-05:00 (Eastern Time)</option>
-                  <option>UTC-06:00 (Central Time)</option>
-                  <option>UTC-07:00 (Mountain Time)</option>
-                  <option>UTC-08:00 (Pacific Time)</option>
+                <select
+                  value={appPreferences.timezone}
+                  onChange={(e) =>
+                    setAppPreferences((prev) => ({ ...prev, timezone: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="UTC">UTC</option>
+                  <option value="Europe/London">Europe / London</option>
+                  <option value="America/New_York">US Eastern</option>
+                  <option value="America/Chicago">US Central</option>
+                  <option value="America/Denver">US Mountain</option>
+                  <option value="America/Los_Angeles">US Pacific</option>
+                  <option value="Asia/Dubai">Asia / Dubai</option>
+                  <option value="Asia/Kolkata">Asia / India</option>
+                  <option value="Asia/Singapore">Asia / Singapore</option>
                 </select>
               </div>
 
@@ -286,26 +464,67 @@ const Settings = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Language
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  <option>English</option>
-                  <option>Spanish</option>
-                  <option>French</option>
-                  <option>German</option>
+                <select
+                  value={appPreferences.language}
+                  onChange={(e) =>
+                    setAppPreferences((prev) => ({ ...prev, language: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date Format
+                  Date format
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  <option>MM/DD/YYYY</option>
-                  <option>DD/MM/YYYY</option>
-                  <option>YYYY-MM-DD</option>
+                <select
+                  value={appPreferences.dateFormat}
+                  onChange={(e) =>
+                    setAppPreferences((prev) => ({ ...prev, dateFormat: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                  <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                  <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <Palette className="w-4 h-4" />
+                  Appearance
+                </label>
+                <select
+                  value={appPreferences.appearance}
+                  onChange={(e) =>
+                    setAppPreferences((prev) => ({ ...prev, appearance: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark (saved; full theme coming soon)</option>
+                  <option value="system">Match system</option>
                 </select>
               </div>
             </div>
-          </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                <Save className="w-4 h-4" />
+                <span>{loading ? 'Saving…' : 'Save preferences'}</span>
+              </button>
+            </div>
+          </form>
         );
 
       default:
@@ -315,7 +534,7 @@ const Settings = () => {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
+      <PageHeader
         title="Settings"
         breadcrumb={[
           { label: 'App', href: '/' },
@@ -325,12 +544,13 @@ const Settings = () => {
 
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="border-b">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+          <nav className="flex space-x-8 px-6 overflow-x-auto" aria-label="Tabs">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'border-emerald-500 text-emerald-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -343,9 +563,7 @@ const Settings = () => {
           </nav>
         </div>
 
-        <div className="p-6">
-          {renderTabContent()}
-        </div>
+        <div className="p-6">{renderTabContent()}</div>
       </div>
     </div>
   );

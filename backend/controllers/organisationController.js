@@ -1,19 +1,45 @@
-// backend/controllers/organisationController.js
-// Controller for organisation information (for regular admins, not company operators)
+// controllers/organisationController.js - Compatible with String IDs (FIXED)
+const { Organisation, OrganisationSettings, User, ActivityLog, Emission, Task } = require('../models');
 
-const localDB = require('../database/localDB');
+/** Company portal seed operator → product company name shown as "Created by". */
+function formatCreatedByForResponse(raw) {
+  if (raw == null || raw === '') return raw;
+  const e = String(raw).trim().toLowerCase();
+  if (e === 'admin@carbontrack-company.com') return 'NatureMark Systems';
+  return raw;
+}
 
-// @desc    Get organisation details for current user's organisation
-// @route   GET /api/organisation/details
+/** Users may reference org by `_id`, `id`, or legacy/alternate field spellings. */
+function collectOrgIdVariants(reqOrgId, organisationDoc) {
+  const set = new Set();
+  if (reqOrgId != null && reqOrgId !== '') set.add(String(reqOrgId).trim());
+  if (organisationDoc) {
+    const o = organisationDoc.toObject ? organisationDoc.toObject() : organisationDoc;
+    if (o._id != null) set.add(String(o._id).trim());
+    if (o.id != null) set.add(String(o.id).trim());
+  }
+  return [...set];
+}
+
+function matchDocumentsForOrgIds(fieldNames, orgIds) {
+  if (!orgIds.length) {
+    return { [fieldNames[0]]: '__no_org_match__' };
+  }
+  const or = [];
+  for (const id of orgIds) {
+    for (const field of fieldNames) {
+      or.push({ [field]: id });
+    }
+  }
+  return { $or: or };
+}
+
+// @desc    Get organisation details
+// @route   GET /api/organisations/details
 // @access  Private (Admin only)
 const getOrganisationDetails = async (req, res) => {
   try {
-    const organisationId = req.organisationId;
-    
-    console.log('🏢 getOrganisationDetails called');
-    console.log('   User ID:', req.user?.id);
-    console.log('   User Email:', req.user?.email);
-    console.log('   Organisation ID:', organisationId);
+    const organisationId = req.organisationId; // String
     
     if (!organisationId) {
       return res.status(404).json({
@@ -22,33 +48,124 @@ const getOrganisationDetails = async (req, res) => {
       });
     }
 
-    // Get organisation details
-    const organisation = await localDB.findOrganisationById(organisationId);
+    // FIXED: Find by _id field (which is the string ID users are linked to)
+    const organisation = await Organisation.findById(organisationId);
     
     if (!organisation) {
-      console.error('❌ Organisation not found for ID:', organisationId);
       return res.status(404).json({
         success: false,
         message: 'Organisation not found'
       });
     }
 
-    console.log('✅ Organisation found:', organisation.name);
+    // Get settings
+    let settings = await OrganisationSettings.findOne({ organisation_id: organisationId });
+    if (!settings) {
+      settings = await OrganisationSettings.create({
+        organisation_id: organisationId
+      });
+    }
 
-    // Get organisation settings
-    const settings = await localDB.getOrganisationSettings(organisationId);
-    console.log('✅ Organisation settings retrieved');
+    const orgIdVariants = collectOrgIdVariants(organisationId, organisation);
+    const userOrgMatch = matchDocumentsForOrgIds(
+      ['organisation_id', 'organization_id'],
+      orgIdVariants
+    );
+    const resourceOrgMatch = matchDocumentsForOrgIds(['organisation_id'], orgIdVariants);
     
-    // Get organisation stats with detailed logging
-    console.log('📊 Fetching organisation stats for:', organisationId);
-    const stats = await localDB.getOrganisationStats(organisationId);
-    console.log('📊 Stats received from database:', stats);
+    const [summaryRow] = await User.aggregate([
+      { $match: userOrgMatch },
+      {
+        $group: {
+          _id: null,
+          totalUsers: { $sum: 1 },
+          activeUsers: {
+            $sum: {
+              $cond: [{ $eq: [{ $toLower: { $ifNull: ['$status', ''] } }, 'active'] }, 1, 0]
+            }
+          },
+          inactiveUsers: {
+            $sum: {
+              $cond: [{ $ne: [{ $toLower: { $ifNull: ['$status', ''] } }, 'active'] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
 
-    const responseData = {
+    const roleRows = await User.aggregate([
+      { $match: userOrgMatch },
+      {
+        $group: {
+          _id: {
+            $toLower: { $trim: { input: { $ifNull: ['$role', 'contributor'] } } }
+          },
+          n: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const totalUsers = summaryRow ? summaryRow.totalUsers : 0;
+    const activeUsers = summaryRow ? summaryRow.activeUsers : 0;
+    const inactiveUsers = summaryRow ? summaryRow.inactiveUsers : 0;
+
+    const roleMap = Object.fromEntries(
+      roleRows.filter((r) => r._id).map((r) => [r._id, r.n])
+    );
+    let admins = roleMap.admin || 0;
+    let analysts = roleMap.analyst || 0;
+    let contributors = roleMap.contributor || 0;
+    let viewers = roleMap.viewer || 0;
+    const knownRoleSum = admins + analysts + contributors + viewers;
+    if (totalUsers > knownRoleSum) {
+      contributors += totalUsers - knownRoleSum;
+    }
+    
+    const orgUserIds = await User.find(userOrgMatch).distinct('_id');
+    const orgUserIdStrings = orgUserIds.map((id) => String(id));
+    const totalActivities = orgUserIdStrings.length
+      ? await ActivityLog.countDocuments({ user_id: { $in: orgUserIdStrings } })
+      : 0;
+    
+    const totalEmissions = await Emission.countDocuments(resourceOrgMatch);
+    const pendingEmissions = await Emission.countDocuments({
+      $and: [resourceOrgMatch, { status: { $in: ['pending', 'submitted'] } }]
+    });
+    const verifiedEmissions = await Emission.countDocuments({
+      $and: [resourceOrgMatch, { status: 'verified' }]
+    });
+    
+    const totalTasks = await Task.countDocuments(resourceOrgMatch);
+    const pendingTasks = await Task.countDocuments({
+      $and: [resourceOrgMatch, { status: 'pending' }]
+    });
+    const completedTasks = await Task.countDocuments({
+      $and: [resourceOrgMatch, { status: 'completed' }]
+    });
+    
+    const stats = {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      admins,
+      analysts,
+      contributors,
+      viewers,
+      totalActivities,
+      totalEmissions,
+      pendingEmissions,
+      verifiedEmissions,
+      totalTasks,
+      pendingTasks,
+      completedTasks
+    };
+
+    res.json({
       success: true,
       data: {
         organisation: {
           id: organisation.id,
+          _id: organisation._id,
           name: organisation.name,
           display_name: organisation.display_name,
           industry_type: organisation.industry_type,
@@ -57,33 +174,25 @@ const getOrganisationDetails = async (req, res) => {
           contact_phone: organisation.contact_phone,
           address: organisation.address,
           website: organisation.website,
-          
-          // Organisation Details (NEW)
           registered_name: organisation.registered_name,
           cin_number: organisation.cin_number,
           registered_address: organisation.registered_address,
           gst_number: organisation.gst_number,
           current_employees: organisation.current_employees,
-          
-          // System Info
           subscription_tier: organisation.subscription_tier,
           max_users: organisation.max_users,
           max_storage_gb: organisation.max_storage_gb,
           is_active: organisation.is_active,
           created_at: organisation.created_at,
-          created_by: organisation.created_by,
+          created_by: formatCreatedByForResponse(organisation.created_by),
           notes: organisation.notes
         },
-        settings: settings || {},
-        stats: stats || {}
+        settings: settings.toObject(),
+        stats
       }
-    };
-
-    console.log('✅ Sending response with stats:', responseData.data.stats);
-    res.json(responseData);
+    });
 
   } catch (error) {
-    console.error('❌ Get organisation details error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve organisation details',
@@ -92,17 +201,12 @@ const getOrganisationDetails = async (req, res) => {
   }
 };
 
-// @desc    Update organisation details (for admins)
-// @route   PATCH /api/organisation/details
+// @desc    Update organisation details
+// @route   PATCH /api/organisations/details
 // @access  Private (Admin only)
 const updateOrganisationDetails = async (req, res) => {
   try {
     const organisationId = req.organisationId;
-    
-    console.log('🏢 updateOrganisationDetails called');
-    console.log('   User ID:', req.user?.id);
-    console.log('   Organisation ID:', organisationId);
-    console.log('   Updates:', Object.keys(req.body));
     
     if (!organisationId) {
       return res.status(404).json({
@@ -111,31 +215,42 @@ const updateOrganisationDetails = async (req, res) => {
       });
     }
 
-    const updates = req.body;
+    const updates = { ...req.body };
     
-    // Remove fields that shouldn't be updated by regular admins
+    // Remove protected fields
     delete updates.id;
+    delete updates._id;
     delete updates.created_at;
     delete updates.created_by;
-    delete updates.subscription_tier; // Only company operators can change this
-    delete updates.max_users; // Only company operators can change this
-    delete updates.is_active; // Only company operators can change this
+    delete updates.subscription_tier;
+    delete updates.max_users;
+    delete updates.is_active;
 
-    await localDB.updateOrganisation(organisationId, updates);
-    console.log('✅ Organisation updated successfully');
+    updates.updated_at = new Date();
 
-    // Log activity
-    await localDB.logActivity({
-      userId: req.user.id,
+    // FIXED: Update using findByIdAndUpdate
+    const updatedOrg = await Organisation.findByIdAndUpdate(
+      organisationId,
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!updatedOrg) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organisation not found'
+      });
+    }
+
+    await ActivityLog.create({
+      user_id: req.user.id,
       action: 'organisation_updated',
-      resourceType: 'organisation',
-      resourceId: organisationId,
+      resource_type: 'organisation',
+      resource_id: organisationId,
       details: `Updated organisation details: ${Object.keys(updates).join(', ')}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      ip_address: req.ip,
+      user_agent: req.get('User-Agent')
     });
-
-    const updatedOrg = await localDB.findOrganisationById(organisationId);
 
     res.json({
       success: true,
@@ -144,7 +259,6 @@ const updateOrganisationDetails = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Update organisation error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update organisation details',

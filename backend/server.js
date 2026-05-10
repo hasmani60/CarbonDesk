@@ -1,4 +1,4 @@
-// backend/server.js - Fixed Server with Increased Rate Limits
+// backend/server.js - MongoDB Compliant Server
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -9,13 +9,9 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
-// Import logger
 const logger = require('./utils/logger');
+const { effectiveAllowedScopesForContributor } = require('./utils/contributorEmissionAccess');
 
-// Import local database
-const localDB = require('./database/localDB');
-
-// Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const { 
   authenticateToken, 
@@ -27,13 +23,11 @@ const {
   authorizeRoles
 } = require('./middleware/auth');
 
-// Import organisation scoping middleware
 const { 
   addOrganisationContext, 
   requireOrganisation 
 } = require('./middleware/organisationScope');
 
-// Import company middleware
 const {
   authenticateCompanyOperator,
   canCreateOrganisations,
@@ -46,20 +40,18 @@ const organisationRoutes = require('./routes/organisation');
 
 const app = express();
 
-// Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
 // ============================================
-// RATE LIMITING - DISABLED IN DEVELOPMENT, ENABLED IN PRODUCTION
+// RATE LIMITING
 // ============================================
 
-// Disable rate limiting in development
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 10000 : 1000, // Much higher limit in dev
-  skip: () => isDevelopment, // Skip rate limiting in development
+  windowMs: 15 * 60 * 1000,
+  max: isDevelopment ? 10000 : 1000,
+  skip: () => isDevelopment,
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -68,18 +60,18 @@ const limiter = rateLimit({
 });
 
 const adminLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: isDevelopment ? 10000 : 500,
-  skip: () => isDevelopment, // Skip rate limiting in development
+  skip: () => isDevelopment,
   message: { error: 'Too many admin requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const companyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: isDevelopment ? 10000 : 200,
-  skip: () => isDevelopment, // Skip rate limiting in development
+  skip: () => isDevelopment,
   message: { error: 'Too many company operations requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -95,14 +87,12 @@ app.use(helmet({
 }));
 app.use(compression());
 
-// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 } else {
   app.use(morgan('combined'));
 }
 
-// CORS configuration
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
   : [
@@ -115,18 +105,15 @@ const corsOrigins = process.env.CORS_ORIGINS
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
 
     if (corsOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      // In production, reject unauthorized origins
       if (process.env.NODE_ENV === 'production') {
         logger.warn('CORS blocked origin', { origin });
         callback(new Error('Not allowed by CORS'));
       } else {
-        // In development, allow but log
         logger.debug('CORS origin not in whitelist (allowed in dev)', { origin });
         callback(null, true);
       }
@@ -140,14 +127,11 @@ app.use(cors({
   preflightContinue: false
 }));
 
-// Apply general rate limiting
 app.use(limiter);
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ============================================
@@ -161,7 +145,7 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     version: '2.0.1',
-    database: 'Local SQLite Database (Active)',
+    database: mongoose.connection.readyState === 1 ? 'MongoDB Atlas (Connected)' : 'MongoDB (Disconnected)',
     port: process.env.PORT || 5001,
     rateLimits: {
       general: '1000 requests per 15 minutes',
@@ -173,7 +157,6 @@ app.get('/health', (req, res) => {
       adminMonitoring: true,
       auditLogging: true,
       roleBasedAccess: true,
-      localDatabase: true,
       rbacSupport: true,
       strictRBAC: true,
       multiTenant: true,
@@ -198,19 +181,18 @@ const adminController = require('./controllers/adminController');
 const dashboardController = require('./controllers/dashboardController');
 const emissionController = require('./controllers/emissionController');
 const companyController = require('./controllers/companyController');
+const { ActivityLog } = require('./models');
 
 // ============================================
-// COMPANY OPERATIONS ROUTES (HIDDEN)
+// COMPANY OPERATIONS ROUTES
 // ============================================
 
-// Company Auth Routes - NO authentication required for login
 const companyAuthRouter = express.Router();
 companyAuthRouter.post('/login', companyController.companyLogin);
 companyAuthRouter.get('/profile', authenticateCompanyOperator, companyController.getCompanyProfile);
 
 app.use('/api/company/auth', companyLimiter, companyAuthRouter);
 
-// Company Dashboard Routes - Requires authentication
 const companyDashboardRouter = express.Router();
 companyDashboardRouter.get('/', companyController.getCompanyDashboard);
 
@@ -220,41 +202,34 @@ app.use('/api/company/dashboard',
   companyDashboardRouter
 );
 
-// Company Organisation Routes - Requires authentication
 const companyOrgRouter = express.Router();
 
-// CREATE new organisation (with super admin)
 companyOrgRouter.post('/', 
   canCreateOrganisations, 
   logCompanyActivity('org_create', 'Creating new organisation'), 
   companyController.createOrganisation
 );
 
-// GET all organisations
 companyOrgRouter.get('/', 
   companyController.getAllOrganisations
 );
 
-// GET organisation by ID
 companyOrgRouter.get('/:id', 
   companyController.getOrganisationById
 );
 
-// UPDATE organisation
 companyOrgRouter.patch('/:id', 
   canManageOrganisations, 
   logCompanyActivity('org_update', 'Updating organisation'), 
   companyController.updateOrganisation
 );
 
-// DELETE/DEACTIVATE organisation
 companyOrgRouter.delete('/:id', 
   canManageOrganisations, 
   logCompanyActivity('org_deactivate', 'Deactivating organisation'), 
   companyController.deactivateOrganisation
 );
 
-// GET organisation stats
 companyOrgRouter.get('/:id/stats', 
   companyController.getOrganisationStats
 );
@@ -265,7 +240,6 @@ app.use('/api/company/organisations',
   companyOrgRouter
 );
 
-// Test endpoint to verify company routes are working
 app.get('/api/company/test', (req, res) => {
   res.json({
     success: true,
@@ -284,216 +258,620 @@ app.get('/api/company/test', (req, res) => {
 
 
 // ============================================
-// ORGANISATION ROUTES (For Regular Admins)
+// ORGANISATION ROUTES
 // ============================================
 
-app.use('/api/organisation',
+app.use('/api/organisations', 
   authenticateToken,
   addOrganisationContext,
   requireOrganisation,
   organisationRoutes
 );
 
+// ============================================
+// AUTH ROUTES
+// ============================================
+
+app.use('/api/auth', require('./routes/auth'));
 
 // ============================================
-// REGULAR USER AUTHENTICATION ROUTES
+// USER ROUTES
 // ============================================
 
-const authRouter = express.Router();
-authRouter.post('/login', authController.login);
-authRouter.post('/register', authenticateToken, requireAdmin, authController.register);
-authRouter.post('/logout', authenticateToken, authController.logout);
-authRouter.get('/verify', authenticateToken, authController.verifyToken);
-authRouter.patch('/profile', authenticateToken, authController.updateProfile);
-authRouter.patch('/change-password', authenticateToken, authController.changePassword);
-app.use('/api/auth', authRouter);
+app.use('/api/users', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/users')
+);
+
+// ============================================
+// ACTIVITY LOG ROUTES
+// ============================================
+
+app.use('/api/activities', 
+  authenticateToken, 
+  addOrganisationContext,
+  require('./routes/activity')
+);
 
 // ============================================
 // ADMIN ROUTES
 // ============================================
 
-const adminRouter = express.Router();
-adminRouter.get('/dashboard', adminController.getAdminDashboard);
-adminRouter.get('/activities', adminController.getAllActivities);
-adminRouter.get('/user-summary', adminController.getUserActivitySummary);
-app.use('/api/admin', adminLimiter, authenticateToken, requireAdmin, adminRouter);
+app.use('/api/admin', 
+  authenticateToken,
+  addOrganisationContext,
+  requireAdmin,
+  adminLimiter,
+  require('./routes/admin')
+);
 
 // ============================================
-// USER MANAGEMENT ROUTES (WITH ORG CONTEXT)
+// DASHBOARD ROUTES
 // ============================================
 
-const userRouter = express.Router();
-userRouter.get('/', addOrganisationContext, userController.getUsers);
-userRouter.get('/stats', addOrganisationContext, userController.getUserStats);
-userRouter.get('/rbac-options', userController.getRBACOptions);
-userRouter.get('/:id', addOrganisationContext, userController.getUserById);
-userRouter.post('/', addOrganisationContext, requireAdmin, userController.createUser);
-userRouter.patch('/:id/role', addOrganisationContext, requireAdmin, userController.updateUserRole);
-userRouter.patch('/:id/restrictions', addOrganisationContext, requireAdmin, userController.updateUserRestrictions);
-userRouter.patch('/:id/status', addOrganisationContext, requireAdmin, userController.updateUserStatus);
-userRouter.delete('/:id', addOrganisationContext, requireAdmin, userController.deleteUser);
-userRouter.patch('/bulk', addOrganisationContext, requireAdmin, userController.bulkUpdateUsers);
-app.use('/api/users', authenticateToken, userRouter);
+app.use('/api/dashboard',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/dashboard')
+);
 
 // ============================================
-// EMISSION ROUTES (WITH ORG CONTEXT & RBAC)
+// EMISSION ROUTES
 // ============================================
 
-const emissionRouter = express.Router();
-
-emissionRouter.get('/', 
+app.use('/api/emissions',
+  authenticateToken,
   addOrganisationContext,
-  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
   requireOrganisation,
-  emissionController.getEmissions
+  require('./routes/emissions')
 );
-
-emissionRouter.get('/categories',
-  addOrganisationContext,
-  authorizeRoles('admin', 'analyst', 'contributor'),
-  requireOrganisation,
-  emissionController.getEmissionCategories
-);
-
-emissionRouter.get('/stats',
-  addOrganisationContext,
-  authorizeRoles('admin', 'analyst', 'viewer'),
-  requireOrganisation,
-  emissionController.getEmissionStats
-);
-
-emissionRouter.get('/user/allowed-activities',
-  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
-  emissionController.getUserAllowedActivities
-);
-
-emissionRouter.get('/:id',
-  addOrganisationContext,
-  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
-  requireOrganisation,
-  emissionController.getEmissionById
-);
-
-emissionRouter.post('/', 
-  addOrganisationContext,
-  authorizeRoles('admin', 'contributor'),
-  requireOrganisation,
-  emissionController.createEmission
-);
-
-emissionRouter.patch('/:id',
-  addOrganisationContext,
-  authorizeRoles('admin', 'contributor'),
-  requireOrganisation,
-  emissionController.updateEmission
-);
-
-emissionRouter.patch('/:id/verify',
-  addOrganisationContext,
-  authorizeRoles('admin', 'analyst'),
-  requireOrganisation,
-  emissionController.verifyEmission
-);
-
-emissionRouter.delete('/:id',
-  addOrganisationContext,
-  authorizeRoles('admin', 'contributor'),
-  requireOrganisation,
-  emissionController.deleteEmission
-);
-
-app.use('/api/emissions', authenticateToken, emissionRouter);
 
 // ============================================
-// TASK MANAGEMENT ROUTES (NEW)
+// ADDITIONAL ROUTES
+// ============================================
+
+app.use('/api/export', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/export')
+);
+app.use('/api/vehicles', 
+  authenticateToken, 
+  addOrganisationContext, 
+  requireOrganisation,
+  require('./routes/vehicles')
+);
+app.use('/api/generators', 
+  authenticateToken, 
+  addOrganisationContext, 
+  requireOrganisation,
+  require('./routes/generators')
+);
+app.use('/api/monitor', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/monitor')
+);
+
+// ============================================
+// ANALYTICS ROUTES
+// ============================================
+// ANALYTICS ROUTES
+// ============================================
+
+const analyticsRouter = express.Router();
+const analyticsRoutes = require('./routes/analytics');
+const analyticsController = require('./controllers/analyticsController');
+
+analyticsRouter.get('/health', (req, res) => {
+  const isConnected = mongoose.connection.readyState === 1;
+  res.json({
+    success: true,
+    connected: isConnected,
+    status: isConnected ? 'connected' : 'disconnected',
+    database: 'MongoDB Atlas',
+    mongodb: isConnected, // This is what Analytics.jsx checks for
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Overview stats endpoint
+analyticsRouter.get('/overview', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { Emission } = require('./models');
+    const organisationId = req.organisationId;
+    
+    const totalEmissions = await Emission.aggregate([
+      { $match: { organisation_id: organisationId } },
+      {
+        $group: {
+          _id: null,
+          total_co2e: { $sum: '$co2e' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    const byScope = await Emission.aggregate([
+      { $match: { organisation_id: organisationId } },
+      {
+        $group: {
+          _id: '$scope',
+          total_co2e: { $sum: '$co2e' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    res.json({
+      success: true,
+      data: {
+        total_emissions: totalEmissions[0]?.total_co2e || 0,
+        total_count: totalEmissions[0]?.count || 0,
+        by_scope: byScope
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Pareto analysis endpoint
+analyticsRouter.get('/pareto', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { Emission } = require('./models');
+    const organisationId = req.organisationId;
+    
+    const paretoData = await Emission.aggregate([
+      { $match: { organisation_id: organisationId } },
+      {
+        $group: {
+          _id: '$activity',
+          total_co2e: { $sum: '$co2e' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { total_co2e: -1 } },
+      { $limit: 20 }
+    ]);
+    
+    res.json({
+      success: true,
+      data: paretoData
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================
+// SCOPE MIGRATION ENDPOINT
+// ============================================
+analyticsRouter.get('/scope-migration', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const Emission = require('./models/Emission');
+    const organisationId = req.organisationId;
+    
+    console.log('📊 Scope migration request for org:', organisationId);
+    
+    const totalCount = await Emission.countDocuments({ organisation_id: organisationId });
+    console.log('📊 Total emissions found:', totalCount);
+    
+    if (totalCount === 0) {
+      return res.json({
+        success: true,
+        data: { periodData: [] }
+      });
+    }
+    
+    // Convert string date to Date object, then extract year/month
+    const periodData = await Emission.aggregate([
+      { $match: { organisation_id: organisationId } },
+      {
+        $addFields: {
+          dateObj: { $toDate: '$date' }  // Convert string to Date
+        }
+      },
+      {
+        $project: {
+          year: { $year: '$dateObj' },
+          month: { $month: '$dateObj' },
+          scope: 1,
+          co2e: 1
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: '$year',
+            month: '$month'
+          },
+          scope1: { 
+            $sum: { 
+              $cond: [{ $eq: ['$scope', 1] }, '$co2e', 0] 
+            } 
+          },
+          scope2: { 
+            $sum: { 
+              $cond: [{ $eq: ['$scope', 2] }, '$co2e', 0] 
+            } 
+          },
+          scope3: { 
+            $sum: { 
+              $cond: [{ $eq: ['$scope', 3] }, '$co2e', 0] 
+            } 
+          },
+          total: { $sum: '$co2e' }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    console.log('📊 Period data found:', periodData.length, 'periods');
+
+    const formattedData = periodData.map(item => ({
+      period: `${item._id.year}-${String(item._id.month).padStart(2, '0')}`,
+      scope1: item.scope1 || 0,
+      scope2: item.scope2 || 0,
+      scope3: item.scope3 || 0,
+      total: item.total || 0
+    }));
+
+    res.json({
+      success: true,
+      data: { periodData: formattedData }
+    });
+  } catch (error) {
+    console.error('❌ Scope migration error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch scope migration data'
+    });
+  }
+});
+
+
+// ============================================
+// VELOCITY ANALYSIS ENDPOINT
+// ============================================
+analyticsRouter.get('/velocity', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const Emission = require('./models/Emission');
+    const organisationId = req.organisationId;
+    
+    console.log('⚡ Velocity request for org:', organisationId);
+
+    const totalCount = await Emission.countDocuments({ organisation_id: organisationId });
+    console.log('⚡ Total emissions found:', totalCount);
+    
+    if (totalCount === 0) {
+      return res.json({
+        success: true,
+        data: {
+          chartData: [],
+          summary: {
+            avgVelocity: 0,
+            avgAcceleration: 0,
+            trend: 'stable',
+            currentVelocity: 0,
+            projectedNextMonth: 0
+          }
+        }
+      });
+    }
+
+    // Convert string date to Date object
+    const periodData = await Emission.aggregate([
+      { $match: { organisation_id: organisationId } },
+      {
+        $addFields: {
+          dateObj: { $toDate: '$date' }  // Convert string to Date
+        }
+      },
+      {
+        $project: {
+          year: { $year: '$dateObj' },
+          month: { $month: '$dateObj' },
+          co2e: 1
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: '$year',
+            month: '$month'
+          },
+          emissions: { $sum: '$co2e' }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    console.log('⚡ Period data found:', periodData.length, 'periods');
+
+    const chartData = [];
+    let prevEmissions = null;
+    let prevVelocity = null;
+
+    periodData.forEach(item => {
+      const period = `${item._id.year}-${String(item._id.month).padStart(2, '0')}`;
+      const emissions = item.emissions || 0;
+      
+      const velocity = prevEmissions !== null ? emissions - prevEmissions : 0;
+      const acceleration = prevVelocity !== null ? velocity - prevVelocity : 0;
+
+      chartData.push({
+        period,
+        emissions,
+        velocity,
+        acceleration
+      });
+
+      prevEmissions = emissions;
+      prevVelocity = velocity;
+    });
+
+    // Calculate summary
+    const velocities = chartData.slice(1).map(d => d.velocity);
+    const accelerations = chartData.slice(2).map(d => d.acceleration);
+    
+    const avgVelocity = velocities.length > 0 
+      ? velocities.reduce((a, b) => a + b, 0) / velocities.length 
+      : 0;
+    
+    const avgAcceleration = accelerations.length > 0
+      ? accelerations.reduce((a, b) => a + b, 0) / accelerations.length
+      : 0;
+
+    const lastData = chartData[chartData.length - 1];
+    const currentVelocity = lastData?.velocity || 0;
+    const projectedNextMonth = lastData 
+      ? lastData.emissions + currentVelocity 
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        chartData,
+        summary: {
+          avgVelocity: parseFloat(avgVelocity.toFixed(2)),
+          avgAcceleration: parseFloat(avgAcceleration.toFixed(2)),
+          trend: avgVelocity < 0 ? 'decreasing' : avgVelocity > 0 ? 'increasing' : 'stable',
+          currentVelocity: parseFloat(currentVelocity.toFixed(2)),
+          projectedNextMonth: parseFloat(projectedNextMonth.toFixed(2))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Velocity analysis error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch velocity analysis'
+    });
+  }
+});
+
+// ============================================
+// MACC ANALYSIS ENDPOINT
+// ============================================
+analyticsRouter.get('/macc', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { MACCOpportunity } = require('./models');
+    const organisationId = req.organisationId;
+
+    const opportunities = await MACCOpportunity.find({ organisation_id: organisationId })
+      .sort({ costPerTon: 1 })
+      .lean();
+
+    // Calculate analysis
+    const analysis = {
+      totalAbatementPotential: 0,
+      totalCostSavings: 0,
+      totalCosts: 0,
+      netCost: 0,
+      opportunitiesCount: opportunities.length,
+      highPriorityCount: 0,
+      mediumPriorityCount: 0,
+      lowPriorityCount: 0
+    };
+
+    opportunities.forEach(opp => {
+      analysis.totalAbatementPotential += opp.abatementPotential || 0;
+      
+      const totalCost = (opp.costPerTon || 0) * (opp.abatementPotential || 0);
+      
+      if (opp.costPerTon < 0) {
+        analysis.totalCostSavings += Math.abs(totalCost);
+      } else {
+        analysis.totalCosts += totalCost;
+      }
+
+      if (opp.priority === 'high') analysis.highPriorityCount++;
+      else if (opp.priority === 'medium') analysis.mediumPriorityCount++;
+      else analysis.lowPriorityCount++;
+    });
+
+    analysis.netCost = analysis.totalCosts - analysis.totalCostSavings;
+    analysis.averageCostPerTon = analysis.totalAbatementPotential > 0
+      ? analysis.netCost / analysis.totalAbatementPotential
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        opportunities,
+        analysis
+      }
+    });
+  } catch (error) {
+    console.error('MACC analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch MACC analysis'
+    });
+  }
+});
+
+// ============================================
+// SAVE MACC OPPORTUNITY ENDPOINT
+// ============================================
+analyticsRouter.post('/macc/opportunity', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { MACCOpportunity } = require('./models');
+    const organisationId = req.organisationId;
+    
+    const opportunityData = {
+      ...req.body,
+      organisation_id: organisationId,
+      createdBy: req.user.id
+    };
+
+    const opportunity = await MACCOpportunity.create(opportunityData);
+
+    res.status(201).json({
+      success: true,
+      data: opportunity,
+      message: 'MACC opportunity created successfully'
+    });
+  } catch (error) {
+    console.error('Save MACC opportunity error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save MACC opportunity'
+    });
+  }
+});
+
+// ============================================
+// DELETE MACC OPPORTUNITY ENDPOINT
+// ============================================
+analyticsRouter.delete('/macc/opportunity/:id', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { MACCOpportunity } = require('./models');
+    const organisationId = req.organisationId;
+    const { id } = req.params;
+
+    const opportunity = await MACCOpportunity.findOneAndDelete({
+      _id: id,
+      organisation_id: organisationId
+    });
+
+    if (!opportunity) {
+      return res.status(404).json({
+        success: false,
+        error: 'MACC opportunity not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'MACC opportunity deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete MACC opportunity error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete MACC opportunity'
+    });
+  }
+});
+
+// ============================================
+// PARETO DRILL-DOWN ENDPOINT
+// ============================================
+analyticsRouter.get('/pareto/drilldown/:category', addOrganisationContext, requireOrganisation, async (req, res) => {
+  try {
+    const { Emission } = require('./models');
+    const organisationId = req.organisationId;
+    const { category } = req.params;
+
+    const drilldownData = await Emission.aggregate([
+      { 
+        $match: { 
+          organisation_id: organisationId,
+          activity: decodeURIComponent(category)
+        } 
+      },
+      {
+        $group: {
+          _id: '$subactivity',
+          total_co2e: { $sum: '$co2e' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { total_co2e: -1 } },
+      { $limit: 20 }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        category: decodeURIComponent(category),
+        paretoData: drilldownData
+      }
+    });
+  } catch (error) {
+    console.error('Pareto drill-down error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch drill-down data'
+    });
+  }
+});
+
+app.use('/api/analytics', 
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  analyticsRouter
+);
+
+// ============================================
+// TASK ROUTES
 // ============================================
 
 const taskRouter = express.Router();
+const taskController = require('./controllers/taskController');
 
-// Import task routes
-const taskRoutes = require('./routes/tasks');
+taskRouter.get('/', addOrganisationContext, requireOrganisation, taskController.getTasks);
+taskRouter.post('/', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.createTask);
+taskRouter.get('/stats', addOrganisationContext, requireOrganisation, taskController.getTaskStats);
+taskRouter.get('/assignable-users', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.getAssignableUsers);
+taskRouter.get('/due-soon', addOrganisationContext, requireOrganisation, taskController.getTasksDueSoon);
+taskRouter.get('/:id', addOrganisationContext, requireOrganisation, taskController.getTaskById);
+taskRouter.patch('/:id', addOrganisationContext, requireOrganisation, taskController.updateTask);
+taskRouter.delete('/:id', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.deleteTask);
 
-// Apply middleware stack, then mount the routes
 app.use('/api/tasks',
   authenticateToken,
-  addOrganisationContext,
-  requireOrganisation,
-  taskRoutes
+  taskRouter
 );
 
 // ============================================
-// DASHBOARD ROUTES (WITH ORG CONTEXT & RBAC)
+// NOTIFICATION ROUTES
 // ============================================
 
-const dashboardRouter = express.Router();
-dashboardRouter.get('/summary', 
-  addOrganisationContext,
-  authorizeRoles('admin', 'viewer', 'contributor'),
-  requireOrganisation,
-  dashboardController.getDashboardSummary
-);
-dashboardRouter.get('/notifications', 
-  addOrganisationContext,
-  authorizeRoles('admin', 'viewer', 'contributor'),
-  dashboardController.getDashboardNotifications
-);
-app.use('/api/dashboard', authenticateToken, dashboardRouter);
+const notificationRouter = express.Router();
+const notificationController = require('./controllers/notificationController');
 
-// ============================================
-// ANALYTICS ROUTES (Admin, Analyst, Viewer)
-// ============================================
+notificationRouter.get('/unread-count', addOrganisationContext, notificationController.getUnreadCount);
+notificationRouter.get('/', addOrganisationContext, notificationController.getNotifications);
+notificationRouter.patch('/read-all', addOrganisationContext, notificationController.markAllAsRead);
+notificationRouter.patch('/:id/read', addOrganisationContext, notificationController.markAsRead);
+notificationRouter.delete('/:id', addOrganisationContext, notificationController.deleteNotification);
 
-const analysisRouter = require('./routes/analytics');
-
-// Analysis endpoints
-app.use('/api/analysis',
+app.use('/api/notifications',
   authenticateToken,
-  addOrganisationContext,
-  requireOrganisation,
-  authorizeRoles('admin', 'analyst', 'viewer'),
-  analysisRouter
+  notificationRouter
 );
 
 // ============================================
-// MONITOR ROUTES (Admin, Viewer)
+// DEBUG ROUTES
 // ============================================
 
-const monitorRouter = express.Router();
-monitorRouter.get('*', 
-  authorizeRoles('admin', 'viewer'),
-  (req, res) => {
-    res.json({ 
-      message: 'Monitor endpoint placeholder', 
-      userRole: req.user.role,
-      hasAccess: true
-    });
-  }
-);
-app.use('/api/monitor', authenticateToken, monitorRouter);
-
-// ============================================
-// SETTINGS ROUTES (All authenticated users)
-// ============================================
-
-const settingsRouter = express.Router();
-settingsRouter.get('*', 
-  authorizeRoles('admin', 'analyst', 'contributor', 'viewer'),
-  (req, res) => {
-    res.json({ 
-      message: 'Settings endpoint placeholder', 
-      userRole: req.user.role,
-      hasAccess: true
-    });
-  }
-);
-app.use('/api/settings', authenticateToken, settingsRouter);
-
-// ============================================
-// UTILITY ENDPOINTS
-// ============================================
-
-// Organisation info endpoint
-app.get('/api/organisation/info', authenticateToken, addOrganisationContext, (req, res) => {
+app.get('/api/debug/organisation', authenticateToken, addOrganisationContext, (req, res) => {
   if (!req.organisationId) {
     return res.json({
       success: true,
@@ -523,7 +901,6 @@ app.get('/api/organisation/info', authenticateToken, addOrganisationContext, (re
   });
 });
 
-// Debug context endpoint
 app.get('/api/debug/context', authenticateToken, addOrganisationContext, (req, res) => {
   res.json({
     success: true,
@@ -543,7 +920,6 @@ app.get('/api/debug/context', authenticateToken, addOrganisationContext, (req, r
   });
 });
 
-// Access control endpoints
 app.get('/api/access/scope/:scope', authenticateToken, (req, res) => {
   const scope = req.params.scope;
   try {
@@ -590,7 +966,6 @@ app.get('/api/access/page/:page', authenticateToken, (req, res) => {
   }
 });
 
-// RBAC info endpoint
 app.get('/api/rbac/info', authenticateToken, addOrganisationContext, (req, res) => {
   const { role } = req.user;
   
@@ -610,7 +985,9 @@ app.get('/api/rbac/info', authenticateToken, addOrganisationContext, (req, res) 
     contributor: {
       pages: ['input', 'settings'],
       actions: ['create', 'read', 'update', 'delete'],
-      scopes: req.user.restrictions?.allowedScopes || [1, 2, 3],
+      scopes: req.user.restrictions
+        ? effectiveAllowedScopesForContributor(req.user.restrictions)
+        : [1, 2, 3],
       description: 'Data entry and management only'
     },
     viewer: {
@@ -662,7 +1039,6 @@ const errorHandlerMiddleware = (err, req, res, next) => {
   });
 };
 
-// 404 handler for API routes
 app.use('/api/*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -670,7 +1046,6 @@ app.use('/api/*', (req, res) => {
   });
 });
 
-// 404 handler for all other routes
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -678,7 +1053,6 @@ app.use('*', (req, res) => {
   });
 });
 
-// Error handling middleware (must be last)
 app.use(errorHandlerMiddleware);
 
 // ============================================
@@ -688,19 +1062,19 @@ app.use(errorHandlerMiddleware);
 const connectDB = async () => {
   try {
     if (!process.env.MONGODB_URI) {
-      logger.info('MONGODB_URI not set - using local SQLite database');
-      return false;
+      throw new Error('MONGODB_URI not found in environment variables');
     }
 
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    
+    logger.info('MongoDB Connected', { 
+      host: conn.connection.host, 
+      database: conn.connection.name 
     });
-    logger.info('MongoDB Connected', { host: conn.connection.host, mode: 'Secondary' });
     return true;
   } catch (error) {
-    logger.info('MongoDB not available - using local SQLite database (Primary)');
-    return false;
+    logger.error('MongoDB connection failed', error);
+    throw error;
   }
 };
 
@@ -711,11 +1085,6 @@ const gracefulShutdown = async (signal) => {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
       logger.info('MongoDB connection closed');
-    }
-
-    if (localDB) {
-      localDB.close();
-      logger.info('Local database connection closed');
     }
   } catch (error) {
     logger.error('Error during shutdown', error);
@@ -731,9 +1100,17 @@ const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
   try {
-    await localDB.init();
-    await localDB.createTasksTable();
     await connectDB();
+
+    if (process.env.NODE_ENV === 'production') {
+      const j = process.env.JWT_SECRET;
+      if (!j || j.length < 24 || j === 'your-development-jwt-secret-change-in-production') {
+        logger.error(
+          'Set a strong JWT_SECRET in production (min ~24 chars, not the example placeholder).'
+        );
+        process.exit(1);
+      }
+    }
 
     const server = app.listen(PORT, '0.0.0.0', () => {
       logger.info('Server started successfully', {
@@ -754,7 +1131,7 @@ const startServer = async () => {
           adminMonitoring: true,
           activityLogging: true,
           taskManagement: true,
-          database: 'Local SQLite (Primary)'
+          database: 'MongoDB Atlas'
         }
       });
     });

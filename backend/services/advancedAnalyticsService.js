@@ -1,5 +1,7 @@
-// backend/services/advancedAnalyticsService.js
-const localDB = require('../database/localDB');
+// backend/services/advancedAnalyticsService.js - MongoDB Version
+const mongoose = require('mongoose');
+const Emission = require('../models/Emission');
+const MACCOpportunity = require('../models/MACCOpportunity');
 
 class AdvancedAnalyticsService {
   
@@ -36,29 +38,54 @@ class AdvancedAnalyticsService {
   }
   
   /**
-   * Get historical emissions aggregated by month
-   * Uses same organization filtering as existing controllers
+   * Get historical emissions aggregated by month from MongoDB
    */
   async getHistoricalEmissions(startDate, endDate, organisationId) {
-    return new Promise((resolve, reject) => {
-      // Match existing pattern: WHERE organisation_id = ?
-      const query = `
-        SELECT 
-          strftime('%Y-%m', date) as date,
-          SUM(co2e) as emissions
-        FROM emissions
-        WHERE organisation_id = ?
-          AND date >= ?
-          AND date <= ?
-        GROUP BY strftime('%Y-%m', date)
-        ORDER BY date ASC
-      `;
+    try {
+      const result = await Emission.aggregate([
+        {
+          $match: {
+            organisation_id: organisationId,
+            date: {
+              $gte: new Date(startDate),
+              $lte: new Date(endDate)
+            },
+            status: { $ne: 'rejected' }
+          }
+        },
+        {
+          $project: {
+            yearMonth: {
+              $dateToString: { format: '%Y-%m', date: '$date' }
+            },
+            emissions: {
+              $ifNull: ['$co2e', { $ifNull: ['$totalEmissions', 0] }]
+            }
+          }
+        },
+        {
+          $group: {
+            _id: '$yearMonth',
+            emissions: { $sum: '$emissions' }
+          }
+        },
+        {
+          $sort: { _id: 1 }
+        },
+        {
+          $project: {
+            _id: 0,
+            date: '$_id',
+            emissions: { $round: ['$emissions', 2] }
+          }
+        }
+      ]);
       
-      localDB.db.all(query, [organisationId, startDate, endDate], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      });
-    });
+      return result;
+    } catch (error) {
+      console.error('Error fetching historical emissions:', error);
+      throw error;
+    }
   }
   
   /**
@@ -288,78 +315,88 @@ class AdvancedAnalyticsService {
   }
   
   /**
-   * Get MACC opportunities from database
+   * Get MACC opportunities from MongoDB
    */
   async getMACCOpportunities(organisationId, scope, category) {
-    return new Promise((resolve, reject) => {
-      let query = `
-        SELECT 
-          id, name, category, scope,
-          cost_per_tCO2e, reduction_potential, payback_period,
-          implementation_status, notes
-        FROM macc_opportunities
-        WHERE organisation_id = ?
-      `;
-      
-      const params = [organisationId];
+    try {
+      const query = { organisation_id: organisationId };
       
       if (scope) {
-        query += ' AND scope = ?';
-        params.push(scope);
+        query.scope = parseInt(scope);
       }
       
       if (category) {
-        query += ' AND category = ?';
-        params.push(category);
+        query.category = category;
       }
       
-      query += ' ORDER BY cost_per_tCO2e ASC';
+      const opportunities = await MACCOpportunity.find(query)
+        .sort({ costPerTon: 1 })
+        .lean();
       
-      localDB.db.all(query, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      });
-    });
+      // Map MongoDB fields to expected format
+      return opportunities.map(opp => ({
+        id: opp._id.toString(),
+        name: opp.name,
+        category: opp.category,
+        scope: opp.scope,
+        cost_per_tCO2e: opp.costPerTon,
+        reduction_potential: opp.abatementPotential,
+        payback_period: opp.paybackPeriod,
+        implementation_status: opp.status || 'proposed',
+        notes: opp.description || opp.implementationNotes
+      }));
+    } catch (error) {
+      console.error('Error fetching MACC opportunities:', error);
+      throw error;
+    }
   }
   
   /**
-   * Save MACC opportunity
+   * Save MACC opportunity to MongoDB
    */
   async saveMACCOpportunity(data) {
-    const { organisationId, name, category, scope, cost_per_tCO2e, reduction_potential, payback_period, notes } = data;
-    
-    return new Promise((resolve, reject) => {
-      const query = `
-        INSERT INTO macc_opportunities (
-          organisation_id, name, category, scope, 
-          cost_per_tCO2e, reduction_potential, payback_period, 
-          implementation_status, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `;
+    try {
+      const { organisationId, name, category, scope, cost_per_tCO2e, reduction_potential, payback_period, notes } = data;
       
-      localDB.db.run(query, [
-        organisationId, name, category || 'General', scope || null,
-        cost_per_tCO2e, reduction_potential, payback_period || null,
-        'proposed', notes || null
-      ], function(err) {
-        if (err) reject(err);
-        else resolve({ id: this.lastID, ...data, created_at: new Date().toISOString() });
+      const opportunity = await MACCOpportunity.create({
+        organisation_id: organisationId,
+        name,
+        category: category || 'General',
+        scope: scope || null,
+        costPerTon: cost_per_tCO2e,
+        abatementPotential: reduction_potential,
+        paybackPeriod: payback_period || null,
+        status: 'planned',
+        description: notes || null,
+        createdBy: data.createdBy || data.userId
       });
-    });
+      
+      return {
+        id: opportunity._id.toString(),
+        ...data,
+        created_at: opportunity.createdAt
+      };
+    } catch (error) {
+      console.error('Error saving MACC opportunity:', error);
+      throw error;
+    }
   }
   
   /**
-   * Delete MACC opportunity
+   * Delete MACC opportunity from MongoDB
    */
   async deleteMACCOpportunity(id, organisationId) {
-    return new Promise((resolve, reject) => {
-      const query = 'DELETE FROM macc_opportunities WHERE id = ? AND organisation_id = ?';
-      
-      localDB.db.run(query, [id, organisationId], function(err) {
-        if (err) reject(err);
-        else resolve({ deleted: this.changes > 0 });
+    try {
+      const result = await MACCOpportunity.deleteOne({
+        _id: id,
+        organisation_id: organisationId
       });
-    });
+      
+      return { deleted: result.deletedCount > 0 };
+    } catch (error) {
+      console.error('Error deleting MACC opportunity:', error);
+      throw error;
+    }
   }
 }
 
