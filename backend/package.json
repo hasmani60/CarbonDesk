@@ -14,7 +14,8 @@
     "migrate:sqlite-to-mongo": "node scripts/migrate-to-mongodb.js",
     "init-env": "node scripts/init-env-if-missing.js",
     "check-email": "node scripts/check-email-setup.js",
-    "test-email": "node scripts/send-test-email.js"
+    "test-email": "node scripts/send-test-email.js",
+    "create-company-operator": "node scripts/create-company-operator.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
