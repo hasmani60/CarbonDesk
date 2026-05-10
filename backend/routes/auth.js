@@ -9,7 +9,9 @@ const {
   updateProfile,
   changePassword,
   verifyEmailFromToken,
-  requestVerificationEmail
+  requestVerificationEmail,
+  forgotPassword,
+  resetPassword
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -19,6 +21,8 @@ router.post('/register', register);
 router.post('/login', login);
 router.get('/verify-email', verifyEmailFromToken);
 router.post('/request-verification-email', requestVerificationEmail);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // Protected routes
 router.get('/verify', authenticateToken, verifyToken);

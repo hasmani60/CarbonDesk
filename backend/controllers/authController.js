@@ -517,6 +517,129 @@ const verifyEmailFromToken = async (req, res) => {
  * Resend verification email — always responds with the same message (no email enumeration).
  * @route POST /api/auth/request-verification-email
  */
+const PASSWORD_RESET_MESSAGE =
+  'If an account exists for that email and can receive resets, we sent instructions.';
+
+// @route POST /api/auth/forgot-password
+const forgotPassword = async (req, res) => {
+  try {
+    const email =
+      req.body?.email && String(req.body.email).toLowerCase().trim();
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required.'
+      });
+    }
+
+    const user = await User.findOne({ email }).select(
+      '+password_reset_token +password_reset_expires'
+    );
+
+    const generic = { success: true, message: PASSWORD_RESET_MESSAGE };
+
+    if (!user || user.status !== 'active') {
+      return res.json(generic);
+    }
+
+    const expireMs =
+      parseInt(process.env.PASSWORD_RESET_EXPIRE_MS || '', 10) ||
+      60 * 60 * 1000;
+    const raw = crypto.randomBytes(32).toString('hex');
+    user.password_reset_token = hashVerifyToken(raw);
+    user.password_reset_expires = new Date(Date.now() + expireMs);
+    user.updated_at = new Date();
+    await user.save();
+
+    const sent = await emailService.sendPasswordResetEmail(user, raw);
+    if (!sent.sent) {
+      logger.warn('Password reset email not sent', {
+        reason: sent.reason,
+        email
+      });
+    }
+
+    return res.json(generic);
+  } catch (error) {
+    logger.error('forgotPassword', error);
+    return res.json({
+      success: true,
+      message: PASSWORD_RESET_MESSAGE
+    });
+  }
+};
+
+// @route POST /api/auth/reset-password
+const resetPassword = async (req, res) => {
+  try {
+    const raw =
+      req.body?.token &&
+      typeof req.body.token === 'string' &&
+      req.body.token.trim();
+    const newPassword =
+      req.body?.password != null ? String(req.body.password) : '';
+
+    if (!raw || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset token and new password are required.'
+      });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long.'
+      });
+    }
+
+    const hash = hashVerifyToken(raw.trim());
+    const user = await User.findOne({
+      password_reset_token: hash,
+      password_reset_expires: { $gt: new Date() }
+    }).select('+password_reset_token +password_reset_expires');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'This reset link is invalid or has expired. Please request a new one.'
+      });
+    }
+
+    user.password = await hashPassword(String(newPassword));
+    user.password_reset_token = null;
+    user.password_reset_expires = null;
+    user.updated_at = new Date();
+    await user.save();
+
+    try {
+      await ActivityLog.create({
+        user_id: user._id.toString(),
+        action: 'password_reset_email',
+        resource_type: 'user',
+        resource_id: user._id.toString(),
+        details: 'Password reset completed via email link',
+        ip_address: req.ip,
+        user_agent: req.get('User-Agent')
+      });
+    } catch (logErr) {
+      logger.warn('Activity log skipped after password reset', logErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Your password has been updated. You can sign in now.'
+    });
+  } catch (error) {
+    logger.error('resetPassword', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Could not reset password. Please try again.'
+    });
+  }
+};
+
 const requestVerificationEmail = async (req, res) => {
   const generic = {
     success: true,
@@ -610,5 +733,7 @@ module.exports = {
   changePassword,
   refreshToken,
   verifyEmailFromToken,
-  requestVerificationEmail
+  requestVerificationEmail,
+  forgotPassword,
+  resetPassword
 };

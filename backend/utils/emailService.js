@@ -79,6 +79,23 @@ class EmailService {
     return this.sendMail({ to: user.email, subject, html, text });
   }
 
+  async sendPasswordResetEmail(user, rawToken) {
+    const base =
+      process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
+    const link = `${base}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+    const subject = 'Reset your password';
+    const html = `
+      <p>Hello ${escapeHtml(user.name || 'there')},</p>
+      <p>We received a request to reset your password for your Carbon Accounting account.</p>
+      <p><a href="${link}">Choose a new password</a></p>
+      <p style="color:#666;font-size:12px">This link expires in one hour. If you did not request this, ignore this email.</p>
+    `;
+    const text = `Reset your password: ${link}`;
+
+    return this.sendMail({ to: user.email, subject, html, text });
+  }
+
   async sendWelcomeEmail(user) {
     return this.sendMail({
       to: user.email,

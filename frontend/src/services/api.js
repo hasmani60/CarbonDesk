@@ -158,7 +158,10 @@ export const authAPI = {
   verifyEmail: (token) =>
     apiClient.get('/auth/verify-email', { params: { token } }),
   requestVerificationEmail: (email) =>
-    apiClient.post('/auth/request-verification-email', { email })
+    apiClient.post('/auth/request-verification-email', { email }),
+  forgotPassword: (email) => apiClient.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) =>
+    apiClient.post('/auth/reset-password', { token, password })
 };
 
 // Admin API

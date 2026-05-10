@@ -14,6 +14,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import Login from './pages/auth/Login';
 import Contact from './pages/auth/Contact';
 import VerifyEmail from './pages/auth/VerifyEmail';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 
 // Main app pages
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -69,6 +71,8 @@ function App() {
                 {/* PUBLIC ROUTES                              */}
                 {/* ========================================== */}
                 <Route path="/login" element={<Login />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/verify-email" element={<VerifyEmail />} />
                 <Route path="/contact" element={<Contact />} />
                 
