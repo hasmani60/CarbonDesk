@@ -14,8 +14,8 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
-  // Handle client-side routing for production builds
-  base: './',
+  // "/" so deep links (e.g. /company-portal) on Vercel load JS/CSS from /assets/...
+  base: '/',
   resolve: {
     alias: {
       '@': '/src'
