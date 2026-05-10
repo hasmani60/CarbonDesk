@@ -553,9 +553,20 @@ const forgotPassword = async (req, res) => {
 
     const sent = await emailService.sendPasswordResetEmail(user, raw);
     if (!sent.sent) {
-      logger.warn('Password reset email not sent', {
-        reason: sent.reason,
-        email
+      logger.error(
+        'Password reset: email NOT sent (check Render/env SMTP_* and SMTP logs)',
+        {
+          reason: sent.reason,
+          recipientDomain: email.includes('@')
+            ? email.split('@')[1]
+            : 'invalid'
+        }
+      );
+    } else {
+      logger.info('Password reset email dispatched', {
+        recipientDomain: email.includes('@')
+          ? email.split('@')[1]
+          : 'invalid'
       });
     }
 
