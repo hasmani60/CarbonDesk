@@ -24,13 +24,39 @@ class EmailService {
       return null;
     }
     if (!this._transporter) {
+      const port = parseInt(String(process.env.SMTP_PORT || '587'), 10);
+      const envSecure = process.env.SMTP_SECURE === 'true';
+      const secure = envSecure || port === 465;
+      const connectionTimeout = parseInt(
+        String(process.env.SMTP_CONNECTION_TIMEOUT_MS || '60000'),
+        10
+      );
+      const greetingTimeout = parseInt(
+        String(process.env.SMTP_GREETING_TIMEOUT_MS || '30000'),
+        10
+      );
+      const socketTimeout = parseInt(
+        String(process.env.SMTP_SOCKET_TIMEOUT_MS || '60000'),
+        10
+      );
+
+      // Port 587: STARTTLS (secure: false, requireTLS: true). Port 465: implicit TLS (secure: true).
       this._transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(String(process.env.SMTP_PORT || '587'), 10),
-        secure: process.env.SMTP_SECURE === 'true',
+        port,
+        secure,
+        requireTLS: !secure && port === 587,
+        connectionTimeout,
+        greetingTimeout,
+        socketTimeout,
+        pool: process.env.SMTP_POOL !== 'false',
+        maxConnections: parseInt(String(process.env.SMTP_POOL_MAX || '3'), 10),
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS
+        },
+        tls: {
+          minVersion: 'TLSv1.2'
         }
       });
     }
@@ -53,7 +79,17 @@ class EmailService {
       });
       return { sent: true };
     } catch (error) {
-      logger.error('Email send failed', { err: error.message, to });
+      const port = parseInt(String(process.env.SMTP_PORT || '587'), 10);
+      logger.error('Email send failed', {
+        err: error.message,
+        to,
+        smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
+        smtpPort: port,
+        hint:
+          error.code === 'ETIMEDOUT' || String(error.message).includes('timeout')
+            ? 'SMTP connection timed out. On Render/hosted VPS, try longer SMTP_*_TIMEOUT_MS, confirm SMTP_HOST/PORT match your provider (587+STARTTLS vs 465+SSL), use an app-specific password for Gmail, or switch to SendGrid/Resend SMTP.'
+            : undefined
+      });
       return { sent: false, reason: error.message };
     }
   }
