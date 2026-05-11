@@ -26,11 +26,34 @@ function check(name, value, optional = false) {
 
 console.log('\n=== Email & verification configuration check ===\n');
 
-check('SMTP_HOST', process.env.SMTP_HOST);
-check('SMTP_PORT', process.env.SMTP_PORT);
-check('SMTP_USER', process.env.SMTP_USER);
-check('SMTP_PASS', process.env.SMTP_PASS);
-check('FROM_EMAIL', process.env.FROM_EMAIL);
+const hasResend = !!process.env.RESEND_API_KEY?.trim();
+if (hasResend) {
+  check('RESEND_API_KEY', process.env.RESEND_API_KEY);
+  const hasSender =
+    process.env.RESEND_FROM?.trim() ||
+    process.env.FROM_EMAIL?.trim() ||
+    process.env.SMTP_USER?.trim();
+  if (!hasSender) {
+    issues.push(
+      '  ✖ Set RESEND_FROM or FROM_EMAIL (or SMTP_USER) so Resend knows the From address'
+    );
+  } else if (process.env.RESEND_FROM?.trim()) {
+    ok.push('  ✔ RESEND_FROM is set');
+  }
+  console.log(
+    '\n(Resend uses HTTPS — works on Render free tier where outbound SMTP ports are blocked.)\n'
+  );
+}
+
+if (!hasResend) {
+  check('SMTP_HOST', process.env.SMTP_HOST);
+  check('SMTP_PORT', process.env.SMTP_PORT);
+  check('SMTP_USER', process.env.SMTP_USER);
+  check('SMTP_PASS', process.env.SMTP_PASS);
+  check('FROM_EMAIL', process.env.FROM_EMAIL);
+} else {
+  check('SMTP_HOST', process.env.SMTP_HOST, true);
+}
 check('CLIENT_URL', process.env.CLIENT_URL);
 
 if (process.env.FROM_NAME && String(process.env.FROM_NAME).trim()) {
@@ -63,7 +86,14 @@ if (issues.length) {
 const emailService = require('../utils/emailService');
 const configured = emailService.isConfigured();
 
-console.log('\nNodemailer will send mail:', configured ? 'YES (credentials present)' : 'NO (set SMTP_USER and SMTP_PASS)');
+console.log(
+  '\nServer can send mail:',
+  configured
+    ? hasResend
+      ? 'YES (RESEND_API_KEY — uses HTTPS)'
+      : 'YES (SMTP_USER / SMTP_PASS)'
+    : 'NO (set RESEND_API_KEY + RESEND_FROM, or SMTP_USER and SMTP_PASS)'
+);
 
 if (issues.length || !configured) {
   console.log('\n→ After editing backend/.env, restart the backend (stop and run npm start again).');

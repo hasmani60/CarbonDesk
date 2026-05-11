@@ -15,12 +15,58 @@ class EmailService {
     this._transporter = null;
   }
 
+  /** True if email can be sent (HTTPS API and/or SMTP). */
   isConfigured() {
+    return (
+      !!process.env.RESEND_API_KEY ||
+      !!(process.env.SMTP_USER && process.env.SMTP_PASS)
+    );
+  }
+
+  /** True only when Nodemailer SMTP is configured (not Resend-only). */
+  isSmtpConfigured() {
     return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
   }
 
+  async sendViaResend({ to, subject, html, text }) {
+    const key = process.env.RESEND_API_KEY;
+    const from =
+      process.env.RESEND_FROM?.trim() || fromDisplay();
+
+    const toList = Array.isArray(to)
+      ? to.map((x) => String(x).trim()).filter(Boolean)
+      : [String(to).trim()].filter(Boolean);
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to: toList,
+        subject,
+        ...(html ? { html } : {}),
+        ...(text ? { text } : {})
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        (data &&
+          typeof data.message === 'string' &&
+          data.message) ||
+        `${res.status} ${res.statusText}`;
+      logger.error('Resend API error', { status: res.status, message: msg, data });
+      return { sent: false, reason: msg };
+    }
+    return { sent: true };
+  }
+
   getTransporter() {
-    if (!this.isConfigured()) {
+    if (!this.isSmtpConfigured()) {
       return null;
     }
     if (!this._transporter) {
@@ -64,9 +110,20 @@ class EmailService {
   }
 
   async sendMail({ to, subject, html, text }) {
+    if (process.env.RESEND_API_KEY) {
+      try {
+        return await this.sendViaResend({ to, subject, html, text });
+      } catch (error) {
+        logger.error('Resend send failed', { err: error.message, to });
+        return { sent: false, reason: error.message };
+      }
+    }
+
     const tx = this.getTransporter();
     if (!tx) {
-      logger.warn('Email skipped: SMTP not configured (SMTP_USER / SMTP_PASS)');
+      logger.warn(
+        'Email skipped: set RESEND_API_KEY (recommended on Render free tier) or SMTP_USER / SMTP_PASS'
+      );
       return { sent: false, reason: 'not_configured' };
     }
     try {
@@ -87,7 +144,7 @@ class EmailService {
         smtpPort: port,
         hint:
           error.code === 'ETIMEDOUT' || String(error.message).includes('timeout')
-            ? 'SMTP connection timed out. On Render/hosted VPS, try longer SMTP_*_TIMEOUT_MS, confirm SMTP_HOST/PORT match your provider (587+STARTTLS vs 465+SSL), use an app-specific password for Gmail, or switch to SendGrid/Resend SMTP.'
+            ? 'SMTP timed out. Render free web services block outbound SMTP (ports 587/465/25). Fix: upgrade to paid Render, or set RESEND_API_KEY + RESEND_FROM and use Resend HTTPS API (no SMTP). Otherwise confirm SMTP_HOST/PORT/TLS for your provider.'
             : undefined
       });
       return { sent: false, reason: error.message };

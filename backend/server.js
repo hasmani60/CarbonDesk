@@ -93,25 +93,43 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-const corsOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-  : [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000',
-      process.env.CLIENT_URL
-    ].filter(Boolean);
+const normalizeCorsOrigin = (o) => {
+  if (!o || typeof o !== 'string') return '';
+  return o.trim().replace(/\/$/, '');
+};
+
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  normalizeCorsOrigin(process.env.CLIENT_URL)
+].filter(Boolean);
+
+const explicitCorsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(normalizeCorsOrigin).filter(Boolean)
+  : defaultCorsOrigins;
+
+// Always allow CLIENT_URL when set (avoids duplicate env mistakes on Render).
+const clientUrlNorm = normalizeCorsOrigin(process.env.CLIENT_URL);
+const corsOrigins = [
+  ...new Set(
+    [...explicitCorsOrigins, ...(clientUrlNorm ? [clientUrlNorm] : [])].filter(
+      Boolean
+    )
+  )
+];
 
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true);
 
-    if (corsOrigins.indexOf(origin) !== -1) {
+    const originNorm = normalizeCorsOrigin(origin);
+    if (corsOrigins.includes(originNorm)) {
       callback(null, true);
     } else {
       if (process.env.NODE_ENV === 'production') {
-        logger.warn('CORS blocked origin', { origin });
+        logger.warn('CORS blocked origin', { origin, allowed: corsOrigins });
         callback(new Error('Not allowed by CORS'));
       } else {
         logger.debug('CORS origin not in whitelist (allowed in dev)', { origin });
@@ -196,16 +214,25 @@ app.post('/health/email-diagnostic', async (req, res) => {
 
     const payload = {
       smtpConfigured: emailService.isConfigured(),
+      resendConfigured: !!process.env.RESEND_API_KEY,
+      smtpOnlyConfigured: emailService.isSmtpConfigured(),
       clientUrl: process.env.CLIENT_URL || null,
       smtpVerifyOk: null,
       smtpVerifyError: null,
       user: null
     };
 
-    if (payload.smtpConfigured) {
+    if (process.env.RESEND_API_KEY) {
+      payload.smtpVerifyNote =
+        'Using Resend API over HTTPS (no SMTP verify on this path).';
+      payload.smtpVerifyOk = true;
+    } else if (emailService.isSmtpConfigured()) {
       try {
-        await emailService.getTransporter().verify();
-        payload.smtpVerifyOk = true;
+        const tx = emailService.getTransporter();
+        if (tx) {
+          await tx.verify();
+          payload.smtpVerifyOk = true;
+        }
       } catch (e) {
         payload.smtpVerifyOk = false;
         payload.smtpVerifyError =
