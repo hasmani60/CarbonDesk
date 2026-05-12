@@ -4,6 +4,11 @@ const { CompanyOperator, Organisation, OrganisationSettings, User, ActivityLog }
 const bcrypt = require('bcryptjs');
 const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
+const {
+  resolveMaxUsersForTier,
+  resolveMaxStorageGbForTier,
+  defaultSubscriptionExpiresAt
+} = require('../utils/organisationLimits');
 
 const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(12);
@@ -182,6 +187,10 @@ const createOrganisation = async (req, res) => {
     // Generate unique org ID
     const orgId = `org_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    const tier = subscription_tier || 'standard';
+    const resolvedMaxUsers = resolveMaxUsersForTier(tier, max_users);
+    const resolvedStorageGb = resolveMaxStorageGbForTier(tier, max_storage_gb);
+
     // FIXED: Set both _id and id to the same value
     const organisation = await Organisation.create({
       _id: orgId,  // CRITICAL: Must set _id for custom string ID
@@ -194,16 +203,18 @@ const createOrganisation = async (req, res) => {
       contact_phone,
       address,
       website,
-      subscription_tier: subscription_tier || 'standard',
-      max_users: max_users || 50,
-      max_storage_gb: max_storage_gb || 10,
+      subscription_tier: tier,
+      max_users: resolvedMaxUsers,
+      max_storage_gb: resolvedStorageGb,
       registered_name: registered_name || name,
       cin_number,
       registered_address,
       gst_number,
       current_employees: parseInt(current_employees),
       created_by: req.companyOperator.email,
-      notes: notes || `Created by ${req.companyOperator.name}`
+      notes: notes || `Created by ${req.companyOperator.name}`,
+      subscription_expires_at: defaultSubscriptionExpiresAt(),
+      subscription_renewal_reminder_sent_at: null
     });
 
     await OrganisationSettings.create({
@@ -226,6 +237,21 @@ const createOrganisation = async (req, res) => {
       { $set: { bootstrap_admin_user_id: superAdmin._id.toString() } }
     );
 
+    let welcomeEmailSent = false;
+    try {
+      const welcome = await emailService.sendSuperAdminWelcomeEmail(
+        organisation,
+        { name: super_admin_name, email: superAdmin.email },
+        super_admin_password
+      );
+      welcomeEmailSent = welcome.sent === true;
+      if (!welcomeEmailSent) {
+        logger.warn('Super admin welcome email not sent', { reason: welcome.reason, orgId });
+      }
+    } catch (welcomeErr) {
+      logger.warn('Super admin welcome email error', welcomeErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Organisation and Super Admin created successfully',
@@ -233,13 +259,16 @@ const createOrganisation = async (req, res) => {
         organisation: {
           id: organisation.id,
           name: organisation.name,
-          display_name: organisation.display_name
+          display_name: organisation.display_name,
+          max_users: organisation.max_users,
+          subscription_expires_at: organisation.subscription_expires_at
         },
         super_admin: {
           id: superAdmin._id.toString(),
           name: superAdmin.name,
           email: superAdmin.email
-        }
+        },
+        welcomeEmailSent
       }
     });
 
@@ -353,16 +382,191 @@ const deactivateOrganisation = async (req, res) => {
 const getOrganisationStats = async (req, res) => {
   try {
     const orgId = req.params.id;
+    const org = await Organisation.findOne({ id: orgId }).select(
+      'max_users subscription_tier subscription_expires_at'
+    );
     const totalUsers = await User.countDocuments({ organisation_id: orgId });
-    res.json({ success: true, data: { stats: { totalUsers } } });
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalUsers,
+          max_users: org?.max_users ?? null,
+          subscription_tier: org?.subscription_tier ?? null,
+          subscription_expires_at: org?.subscription_expires_at ?? null
+        }
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Set a new password for the organisation bootstrap super admin (company operations)
-// @route   PATCH /api/company/organisations/:id/super-admin-password
-// @access  Private (company operators with can_manage_orgs)
+const listOrganisationUsers = async (req, res) => {
+  try {
+    const orgId = req.params.id;
+    const org = await Organisation.findOne({ id: orgId }).select(
+      'max_users bootstrap_admin_user_id'
+    );
+    if (!org) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+    const users = await User.find({ organisation_id: orgId })
+      .select('-password')
+      .sort({ created_at: 1 })
+      .lean();
+    res.json({
+      success: true,
+      data: users.map((u) => ({
+        ...u,
+        id: u._id.toString(),
+        is_bootstrap_admin:
+          org.bootstrap_admin_user_id &&
+          u._id.toString() === org.bootstrap_admin_user_id
+      })),
+      meta: {
+        max_users: org.max_users,
+        user_count: users.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const updateOrganisationUser = async (req, res) => {
+  try {
+    const orgId = req.params.id;
+    const { userId } = req.params;
+    const org = await Organisation.findOne({ id: orgId });
+    if (!org) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || String(user.organisation_id) !== String(orgId)) {
+      return res.status(404).json({ success: false, message: 'User not found in this organisation' });
+    }
+
+    const { name, email, role, status } = req.body;
+    const validRoles = ['admin', 'analyst', 'contributor', 'viewer'];
+
+    if (email !== undefined && email !== user.email) {
+      const next = String(email).toLowerCase().trim();
+      const taken = await User.findOne({ email: next, _id: { $ne: user._id } });
+      if (taken) {
+        return res.status(400).json({
+          success: false,
+          message: 'That email address is already in use'
+        });
+      }
+      user.email = next;
+    }
+    if (name !== undefined) user.name = String(name).trim();
+    if (role !== undefined) {
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role. Must be one of: ${validRoles.join(', ')}`
+        });
+      }
+      user.role = role;
+    }
+    if (status !== undefined) {
+      if (!['active', 'inactive'].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Status must be active or inactive'
+        });
+      }
+      user.status = status;
+    }
+
+    await user.save();
+    const out = user.toObject();
+    delete out.password;
+
+    res.json({
+      success: true,
+      message: 'User updated',
+      data: { ...out, id: user._id.toString() }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const deleteOrganisationUser = async (req, res) => {
+  try {
+    const orgId = req.params.id;
+    const { userId } = req.params;
+    const org = await Organisation.findOne({ id: orgId }).lean();
+    if (!org) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+    if (org.bootstrap_admin_user_id && userId === org.bootstrap_admin_user_id) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Cannot delete the organisation super admin account. Change the super admin first or deactivate the organisation.'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || String(user.organisation_id) !== String(orgId)) {
+      return res.status(404).json({ success: false, message: 'User not found in this organisation' });
+    }
+
+    await User.findByIdAndDelete(userId);
+    res.json({ success: true, message: 'User deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const setOrganisationUserPassword = async (req, res) => {
+  try {
+    const orgId = req.params.id;
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'newPassword is required and must be at least 6 characters'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || String(user.organisation_id) !== String(orgId)) {
+      return res.status(404).json({ success: false, message: 'User not found in this organisation' });
+    }
+
+    user.password = await hashPassword(newPassword);
+    user.password_reset_token = null;
+    user.password_reset_expires = null;
+    await user.save();
+
+    let mail = { sent: false };
+    try {
+      mail = await emailService.sendPasswordChangedConfirmation(
+        { name: user.name, email: user.email },
+        { ip: req.ip, via: 'company_portal' }
+      );
+    } catch (emailErr) {
+      logger.warn('Company-set password confirmation email error', emailErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Password updated',
+      data: { emailConfirmationSent: mail.sent === true }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const resetSuperAdminPassword = async (req, res) => {
   try {
     const { newPassword } = req.body;
@@ -462,6 +666,10 @@ module.exports = {
   updateOrganisation,
   deactivateOrganisation,
   getOrganisationStats,
+  listOrganisationUsers,
+  updateOrganisationUser,
+  deleteOrganisationUser,
+  setOrganisationUserPassword,
   resetSuperAdminPassword,
   getCompanyProfile,
   getCompanyDashboard

@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { User, ActivityLog } = require('../models');
 const logger = require('../utils/logger');
 const emailService = require('../utils/emailService');
+const { assertOrganisationUserCapacity } = require('../utils/orgUserCapacity');
 
 const hashVerifyToken = (raw) =>
   crypto.createHash('sha256').update(String(raw), 'utf8').digest('hex');
@@ -86,6 +87,17 @@ const register = async (req, res) => {
         success: false,
         message: 'User with this email already exists'
       });
+    }
+
+    if (req.organisationId) {
+      try {
+        await assertOrganisationUserCapacity(req.organisationId);
+      } catch (capErr) {
+        return res.status(capErr.statusCode || 400).json({
+          success: false,
+          message: capErr.message
+        });
+      }
     }
 
     const hashedPassword = await hashPassword(password);
@@ -561,16 +573,24 @@ const forgotPassword = async (req, res) => {
       return res.json(generic);
     }
 
-    const expireMs =
-      parseInt(process.env.PASSWORD_RESET_EXPIRE_MS || '', 10) ||
-      60 * 60 * 1000;
+    const expireMs = (() => {
+      const mins = parseInt(String(process.env.PASSWORD_RESET_EXPIRE_MINUTES || ''), 10);
+      if (Number.isFinite(mins) && mins > 0) {
+        return mins * 60 * 1000;
+      }
+      const ms = parseInt(String(process.env.PASSWORD_RESET_EXPIRE_MS || ''), 10);
+      if (Number.isFinite(ms) && ms > 0) {
+        return ms;
+      }
+      return 60 * 60 * 1000;
+    })();
     const raw = crypto.randomBytes(32).toString('hex');
     user.password_reset_token = hashVerifyToken(raw);
     user.password_reset_expires = new Date(Date.now() + expireMs);
     user.updated_at = new Date();
     await user.save();
 
-    const sent = await emailService.sendPasswordResetEmail(user, raw);
+    const sent = await emailService.sendPasswordResetEmail(user, raw, expireMs);
     if (!sent.sent) {
       logger.error(
         'Password reset: email NOT sent (check Render/env SMTP_* and SMTP logs)',

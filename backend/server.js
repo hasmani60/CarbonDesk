@@ -326,6 +326,33 @@ companyOrgRouter.patch('/:id/super-admin-password',
   companyController.resetSuperAdminPassword
 );
 
+companyOrgRouter.get('/:id/users',
+  canManageOrganisations,
+  companyController.listOrganisationUsers
+);
+
+companyOrgRouter.patch('/:id/users/:userId',
+  canManageOrganisations,
+  logCompanyActivity('org_user_update', 'Update organisation user'),
+  companyController.updateOrganisationUser
+);
+
+companyOrgRouter.delete('/:id/users/:userId',
+  canManageOrganisations,
+  logCompanyActivity('org_user_delete', 'Delete organisation user'),
+  companyController.deleteOrganisationUser
+);
+
+companyOrgRouter.patch('/:id/users/:userId/password',
+  canManageOrganisations,
+  logCompanyActivity('org_user_password', 'Set organisation user password'),
+  companyController.setOrganisationUserPassword
+);
+
+companyOrgRouter.get('/:id/stats',
+  companyController.getOrganisationStats
+);
+
 companyOrgRouter.get('/:id', 
   companyController.getOrganisationById
 );
@@ -340,10 +367,6 @@ companyOrgRouter.delete('/:id',
   canManageOrganisations, 
   logCompanyActivity('org_deactivate', 'Deactivating organisation'), 
   companyController.deactivateOrganisation
-);
-
-companyOrgRouter.get('/:id/stats', 
-  companyController.getOrganisationStats
 );
 
 app.use('/api/company/organisations',
@@ -364,7 +387,11 @@ app.get('/api/company/test', (req, res) => {
       'POST /api/company/organisations',
       'GET /api/company/organisations',
       'GET /api/company/organisations/:id',
-      'PATCH /api/company/organisations/:id/super-admin-password'
+      'PATCH /api/company/organisations/:id/super-admin-password',
+      'GET /api/company/organisations/:id/users',
+      'PATCH /api/company/organisations/:id/users/:userId',
+      'DELETE /api/company/organisations/:id/users/:userId',
+      'PATCH /api/company/organisations/:id/users/:userId/password'
     ]
   });
 });
@@ -1264,6 +1291,19 @@ const startServer = async () => {
         }
       });
     });
+
+    const { sendSubscriptionRenewalReminders } = require('./utils/subscriptionRenewalReminders');
+    const reminderIntervalMs = parseInt(
+      process.env.SUBSCRIPTION_REMINDER_JOB_INTERVAL_MS || '21600000',
+      10
+    );
+    const runReminders = () => {
+      sendSubscriptionRenewalReminders().catch((err) =>
+        logger.error('Subscription renewal reminder job', err)
+      );
+    };
+    setInterval(runReminders, reminderIntervalMs);
+    setTimeout(runReminders, 25000);
 
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {

@@ -6,7 +6,9 @@ import {
   Bell,
   Globe,
   Palette,
-  Save
+  Save,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../../components/PageHeader/PageHeader';
@@ -31,6 +33,9 @@ const Settings = () => {
     newPassword: '',
     confirmPassword: ''
   });
+  const [showCurPwd, setShowCurPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfPwd, setShowConfPwd] = useState(false);
 
   const [notificationPrefs, setNotificationPrefs] = useState({
     emailNotifications: true,
@@ -302,60 +307,90 @@ const Settings = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Current password
                 </label>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={passwordData.currentPassword}
-                  onChange={(e) =>
-                    setPasswordData((prev) => ({
-                      ...prev,
-                      currentPassword: e.target.value
-                    }))
-                  }
-                  placeholder="Enter your current password"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  required
-                />
+                <div className="relative max-w-xl">
+                  <input
+                    type={showCurPwd ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={passwordData.currentPassword}
+                    onChange={(e) =>
+                      setPasswordData((prev) => ({
+                        ...prev,
+                        currentPassword: e.target.value
+                      }))
+                    }
+                    placeholder="Enter your current password"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-500 hover:text-gray-700"
+                    onClick={() => setShowCurPwd((v) => !v)}
+                    aria-label={showCurPwd ? 'Hide password' : 'Show password'}
+                  >
+                    {showCurPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     New password
                   </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={passwordData.newPassword}
-                    onChange={(e) =>
-                      setPasswordData((prev) => ({
-                        ...prev,
-                        newPassword: e.target.value
-                      }))
-                    }
-                    placeholder="At least 6 characters"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    required
-                    minLength={6}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPwd ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={passwordData.newPassword}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          newPassword: e.target.value
+                        }))
+                      }
+                      placeholder="At least 6 characters"
+                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-500 hover:text-gray-700"
+                      onClick={() => setShowNewPwd((v) => !v)}
+                      aria-label={showNewPwd ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Confirm new password
                   </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={passwordData.confirmPassword}
-                    onChange={(e) =>
-                      setPasswordData((prev) => ({
-                        ...prev,
-                        confirmPassword: e.target.value
-                      }))
-                    }
-                    placeholder="Repeat new password"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfPwd ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) =>
+                        setPasswordData((prev) => ({
+                          ...prev,
+                          confirmPassword: e.target.value
+                        }))
+                      }
+                      placeholder="Repeat new password"
+                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-500 hover:text-gray-700"
+                      onClick={() => setShowConfPwd((v) => !v)}
+                      aria-label={showConfPwd ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
               <button

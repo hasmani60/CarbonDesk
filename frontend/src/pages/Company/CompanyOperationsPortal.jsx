@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Eye, EyeOff } from 'lucide-react';
 
 const CompanyOperationsPortal = () => {
   const navigate = useNavigate();
@@ -62,6 +63,28 @@ const CompanyOperationsPortal = () => {
   const [resettingSuperAdminPwd, setResettingSuperAdminPwd] = useState(false);
   const [superAdminPwdErr, setSuperAdminPwdErr] = useState('');
   const [superAdminPwdMsg, setSuperAdminPwdMsg] = useState('');
+
+  const [orgUsers, setOrgUsers] = useState([]);
+  const [orgUsersLoading, setOrgUsersLoading] = useState(false);
+  const [showLoginPwd, setShowLoginPwd] = useState(false);
+  const [showCreateSuperPwd, setShowCreateSuperPwd] = useState(false);
+  const [showSAMNew, setShowSAMNew] = useState(false);
+  const [showSAMConf, setShowSAMConf] = useState(false);
+  const [companyEditUser, setCompanyEditUser] = useState(null);
+  const [companyEditForm, setCompanyEditForm] = useState({
+    name: '',
+    email: '',
+    role: 'contributor',
+    status: 'active'
+  });
+  const [companyEditSaving, setCompanyEditSaving] = useState(false);
+  const [companyPwdUser, setCompanyPwdUser] = useState(null);
+  const [companyPwdNew, setCompanyPwdNew] = useState('');
+  const [companyPwdConfirm, setCompanyPwdConfirm] = useState('');
+  const [companyPwdErr, setCompanyPwdErr] = useState('');
+  const [companyPwdSaving, setCompanyPwdSaving] = useState(false);
+  const [showCompanyPwdNew, setShowCompanyPwdNew] = useState(false);
+  const [showCompanyPwdConf, setShowCompanyPwdConf] = useState(false);
 
   // Note: VITE_API_URL should be 'http://localhost:5001' NOT 'http://localhost:5001/api'
   // The /api prefix is added in the routes below
@@ -226,7 +249,12 @@ const CompanyOperationsPortal = () => {
       );
 
       if (response.data.success) {
-        alert('Organisation created successfully!');
+        const welcome = response.data.data?.welcomeEmailSent;
+        alert(
+          welcome
+            ? 'Organisation created successfully! A welcome email was sent to the super admin (check spam if needed).'
+            : 'Organisation created successfully! If email is configured, the super admin will receive a welcome message.'
+        );
         setShowCreateModal(false);
         resetCreateForm();
         
@@ -274,6 +302,8 @@ const CompanyOperationsPortal = () => {
   };
 
   const loadOrganisationDetails = async (orgId) => {
+    setOrgUsersLoading(true);
+    setOrgUsers([]);
     try {
       const [detailsResponse, statsResponse] = await Promise.all([
         axios.get(
@@ -289,15 +319,43 @@ const CompanyOperationsPortal = () => {
       if (detailsResponse.data.success) {
         setSelectedOrg(detailsResponse.data.data);
       }
-      
+
       if (statsResponse.data.success) {
         setOrgStats(statsResponse.data.data.stats);
       }
-      
+
+      let canManage = false;
+      try {
+        const raw = localStorage.getItem('company_operator');
+        if (raw) {
+          const op = JSON.parse(raw);
+          canManage = !!op?.permissions?.canManageOrgs;
+        }
+      } catch {
+        canManage = false;
+      }
+
+      if (canManage) {
+        try {
+          const usersRes = await axios.get(
+            `${API_BASE_URL}/api/company/organisations/${orgId}/users`,
+            { headers: getAuthHeaders() }
+          );
+          if (usersRes.data.success) {
+            setOrgUsers(usersRes.data.data || []);
+          }
+        } catch (usersErr) {
+          console.error('Failed to load org users:', usersErr);
+          setOrgUsers([]);
+        }
+      }
+
       setShowOrgDetail(true);
     } catch (error) {
       console.error('Failed to load organisation details:', error);
       alert('Failed to load organisation details');
+    } finally {
+      setOrgUsersLoading(false);
     }
   };
 
@@ -348,6 +406,88 @@ const CompanyOperationsPortal = () => {
       );
     } finally {
       setResettingSuperAdminPwd(false);
+    }
+  };
+
+  const openCompanyEditUser = (user) => {
+    setCompanyEditUser(user);
+    setCompanyEditForm({
+      name: user.name || '',
+      email: user.email || '',
+      role: user.role || 'contributor',
+      status: user.status || 'active'
+    });
+  };
+
+  const handleSaveCompanyUserEdit = async (e) => {
+    e.preventDefault();
+    if (!selectedOrg || !companyEditUser) return;
+    setCompanyEditSaving(true);
+    try {
+      const uid = companyEditUser.id || companyEditUser._id;
+      await axios.patch(
+        `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}/users/${uid}`,
+        {
+          name: companyEditForm.name,
+          email: companyEditForm.email,
+          role: companyEditForm.role,
+          status: companyEditForm.status
+        },
+        { headers: getAuthHeaders() }
+      );
+      setCompanyEditUser(null);
+      await loadOrganisationDetails(selectedOrg.id);
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update user');
+    } finally {
+      setCompanyEditSaving(false);
+    }
+  };
+
+  const handleDeleteCompanyUser = async (user) => {
+    if (!selectedOrg) return;
+    if (!window.confirm(`Delete user ${user.email}? This cannot be undone.`)) return;
+    const uid = user.id || user._id;
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}/users/${uid}`,
+        { headers: getAuthHeaders() }
+      );
+      await loadOrganisationDetails(selectedOrg.id);
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to delete user');
+    }
+  };
+
+  const handleSaveCompanyUserPassword = async (e) => {
+    e.preventDefault();
+    setCompanyPwdErr('');
+    if (!selectedOrg || !companyPwdUser) return;
+    if (companyPwdNew !== companyPwdConfirm) {
+      setCompanyPwdErr('Passwords do not match');
+      return;
+    }
+    if (!companyPwdNew || companyPwdNew.length < 6) {
+      setCompanyPwdErr('Password must be at least 6 characters');
+      return;
+    }
+    setCompanyPwdSaving(true);
+    try {
+      const uid = companyPwdUser.id || companyPwdUser._id;
+      await axios.patch(
+        `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}/users/${uid}/password`,
+        { newPassword: companyPwdNew },
+        { headers: getAuthHeaders() }
+      );
+      setCompanyPwdUser(null);
+      setCompanyPwdNew('');
+      setCompanyPwdConfirm('');
+      await loadOrganisationDetails(selectedOrg.id);
+      alert('Password updated.');
+    } catch (error) {
+      setCompanyPwdErr(error.response?.data?.message || 'Failed to update password');
+    } finally {
+      setCompanyPwdSaving(false);
     }
   };
 
@@ -420,13 +560,23 @@ const CompanyOperationsPortal = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password
               </label>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showLoginPwd ? 'text' : 'password'}
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  className="w-full px-4 py-3 pr-11 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPwd((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 p-1"
+                  aria-label={showLoginPwd ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
 
             <button
@@ -1032,13 +1182,23 @@ const CompanyOperationsPortal = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Super Admin Password *
                     </label>
-                    <input
-                      type="password"
-                      value={createFormData.super_admin_password}
-                      onChange={(e) => setCreateFormData({ ...createFormData, super_admin_password: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showCreateSuperPwd ? 'text' : 'password'}
+                        value={createFormData.super_admin_password}
+                        onChange={(e) => setCreateFormData({ ...createFormData, super_admin_password: e.target.value })}
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateSuperPwd((v) => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 p-1"
+                        aria-label={showCreateSuperPwd ? 'Hide password' : 'Show password'}
+                      >
+                        {showCreateSuperPwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1092,6 +1252,9 @@ const CompanyOperationsPortal = () => {
                   setShowOrgDetail(false);
                   setSelectedOrg(null);
                   setOrgStats(null);
+                  setOrgUsers([]);
+                  setCompanyEditUser(null);
+                  setCompanyPwdUser(null);
                   resetSuperAdminPwdForm();
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -1135,6 +1298,22 @@ const CompanyOperationsPortal = () => {
                   <label className="block text-sm font-medium text-gray-700">Contact Phone</label>
                   <p className="mt-1 text-sm text-gray-900">{selectedOrg.contact_phone || 'N/A'}</p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Subscription tier</label>
+                  <p className="mt-1 text-sm text-gray-900 capitalize">{selectedOrg.subscription_tier || '—'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">User seats (max)</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.max_users ?? '—'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Subscription ends</label>
+                  <p className="mt-1 text-sm text-gray-900">
+                    {selectedOrg.subscription_expires_at
+                      ? new Date(selectedOrg.subscription_expires_at).toLocaleDateString()
+                      : '—'}
+                  </p>
+                </div>
               </div>
 
               {/* Stats */}
@@ -1144,9 +1323,82 @@ const CompanyOperationsPortal = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="text-sm text-gray-500">Total Users</p>
-                      <p className="text-2xl font-bold text-gray-900">{orgStats.totalUsers || 0}</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {orgStats.totalUsers || 0}
+                        {orgStats.max_users != null ? (
+                          <span className="text-lg font-normal text-gray-500">
+                            {' '}/ {orgStats.max_users}
+                          </span>
+                        ) : null}
+                      </p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Organisation users (company operators) */}
+              {operator?.permissions?.canManageOrgs && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">Organisation users</h4>
+                  {orgUsersLoading ? (
+                    <p className="text-sm text-gray-500">Loading users…</p>
+                  ) : orgUsers.length === 0 ? (
+                    <p className="text-sm text-gray-500">No users found.</p>
+                  ) : (
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50 text-left">
+                          <tr>
+                            <th className="px-3 py-2 font-medium text-gray-700">Name</th>
+                            <th className="px-3 py-2 font-medium text-gray-700">Email</th>
+                            <th className="px-3 py-2 font-medium text-gray-700">Role</th>
+                            <th className="px-3 py-2 font-medium text-gray-700">Status</th>
+                            <th className="px-3 py-2 font-medium text-gray-700 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orgUsers.map((u) => (
+                            <tr key={u._id || u.id} className="border-t border-gray-100">
+                              <td className="px-3 py-2">{u.name}</td>
+                              <td className="px-3 py-2">{u.email}</td>
+                              <td className="px-3 py-2 capitalize">{u.role}</td>
+                              <td className="px-3 py-2 capitalize">{u.status}</td>
+                              <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => openCompanyEditUser(u)}
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCompanyPwdUser(u);
+                                    setCompanyPwdNew('');
+                                    setCompanyPwdConfirm('');
+                                    setCompanyPwdErr('');
+                                  }}
+                                  className="text-gray-800 hover:underline"
+                                >
+                                  Set password
+                                </button>
+                                {!u.is_bootstrap_admin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCompanyUser(u)}
+                                    className="text-red-600 hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1166,26 +1418,46 @@ const CompanyOperationsPortal = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         New password
                       </label>
-                      <input
-                        type="password"
-                        autoComplete="new-password"
-                        value={superAdminNewPassword}
-                        onChange={(e) => setSuperAdminNewPassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="At least 6 characters"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showSAMNew ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          value={superAdminNewPassword}
+                          onChange={(e) => setSuperAdminNewPassword(e.target.value)}
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="At least 6 characters"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSAMNew((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 p-1"
+                          aria-label={showSAMNew ? 'Hide password' : 'Show password'}
+                        >
+                          {showSAMNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Confirm new password
                       </label>
-                      <input
-                        type="password"
-                        autoComplete="new-password"
-                        value={superAdminConfirmPassword}
-                        onChange={(e) => setSuperAdminConfirmPassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showSAMConf ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          value={superAdminConfirmPassword}
+                          onChange={(e) => setSuperAdminConfirmPassword(e.target.value)}
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSAMConf((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 p-1"
+                          aria-label={showSAMConf ? 'Hide password' : 'Show password'}
+                        >
+                          {showSAMConf ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
                     {superAdminPwdErr && (
                       <p className="text-sm text-red-600">{superAdminPwdErr}</p>
@@ -1218,6 +1490,156 @@ const CompanyOperationsPortal = () => {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {companyEditUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h4 className="text-lg font-semibold text-gray-900 mb-4">Edit user</h4>
+            <form onSubmit={handleSaveCompanyUserEdit} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={companyEditForm.name}
+                  onChange={(e) =>
+                    setCompanyEditForm({ ...companyEditForm, name: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={companyEditForm.email}
+                  onChange={(e) =>
+                    setCompanyEditForm({ ...companyEditForm, email: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={companyEditForm.role}
+                  onChange={(e) =>
+                    setCompanyEditForm({ ...companyEditForm, role: e.target.value })
+                  }
+                >
+                  <option value="admin">admin</option>
+                  <option value="analyst">analyst</option>
+                  <option value="contributor">contributor</option>
+                  <option value="viewer">viewer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={companyEditForm.status}
+                  onChange={(e) =>
+                    setCompanyEditForm({ ...companyEditForm, status: e.target.value })
+                  }
+                >
+                  <option value="active">active</option>
+                  <option value="inactive">inactive</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCompanyEditUser(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={companyEditSaving}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-400"
+                >
+                  {companyEditSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {companyPwdUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h4 className="text-lg font-semibold text-gray-900 mb-1">Set password</h4>
+            <p className="text-sm text-gray-600 mb-4">{companyPwdUser.email}</p>
+            <form onSubmit={handleSaveCompanyUserPassword} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
+                <div className="relative">
+                  <input
+                    type={showCompanyPwdNew ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg"
+                    value={companyPwdNew}
+                    onChange={(e) => setCompanyPwdNew(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 p-1"
+                    onClick={() => setShowCompanyPwdNew((v) => !v)}
+                    aria-label="Toggle visibility"
+                  >
+                    {showCompanyPwdNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm password</label>
+                <div className="relative">
+                  <input
+                    type={showCompanyPwdConf ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg"
+                    value={companyPwdConfirm}
+                    onChange={(e) => setCompanyPwdConfirm(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 p-1"
+                    onClick={() => setShowCompanyPwdConf((v) => !v)}
+                    aria-label="Toggle visibility"
+                  >
+                    {showCompanyPwdConf ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              {companyPwdErr && <p className="text-sm text-red-600">{companyPwdErr}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompanyPwdUser(null);
+                    setCompanyPwdNew('');
+                    setCompanyPwdConfirm('');
+                    setCompanyPwdErr('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={companyPwdSaving}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-400"
+                >
+                  {companyPwdSaving ? 'Saving…' : 'Update password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

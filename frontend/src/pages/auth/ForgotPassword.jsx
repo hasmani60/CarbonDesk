@@ -60,7 +60,8 @@ const ForgotPassword = () => {
             Forgot password
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Enter your account email and we&apos;ll send you a link to choose a new password.
+            Enter your account email and we&apos;ll send you a link to choose a new password. The link
+            only works for a limited time (see your email for the exact expiry).
           </p>
         </div>
 

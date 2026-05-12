@@ -1,6 +1,7 @@
 // controllers/userController.js - Fixed to use req.user.organisation_id
 const { User, ActivityLog } = require('../models');
 const bcrypt = require('bcryptjs');
+const { assertOrganisationUserCapacity } = require('../utils/orgUserCapacity');
 
 const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(12);
@@ -195,6 +196,17 @@ const createUser = async (req, res) => {
 
     const hashedPassword = await hashPassword(password);
     const organisationId = getOrganisationId(req);
+
+    if (organisationId) {
+      try {
+        await assertOrganisationUserCapacity(organisationId);
+      } catch (capErr) {
+        return res.status(capErr.statusCode || 400).json({
+          success: false,
+          message: capErr.message
+        });
+      }
+    }
 
     const newUser = await User.create({
       name: name.trim(),

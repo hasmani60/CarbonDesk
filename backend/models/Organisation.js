@@ -71,6 +71,17 @@ const organisationSchema = new mongoose.Schema({
     type: String,
     default: null,
     index: true
+  },
+  /** When the paid subscription period ends (used for renewal reminders). */
+  subscription_expires_at: {
+    type: Date,
+    default: null,
+    index: true
+  },
+  /** Set when the "60 days to expiry" (or SUBSCRIPTION_RENEWAL_REMINDER_DAYS) email was sent. */
+  subscription_renewal_reminder_sent_at: {
+    type: Date,
+    default: null
   }
 }, {
   _id: false,  // Disable auto _id generation

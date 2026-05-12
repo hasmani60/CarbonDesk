@@ -10,6 +10,74 @@ function fromDisplay() {
   return `"${name}" <${fromAddress()}>`;
 }
 
+/** Strip curly/smart quotes and outer ASCII quotes. */
+function stripSmartQuotes(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s
+    .replace(/[\u201c\u201d\u2018\u2019]/g, '"')
+    .replace(/^["']+|["']+$/g, '')
+    .trim();
+}
+
+/** One line, no CR/LF (breaks Resend `from` validation). */
+function oneLine(s) {
+  return String(s || '')
+    .replace(/\r?\n|\r/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extract a bare email from env (handles accidental "Name <x@y>" in FROM_EMAIL).
+ */
+function cleanEnvEmail(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = oneLine(stripSmartQuotes(raw));
+  const inAngles = s.match(/<([^<>\s]+@[^<>\s]+)>/);
+  if (inAngles) return inAngles[1].trim().toLowerCase();
+  const m = s.match(/([^\s<>"']+@[^\s<>"']+\.[^\s<>"']+)/);
+  return m ? m[1].trim().toLowerCase() : '';
+}
+
+const SIMPLE_EMAIL_RE = /^[^\s<>]+@[^\s<>]+\.[^\s<>]+$/;
+
+/**
+ * Resend expects `email@domain.com` or `Display Name <email@domain.com>` (no RFC quoted-string quirks).
+ */
+function buildResendFromHeader() {
+  const raw = process.env.RESEND_FROM;
+  if (raw && String(raw).trim()) {
+    let s = oneLine(String(raw).trim());
+    if (SIMPLE_EMAIL_RE.test(s)) return s.toLowerCase();
+
+    const lastLt = s.lastIndexOf('<');
+    const lastGt = s.lastIndexOf('>');
+    if (lastLt !== -1 && lastGt > lastLt) {
+      const email = cleanEnvEmail(s.slice(lastLt + 1, lastGt));
+      let display = s.slice(0, lastLt).trim();
+      display = stripSmartQuotes(display).replace(/^["']+|["']+$/g, '');
+      display = oneLine(display).replace(/[<>]/g, '').trim() || 'Notifications';
+      if (SIMPLE_EMAIL_RE.test(email)) return `${display} <${email}>`;
+    }
+
+    s = oneLine(stripSmartQuotes(s));
+    if (SIMPLE_EMAIL_RE.test(s)) return s.toLowerCase();
+    const fallbackEmail = cleanEnvEmail(s);
+    if (SIMPLE_EMAIL_RE.test(fallbackEmail)) return fallbackEmail;
+  }
+
+  const email = cleanEnvEmail(
+    process.env.FROM_EMAIL || process.env.SMTP_USER || ''
+  );
+  if (!email || !SIMPLE_EMAIL_RE.test(email)) {
+    return null;
+  }
+  const display = oneLine(
+    stripSmartQuotes(process.env.FROM_NAME || 'Carbon Accounting')
+  ).replace(/[<>]/g, '') || 'Carbon Accounting';
+  return `${display} <${email}>`;
+}
+
 class EmailService {
   constructor() {
     this._transporter = null;
@@ -30,8 +98,17 @@ class EmailService {
 
   async sendViaResend({ to, subject, html, text }) {
     const key = process.env.RESEND_API_KEY;
-    const from =
-      process.env.RESEND_FROM?.trim() || fromDisplay();
+    const from = buildResendFromHeader();
+    if (!from) {
+      logger.error(
+        'Resend: invalid or missing From address. Set RESEND_FROM to e.g. NatureMark <noreply@naturemarksystems.com> or a plain email, and ensure FROM_EMAIL is a valid address on your verified domain.'
+      );
+      return {
+        sent: false,
+        reason:
+          'Invalid Resend "from": set RESEND_FROM (e.g. NatureMark <noreply@yourdomain.com>) or FROM_EMAIL to a single valid email on your verified domain.'
+      };
+    }
 
     const toList = Array.isArray(to)
       ? to.map((x) => String(x).trim()).filter(Boolean)
@@ -59,7 +136,18 @@ class EmailService {
           typeof data.message === 'string' &&
           data.message) ||
         `${res.status} ${res.statusText}`;
-      logger.error('Resend API error', { status: res.status, message: msg, data });
+      let hint;
+      if (
+        res.status === 403 &&
+        /verify a domain|only send testing emails to your own email/i.test(msg)
+      ) {
+        hint =
+          'Resend “testing”: verify a domain at resend.com/domains, set RESEND_FROM to an address on that domain—then you can email any recipient.';
+      } else if (res.status === 422 && /Invalid `from`/i.test(msg)) {
+        hint =
+          'Use RESEND_FROM like: NatureMark <noreply@yourdomain.com> (no extra quotes in Render). Or plain: noreply@yourdomain.com. Avoid smart quotes / newlines.';
+      }
+      logger.error('Resend API error', { status: res.status, message: msg, hint, data });
       return { sent: false, reason: msg };
     }
     return { sent: true };
@@ -172,19 +260,23 @@ class EmailService {
     return this.sendMail({ to: user.email, subject, html, text });
   }
 
-  async sendPasswordResetEmail(user, rawToken) {
+    return this.sendMail({ to, subject, html, text });
+  }
+
+  async sendPasswordResetEmail(user, rawToken, expireMs = 60 * 60 * 1000) {
     const base =
       process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
     const link = `${base}/reset-password?token=${encodeURIComponent(rawToken)}`;
+    const dur = formatDurationMs(expireMs);
 
     const subject = 'Reset your password';
     const html = `
       <p>Hello ${escapeHtml(user.name || 'there')},</p>
       <p>We received a request to reset your password for your Carbon Accounting account.</p>
       <p><a href="${link}">Choose a new password</a></p>
-      <p style="color:#666;font-size:12px">This link expires in one hour. If you did not request this, ignore this email.</p>
+      <p style="color:#666;font-size:12px">This link expires in <strong>${escapeHtml(dur)}</strong>. If you did not request this, ignore this email.</p>
     `;
-    const text = `Reset your password: ${link}`;
+    const text = `Reset your password (link expires in ${dur}): ${link}`;
 
     return this.sendMail({ to: user.email, subject, html, text });
   }
@@ -220,6 +312,48 @@ class EmailService {
   }
 
   /**
+   * Super admin welcome after company creates an organisation (includes initial password — change ASAP).
+   */
+  async sendSuperAdminWelcomeEmail(organisation, { name, email }, plainPassword) {
+    const base =
+      process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
+    const loginUrl = `${base}/login`;
+    const forgotPasswordUrl = `${base}/forgot-password`;
+
+    const subject = `Welcome — ${escapeHtml(organisation.display_name || organisation.name)}`;
+    const html = `
+      <p>Hello ${escapeHtml(name || 'there')},</p>
+      <p>Your organisation <strong>${escapeHtml(organisation.display_name || organisation.name)}</strong> is set up on Carbon Accounting.</p>
+      <p><strong>Organisation ID:</strong> ${escapeHtml(organisation.id)}</p>
+      <p><strong>Sign-in email (login ID):</strong> ${escapeHtml(email)}</p>
+      <p><strong>Temporary password:</strong> ${escapeHtml(plainPassword)}</p>
+      <p style="color:#666;font-size:13px">For security, sign in at <a href="${loginUrl}">${escapeHtml(loginUrl)}</a>, then change your password under <strong>Settings → Security</strong>, or use <a href="${forgotPasswordUrl}">Forgot password</a> on the login page to set a new one.</p>
+      <p style="color:#666;font-size:12px">Do not share this email. If you did not expect this account, contact your company administrator.</p>
+    `;
+    const text = `Welcome to Carbon Accounting. Org: ${organisation.name} (${organisation.id}). Sign in with ${email} and the password you were given, then change it: ${loginUrl}`;
+
+    return this.sendMail({ to: email, subject, html, text });
+  }
+
+  async sendSubscriptionRenewalReminder(organisation, adminUser) {
+    const base =
+      process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
+    const exp = organisation.subscription_expires_at
+      ? new Date(organisation.subscription_expires_at).toISOString().slice(0, 10)
+      : 'soon';
+    const subject = `Subscription renewal — ${organisation.display_name || organisation.name}`;
+    const html = `
+      <p>Hello ${escapeHtml(adminUser.name || 'there')},</p>
+      <p>The subscription for <strong>${escapeHtml(organisation.display_name || organisation.name)}</strong> is scheduled to end on <strong>${escapeHtml(exp)}</strong> (within the renewal reminder window).</p>
+      <p>Please arrange renewal with your service provider so your team keeps uninterrupted access.</p>
+      <p><a href="${base}/login">Open application</a></p>
+    `;
+    const text = `Renewal reminder: ${organisation.name} subscription ends ${exp}. ${base}/login`;
+
+    return this.sendMail({ to: adminUser.email, subject, html, text });
+  }
+
+  /**
    * Optional: high-level events (verify integration in production with queue/worker).
    */
   async sendNotificationEmail(to, { subject, html, text }) {
@@ -237,6 +371,15 @@ function escapeHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function formatDurationMs(ms) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hour${h === 1 ? '' : 's'}`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? '' : 's'}`;
 }
 
 module.exports = new EmailService();

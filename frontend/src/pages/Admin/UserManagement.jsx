@@ -10,6 +10,7 @@ import {
   Crown,
   Shield,
   Eye,
+  EyeOff,
   FileText,
   BarChart3,
   RefreshCw,
@@ -1125,6 +1126,7 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
     restrictedPages: []
   });
   const [errors, setErrors] = useState({});
+  const [showCreatePwd, setShowCreatePwd] = useState(false);
   const [showRestrictions, setShowRestrictions] = useState(false);
   const [scopeSelectionMode, setScopeSelectionMode] = useState({});
   const [expandedScopes, setExpandedScopes] = useState({ 1: false, 2: false, 3: false });
@@ -1471,15 +1473,25 @@ const CreateUserModal = ({ onSubmit, onClose, loading, rbacOptions }) => {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Password *
             </label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 dark:text-gray-100 ${
-                errors.password ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-600'
-              }`}
-              placeholder="Enter password"
-            />
+            <div className="relative">
+              <input
+                type={showCreatePwd ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                className={`w-full p-3 pr-11 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white dark:bg-slate-800 dark:text-gray-100 ${
+                  errors.password ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-600'
+                }`}
+                placeholder="Enter password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCreatePwd((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                aria-label={showCreatePwd ? 'Hide password' : 'Show password'}
+              >
+                {showCreatePwd ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
             {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
           </div>
 
