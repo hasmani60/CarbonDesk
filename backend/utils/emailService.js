@@ -260,9 +260,6 @@ class EmailService {
     return this.sendMail({ to: user.email, subject, html, text });
   }
 
-    return this.sendMail({ to, subject, html, text });
-  }
-
   async sendPasswordResetEmail(user, rawToken, expireMs = 60 * 60 * 1000) {
     const base =
       process.env.CLIENT_URL?.replace(/\/$/, '') || 'http://localhost:5173';
