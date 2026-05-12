@@ -352,7 +352,7 @@ const Login = () => {
             Secure carbon accounting and emissions tracking
           </p>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-            © {new Date().getFullYear()} Sustain360. All rights reserved.
+            © {new Date().getFullYear()} CarbonDesk. All rights reserved.
           </p>
         </div>
       </div>
