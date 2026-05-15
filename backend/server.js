@@ -969,9 +969,8 @@ app.use('/api/analytics',
 );
 
 // ============================================
-// AI REPORT ROUTES (async generation via n8n)
+// AI REPORT ROUTES (async generation via n8n — JWT + org; prepare/callback require admin|analyst)
 // ============================================
-
 app.use(
   '/api/reports',
   authenticateToken,

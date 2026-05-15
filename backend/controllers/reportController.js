@@ -59,21 +59,19 @@ const generateReport = async (req, res) => {
  */
 const prepareReportData = async (req, res) => {
   try {
-    const organisationId = req.organisationId || req.body.organisationId;
+    const organisationId = req.organisationId;
     if (!organisationId) {
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
-        message: 'organisationId is required'
+        message: 'Organisation context required'
       });
     }
 
-    if (
-      req.user?.organisation_id &&
-      String(req.user.organisation_id) !== String(organisationId)
-    ) {
+    const bodyOrg = req.body?.organisationId;
+    if (bodyOrg != null && String(bodyOrg) !== String(organisationId)) {
       return res.status(403).json({
         success: false,
-        message: 'Organisation mismatch'
+        message: 'organisationId in body does not match your organisation'
       });
     }
 
@@ -113,7 +111,7 @@ const prepareReportData = async (req, res) => {
 
     if (req.body?.reportId) {
       await AIReport.findOneAndUpdate(
-        { _id: req.body.reportId, organisation_id: req.organisationId || req.body.organisationId },
+        { _id: req.body.reportId, organisation_id: organisationId },
         {
           status: 'failed',
           error: error.message,
@@ -134,10 +132,18 @@ const reportCallback = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, reportContent, error, metadata } = req.body;
-    const organisationId = req.body.organisationId;
+    const organisationId = req.organisationId;
 
     if (!organisationId) {
-      return res.status(400).json({ success: false, message: 'organisationId is required' });
+      return res.status(403).json({ success: false, message: 'Organisation context required' });
+    }
+
+    const bodyOrg = req.body?.organisationId;
+    if (bodyOrg != null && String(bodyOrg) !== String(organisationId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'organisationId in body does not match your organisation'
+      });
     }
 
     if (status && !ALLOWED_STATUS.includes(status)) {
