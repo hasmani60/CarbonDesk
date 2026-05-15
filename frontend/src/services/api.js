@@ -385,6 +385,14 @@ export const analyticsAPI = {
   }
 };
 
+// AI Reports API (async generation via n8n)
+export const reportsAPI = {
+  getFilterOptions: () => apiClient.get('/reports/filter-options'),
+  generate: (filters) => apiClient.post('/reports/generate', filters),
+  getById: (id) => apiClient.get(`/reports/${id}`),
+  list: (params) => apiClient.get('/reports', { params })
+};
+
 // Monitor API
 export const monitorAPI = {
   getActivities: (params) => apiClient.get('/activities', { params }),
@@ -531,6 +539,7 @@ export default {
   dashboardAPI,
   emissionsAPI,
   analyticsAPI,
+  reportsAPI,
   monitorAPI,
   usersAPI,
   vehiclesAPI,

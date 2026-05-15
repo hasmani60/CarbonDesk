@@ -24,6 +24,7 @@ import {
   generateMACCData
 } from '../../utils/analysisHelpers';
 import PageHeader from '../../components/PageHeader/PageHeader';
+import AIReportGenerator from '../../components/AIReportGenerator/AIReportGenerator';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -594,7 +595,9 @@ const Analytics = () => {
       </div>
 
       <div className="space-y-10">
-        
+
+        <AIReportGenerator />
+
         {/* SECTION 1: KEY METRICS */}
         <section>
           <h2 className="analytics-section-title">

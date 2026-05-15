@@ -10,6 +10,7 @@ const Task = require('./Task');
 const ActivityLog = require('./ActivityLog');
 const MACCOpportunity = require('./MACCOpportunity');
 const Notification = require('./Notification');
+const AIReport = require('./AIReport');
 
 module.exports = {
   User,
@@ -20,5 +21,6 @@ module.exports = {
   Task,
   ActivityLog,
   MACCOpportunity,
-  Notification
+  Notification,
+  AIReport
 };

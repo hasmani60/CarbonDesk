@@ -40,7 +40,7 @@ class AdvancedAnalyticsService {
   /**
    * Get historical emissions aggregated by month from MongoDB
    */
-  async getHistoricalEmissions(startDate, endDate, organisationId) {
+  async getHistoricalEmissions(startDate, endDate, organisationId, additionalMatch = {}) {
     try {
       const result = await Emission.aggregate([
         {
@@ -50,7 +50,8 @@ class AdvancedAnalyticsService {
               $gte: new Date(startDate),
               $lte: new Date(endDate)
             },
-            status: { $ne: 'rejected' }
+            status: { $ne: 'rejected' },
+            ...additionalMatch
           }
         },
         {
@@ -175,8 +176,13 @@ class AdvancedAnalyticsService {
    * Calculate emissions velocity and acceleration
    */
   async calculateEmissionsVelocity(params) {
-    const { startDate, endDate, organisationId } = params;
-    const historical = await this.getHistoricalEmissions(startDate, endDate, organisationId);
+    const { startDate, endDate, organisationId, additionalMatch = {} } = params;
+    const historical = await this.getHistoricalEmissions(
+      startDate,
+      endDate,
+      organisationId,
+      additionalMatch
+    );
     
     if (historical.length < 2) {
       return {

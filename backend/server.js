@@ -969,6 +969,18 @@ app.use('/api/analytics',
 );
 
 // ============================================
+// AI REPORT ROUTES (async generation via n8n)
+// ============================================
+
+app.use(
+  '/api/reports',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/reports')
+);
+
+// ============================================
 // TASK ROUTES
 // ============================================
 

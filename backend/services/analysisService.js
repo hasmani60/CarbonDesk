@@ -2,41 +2,7 @@
 // Advanced analytics — MongoDB (Emission collection). SQLite/localDB removed for production parity.
 
 const Emission = require('../models/Emission');
-
-function coerceDate(val) {
-  if (val == null || val === '') return null;
-  if (val instanceof Date) return val;
-  const d = new Date(val);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function buildEmissionMatch(filters) {
-  const match = {};
-
-  if (filters.organisationId) {
-    match.organisation_id = filters.organisationId;
-  }
-  const start = coerceDate(filters.startDate);
-  const end = coerceDate(filters.endDate);
-  if (start || end) {
-    match.date = {};
-    if (start) match.date.$gte = start;
-    if (end) match.date.$lte = end;
-  }
-  if (filters.department) match.department = filters.department;
-  if (filters.site) match.site = filters.site;
-  if (filters.asset) match.asset = filters.asset;
-
-  const scopeNum = filters.scope != null ? parseInt(filters.scope, 10) : NaN;
-  if (!Number.isNaN(scopeNum) && scopeNum >= 1 && scopeNum <= 3) {
-    match.scope = scopeNum;
-  }
-  if (filters.category) {
-    match.category = filters.category;
-  }
-
-  return match;
-}
+const { buildEmissionMatch } = require('../utils/emissionQueryUtils');
 
 /** Period label helpers for aggregation */
 function periodExpression(interval) {
