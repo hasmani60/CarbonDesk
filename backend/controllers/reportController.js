@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { AIReport } = require('../models');
 const reportDataService = require('../services/reportDataService');
 const logger = require('../utils/logger');
@@ -133,6 +134,13 @@ const reportCallback = async (req, res) => {
     const { id } = req.params;
     const { status, reportContent, error, metadata } = req.body;
     const organisationId = req.organisationId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid report id — check the URL uses a valid MongoDB id (and n8n expression, e.g. $json.body.reportId)'
+      });
+    }
 
     if (!organisationId) {
       return res.status(403).json({ success: false, message: 'Organisation context required' });

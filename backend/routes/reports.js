@@ -26,12 +26,14 @@ router.post(
   reportController.prepareReportData
 );
 
-router.patch(
-  '/:id/callback',
+const callbackStack = [
   reportAutomationGate,
   reportAuthors,
   reportController.reportCallback
-);
+];
+router.patch('/:id/callback', ...callbackStack);
+/** n8n HTTP Request often defaults to POST — same handler as PATCH */
+router.post('/:id/callback', ...callbackStack);
 
 router.get('/', ...orgUser, reportController.listReports);
 
