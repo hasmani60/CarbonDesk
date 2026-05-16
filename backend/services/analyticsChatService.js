@@ -13,10 +13,39 @@ RULES:
 - If the user asks about data not in the JSON, say what is missing.
 - You may explain Scope 1/2/3, trends, hotspots, velocity, and practical reduction ideas grounded in the data.`;
 
+/** Smaller JSON for chat — reduces provider 502s on free models with large context */
+function compactContextForChat(data) {
+  if (!data || typeof data !== 'object') return data;
+  const monthly = Array.isArray(data.trends?.monthly) ? data.trends.monthly : [];
+  return {
+    organisation: data.organisation,
+    filters: data.filters,
+    units: data.units,
+    summary: data.summary,
+    trends: {
+      monthly: monthly.slice(-18),
+      velocity: data.trends?.velocity ?? null,
+      scopeMigration: data.trends?.scopeMigration ?? null
+    },
+    topSources: {
+      categories: (data.topSources?.categories || []).slice(0, 12),
+      locations: (data.topSources?.locations || []).slice(0, 8),
+      paretoHotspots: (data.topSources?.paretoHotspots || []).slice(0, 8)
+    },
+    reductions: {
+      trajectoryMetrics: data.reductions?.trajectoryMetrics ?? null,
+      trajectoryBaseline: data.reductions?.trajectoryBaseline ?? null
+    },
+    dataQuality: data.dataQuality,
+    generatedAt: data.generatedAt
+  };
+}
+
 function buildContextSystemMessage(contextData) {
+  const compact = compactContextForChat(contextData);
   return {
     role: 'system',
-    content: `${CHAT_SYSTEM_PROMPT}\n\n## Analytics context (JSON)\n\`\`\`json\n${JSON.stringify(contextData, null, 2)}\n\`\`\``
+    content: `${CHAT_SYSTEM_PROMPT}\n\n## Analytics context (JSON)\n\`\`\`json\n${JSON.stringify(compact)}\n\`\`\``
   };
 }
 
@@ -41,8 +70,11 @@ async function generateAssistantReply(chat, userContent, organisationId, organis
 
   const history = (chat.messages || [])
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-20)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .slice(-8)
+    .map((m) => ({
+      role: m.role,
+      content: String(m.content || '').slice(0, 4000)
+    }));
 
   const messages = [
     buildContextSystemMessage(chat.contextData),
@@ -67,6 +99,7 @@ function suggestTitle(firstMessage) {
 
 module.exports = {
   CHAT_SYSTEM_PROMPT,
+  compactContextForChat,
   refreshContext,
   generateAssistantReply,
   suggestTitle,
