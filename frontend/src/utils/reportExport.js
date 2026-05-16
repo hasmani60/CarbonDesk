@@ -131,45 +131,88 @@ export function buildFullReportHtml({ title, periodLabel, generatedAt, markdown 
 </html>`;
 }
 
+function createHtmlBlobUrl(html) {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  return URL.createObjectURL(blob);
+}
+
 export function downloadReportHtml(options) {
   const html = buildFullReportHtml(options);
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const url = createHtmlBlobUrl(html);
   const a = document.createElement('a');
   a.href = url;
   a.download = `${(options.title || 'carbon-report').replace(/[^\w\-]+/g, '-').slice(0, 60)}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function openReportWindow(html, { autoPrint = false } = {}) {
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=960,height=800');
-  if (!win) {
-    return { ok: false, message: 'Pop-up blocked. Allow pop-ups for this site.' };
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  if (autoPrint) {
-    const triggerPrint = () => win.print();
-    if (win.document.readyState === 'complete') {
-      setTimeout(triggerPrint, 300);
-    } else {
-      win.onload = () => setTimeout(triggerPrint, 300);
-    }
-  }
-  return { ok: true };
-}
-
+/**
+ * Print via hidden iframe — no pop-up window required.
+ */
 export function printReportHtml(options) {
-  const html = buildFullReportHtml(options);
-  return openReportWindow(html, { autoPrint: true });
+  try {
+    const html = buildFullReportHtml(options);
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('title', 'Print carbon report');
+    iframe.style.cssText =
+      'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      return { ok: false, message: 'Could not open print view.' };
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const win = iframe.contentWindow;
+    const cleanup = () => {
+      if (iframe.parentNode) {
+        document.body.removeChild(iframe);
+      }
+    };
+
+    const runPrint = () => {
+      win.focus();
+      win.print();
+      win.addEventListener('afterprint', cleanup, { once: true });
+      setTimeout(cleanup, 60_000);
+    };
+
+    setTimeout(runPrint, 300);
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: 'Could not print report.' };
+  }
 }
 
+/**
+ * Open styled HTML in a new tab via blob URL (no empty pop-up).
+ */
 export function openReportHtmlPreview(options) {
-  const html = buildFullReportHtml(options);
-  return openReportWindow(html, { autoPrint: false });
+  try {
+    const html = buildFullReportHtml(options);
+    const url = createHtmlBlobUrl(html);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: 'Could not open report preview.' };
+  }
 }

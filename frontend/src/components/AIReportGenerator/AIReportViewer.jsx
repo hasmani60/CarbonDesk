@@ -123,6 +123,8 @@ export default function AIReportViewer({ title, periodLabel, generatedAt, markdo
     const result = openReportHtmlPreview(opts);
     if (!result.ok) {
       toast.error(result.message);
+    } else {
+      toast.success('Report opened in a new tab');
     }
   };
 
