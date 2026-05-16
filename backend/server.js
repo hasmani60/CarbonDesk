@@ -972,6 +972,7 @@ app.use('/api/analytics',
 // AI REPORT ROUTES (per-route auth in routes/reports.js)
 // ============================================
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/analytics-chats', require('./routes/analyticsChats'));
 
 // ============================================
 // TASK ROUTES

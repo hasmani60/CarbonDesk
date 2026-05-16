@@ -138,7 +138,13 @@ const prepareReportData = async (req, res) => {
       default_reporting_period: req.organisationSettings?.default_reporting_period
     });
 
-    res.json({ success: true, data: prepared, reportId: reportId || null });
+    // company_data: alias for n8n OpenRouter prompts (same object as data)
+    res.json({
+      success: true,
+      data: prepared,
+      company_data: prepared,
+      reportId: reportId || null
+    });
   } catch (error) {
     logger.error('prepareReportData error', error);
     const status = error.statusCode || 500;

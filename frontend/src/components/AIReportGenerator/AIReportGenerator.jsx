@@ -388,7 +388,7 @@ export default function AIReportGenerator() {
 
   const quotaExhausted = quota != null && !quota.canGenerate;
   const quotaLabel =
-    quota != null ? `${quota.used} of ${quota.limit} AI reports used` : null;
+    quota != null ? `${quota.used} of ${quota.limit} AI uses (reports + chat)` : null;
 
   return (
     <section className="space-y-6">
