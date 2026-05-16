@@ -22,6 +22,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import Input from './pages/Input/Input';
 import Monitor from './pages/Monitor/Monitor';
 import Analytics from './pages/Analytics/Analytics';
+import AIReportsPage from './pages/Reports/AIReportsPage';
 import Settings from './pages/Settings/Settings';
 import OrganisationPage from './pages/Organisation/OrganisationPage';
 
@@ -125,6 +126,16 @@ function App() {
                         <Analytics />
                       </ProtectedRoute>
                     } 
+                  />
+
+                  {/* AI Reports - Organisation admins only */}
+                  <Route
+                    path="reports"
+                    element={
+                      <ProtectedRoute requiredRoles={['admin']}>
+                        <AIReportsPage />
+                      </ProtectedRoute>
+                    }
                   />
                   
                   {/* Settings - All authenticated users */}

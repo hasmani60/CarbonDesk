@@ -392,18 +392,14 @@ export default function AIReportGenerator() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="analytics-section-title">
-          <Sparkles className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          AI Carbon Report
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">
+      {(quotaLabel || activeReport?.status) && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {quotaLabel && (
             <span className="text-sm text-gray-600 dark:text-gray-400">{quotaLabel}</span>
           )}
           {activeReport?.status && <StatusBadge status={activeReport.status} />}
         </div>
-      </div>
+      )}
 
       {quotaExhausted && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">

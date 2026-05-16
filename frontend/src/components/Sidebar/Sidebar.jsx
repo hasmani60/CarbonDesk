@@ -17,7 +17,8 @@ import {
   Crown,
   Users,
   Menu,
-  Building2
+  Building2,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useState, useEffect } from 'react';
@@ -73,6 +74,7 @@ const Sidebar = () => {
         },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/reports', icon: Sparkles, label: 'AI Reports' },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],

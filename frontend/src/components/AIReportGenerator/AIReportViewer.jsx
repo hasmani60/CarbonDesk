@@ -1,6 +1,12 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Printer, Download } from 'lucide-react';
+import { Printer, Download, ExternalLink } from 'lucide-react';
+import toast from 'react-hot-toast';
+import {
+  downloadReportHtml,
+  printReportHtml,
+  openReportHtmlPreview
+} from '../../utils/reportExport';
 
 const markdownComponents = {
   h1: ({ children }) => (
@@ -56,49 +62,23 @@ const markdownComponents = {
   td: ({ children }) => (
     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 align-top">{children}</td>
   ),
-  code: ({ inline, children }) =>
-    inline ? (
-      <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-emerald-800 dark:text-emerald-300 text-sm font-mono">
-        {children}
-      </code>
-    ) : (
+  code: ({ inline, className, children, ...props }) => {
+    const isInline = inline ?? !className?.includes('language-');
+    if (isInline) {
+      return (
+        <code className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-emerald-800 dark:text-emerald-300 text-sm font-mono">
+          {children}
+        </code>
+      );
+    }
+    return (
       <pre className="my-4 p-4 rounded-lg bg-gray-900 text-gray-100 text-sm overflow-x-auto">
-        <code>{children}</code>
+        <code {...props}>{children}</code>
       </pre>
-    )
+    );
+  }
 };
 
-function buildStandaloneHtml({ title, periodLabel, generatedAt, markdown }) {
-  const escaped = markdown
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>${title.replace(/</g, '')}</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1f2937; line-height: 1.6; }
-    h1 { color: #047857; border-bottom: 2px solid #a7f3d0; padding-bottom: 0.5rem; }
-    h2 { color: #111827; margin-top: 2rem; border-left: 4px solid #10b981; padding-left: 0.75rem; }
-    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
-    th { background: #047857; color: white; text-align: left; padding: 0.6rem 0.75rem; }
-    td { border-bottom: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; }
-    tr:nth-child(even) td { background: #f9fafb; }
-    hr { border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
-    .meta { color: #6b7280; font-size: 0.875rem; margin-bottom: 2rem; }
-    @media print { body { padding: 0.5in; } }
-  </style>
-</head>
-<body>
-  <p class="meta">${periodLabel || ''}${generatedAt ? ` · Generated ${generatedAt}` : ''}</p>
-  <pre style="white-space: pre-wrap; font-family: inherit; font-size: inherit;">${escaped}</pre>
-</body>
-</html>`;
-}
-
-/** Avoid duplicate title when markdown starts with # Title */
 function bodyMarkdown(markdown, title) {
   if (!markdown) return '';
   const trimmed = markdown.trim();
@@ -109,37 +89,52 @@ function bodyMarkdown(markdown, title) {
   return trimmed;
 }
 
+function exportOptions(title, periodLabel, generatedAt, markdown) {
+  return {
+    title: title || 'Carbon Report',
+    periodLabel: periodLabel || '',
+    generatedAt: generatedAt ? new Date(generatedAt).toLocaleString() : '',
+    markdown: markdown || ''
+  };
+}
+
 export default function AIReportViewer({ title, periodLabel, generatedAt, markdown }) {
   const content = bodyMarkdown(markdown, title);
+  const opts = exportOptions(title, periodLabel, generatedAt, markdown);
+
   const handlePrint = () => {
-    window.print();
+    const result = printReportHtml(opts);
+    if (!result.ok) {
+      toast.error(result.message);
+    }
   };
 
   const handleDownloadHtml = () => {
-    const html = buildStandaloneHtml({
-      title: title || 'Carbon Report',
-      periodLabel,
-      generatedAt: generatedAt ? new Date(generatedAt).toLocaleString() : '',
-      markdown: markdown || ''
-    });
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(title || 'carbon-report').replace(/[^\w\-]+/g, '-').slice(0, 60)}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      downloadReportHtml(opts);
+      toast.success('Report downloaded as HTML');
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not export report');
+    }
+  };
+
+  const handleOpenHtmlPreview = () => {
+    const result = openReportHtmlPreview(opts);
+    if (!result.ok) {
+      toast.error(result.message);
+    }
   };
 
   if (!markdown) return null;
 
   return (
-    <div className="ai-report-document">
-      <div className="flex flex-wrap gap-2 px-4 py-3 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 print:hidden">
+    <div className="ai-report-document rounded-b-xl overflow-hidden border border-gray-200 dark:border-slate-700">
+      <div className="flex flex-wrap gap-2 px-4 py-3 bg-gray-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700">
         <button
           type="button"
           onClick={handlePrint}
-          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700"
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200"
         >
           <Printer className="w-4 h-4" />
           Print
@@ -147,14 +142,22 @@ export default function AIReportViewer({ title, periodLabel, generatedAt, markdo
         <button
           type="button"
           onClick={handleDownloadHtml}
-          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700"
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
         >
           <Download className="w-4 h-4" />
           Download HTML
         </button>
+        <button
+          type="button"
+          onClick={handleOpenHtmlPreview}
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700 text-gray-800 dark:text-gray-200"
+        >
+          <ExternalLink className="w-4 h-4" />
+          Open in new tab
+        </button>
       </div>
 
-      <div className="bg-gradient-to-b from-emerald-50/80 to-white dark:from-emerald-950/30 dark:to-slate-900 px-6 md:px-10 py-8 border-b border-emerald-100 dark:border-emerald-900/40 print:bg-white">
+      <div className="bg-gradient-to-b from-emerald-50/80 to-white dark:from-emerald-950/30 dark:to-slate-900 px-6 md:px-10 py-8 border-b border-emerald-100 dark:border-emerald-900/40">
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
           GHG emissions report
         </p>
@@ -169,7 +172,7 @@ export default function AIReportViewer({ title, periodLabel, generatedAt, markdo
         )}
       </div>
 
-      <article className="px-6 md:px-10 py-8 max-h-[70vh] overflow-y-auto print:max-h-none print:overflow-visible bg-white dark:bg-slate-900/80">
+      <article className="px-6 md:px-10 py-8 max-h-[70vh] overflow-y-auto bg-white dark:bg-slate-900/80 report-markdown-body">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {content}
         </ReactMarkdown>
