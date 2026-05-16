@@ -390,7 +390,8 @@ export const reportsAPI = {
   getFilterOptions: () => apiClient.get('/reports/filter-options'),
   generate: (filters) => apiClient.post('/reports/generate', filters),
   getById: (id) => apiClient.get(`/reports/${id}`),
-  list: (params) => apiClient.get('/reports', { params })
+  list: (params) => apiClient.get('/reports', { params }),
+  cancel: (id) => apiClient.patch(`/reports/${id}/cancel`)
 };
 
 // Monitor API

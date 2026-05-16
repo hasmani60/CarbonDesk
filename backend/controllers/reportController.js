@@ -259,11 +259,58 @@ const listReports = async (req, res) => {
   }
 };
 
+/**
+ * @desc  Cancel a stuck pending/processing report (so user can start a new test)
+ * @route PATCH /api/reports/:id/cancel
+ */
+const cancelReport = async (req, res) => {
+  try {
+    const report = await AIReport.findOne({
+      _id: req.params.id,
+      organisation_id: req.organisationId
+    });
+
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Report not found' });
+    }
+
+    if (!['pending', 'processing'].includes(report.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel a report with status "${report.status}"`
+      });
+    }
+
+    report.status = 'failed';
+    report.error = 'Cancelled by user';
+    report.metadata = {
+      ...(report.metadata || {}),
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: req.user.id
+    };
+    await report.save();
+
+    res.json({
+      success: true,
+      data: {
+        id: report._id.toString(),
+        status: report.status,
+        error: report.error
+      },
+      message: 'Report cancelled'
+    });
+  } catch (error) {
+    logger.error('cancelReport error', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getFilterOptions,
   generateReport,
   prepareReportData,
   reportCallback,
   getReportById,
-  listReports
+  listReports,
+  cancelReport
 };

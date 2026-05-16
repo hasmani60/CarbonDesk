@@ -125,6 +125,7 @@ export default function AIReportGenerator() {
 
   const [activeReport, setActiveReport] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
   const buildFiltersPayload = useCallback(
@@ -254,6 +255,26 @@ export default function AIReportGenerator() {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(text || `Webhook failed (${res.status})`);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!activeReport?.id) return;
+    try {
+      setCancelling(true);
+      clearInterval(pollRef.current);
+      await reportsAPI.cancel(activeReport.id);
+      setActiveReport((prev) =>
+        prev
+          ? { ...prev, status: 'failed', error: 'Cancelled by user' }
+          : null
+      );
+      toast.success('Report cancelled — you can generate a new one');
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Could not cancel report');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -430,7 +451,11 @@ export default function AIReportGenerator() {
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={submitting || activeReport?.status === 'processing'}
+                disabled={
+                  submitting ||
+                  activeReport?.status === 'pending' ||
+                  activeReport?.status === 'processing'
+                }
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 text-sm font-medium"
               >
                 {submitting ? (
@@ -441,9 +466,24 @@ export default function AIReportGenerator() {
                 Generate AI Report
               </button>
               {(activeReport?.status === 'pending' || activeReport?.status === 'processing') && (
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Report is generating in the background. This page will update automatically.
-                </p>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    disabled={cancelling}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {cancelling ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                    Cancel & try again
+                  </button>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 w-full sm:w-auto">
+                    Stuck? Cancel clears this run so you can test again.
+                  </p>
+                </>
               )}
             </div>
           </>
@@ -451,10 +491,17 @@ export default function AIReportGenerator() {
       </div>
 
       {activeReport?.status === 'failed' && (
-        <div className="app-card p-4 border-red-200 dark:border-red-900">
+        <div className="app-card p-4 border-red-200 dark:border-red-900 space-y-3">
           <p className="text-sm text-red-700 dark:text-red-300">
             {activeReport.error || 'Report generation failed. Please try again.'}
           </p>
+          <button
+            type="button"
+            onClick={() => setActiveReport(null)}
+            className="text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
+          >
+            Dismiss and start fresh
+          </button>
         </div>
       )}
 

@@ -37,6 +37,8 @@ router.post('/:id/callback', ...callbackStack);
 
 router.get('/', ...orgUser, reportController.listReports);
 
+router.patch('/:id/cancel', ...orgUser, reportAuthors, reportController.cancelReport);
+
 router.get('/:id', ...orgUser, reportController.getReportById);
 
 module.exports = router;
