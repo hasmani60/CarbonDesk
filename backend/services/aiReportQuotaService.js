@@ -1,21 +1,11 @@
-const { Organisation, AIReport, AnalyticsChat } = require('../models');
+const { Organisation, AIReport } = require('../models');
 const { resolveMaxAiReportsForTier } = require('../utils/organisationLimits');
 
 /**
- * Count AI report jobs + analytics chat assistant replies (shared org quota).
+ * Count AI report generation attempts for an organisation.
  */
 async function countReportsUsed(organisationId) {
-  const [reportCount, chatAssistantAgg] = await Promise.all([
-    AIReport.countDocuments({ organisation_id: organisationId }),
-    AnalyticsChat.aggregate([
-      { $match: { organisation_id: organisationId } },
-      { $unwind: '$messages' },
-      { $match: { 'messages.role': 'assistant' } },
-      { $count: 'total' }
-    ])
-  ]);
-  const chatReplies = chatAssistantAgg[0]?.total || 0;
-  return reportCount + chatReplies;
+  return AIReport.countDocuments({ organisation_id: organisationId });
 }
 
 async function getOrganisationQuota(organisationId) {
@@ -49,7 +39,7 @@ async function assertCanGenerateReport(organisationId) {
   }
   if (!quota.canGenerate) {
     const err = new Error(
-      `AI usage limit reached (${quota.used} of ${quota.limit} reports + chat replies). Contact your platform administrator to increase your allowance.`
+      `AI report limit reached (${quota.used} of ${quota.limit}). Contact your platform administrator to increase your allowance.`
     );
     err.statusCode = 403;
     err.code = 'AI_REPORT_QUOTA_EXCEEDED';

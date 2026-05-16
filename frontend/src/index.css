@@ -534,3 +534,26 @@ header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
   background: hsl(var(--primary) / 0.3);
   color: hsl(var(--foreground));
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .ai-report-document,
+  .ai-report-document * {
+    visibility: visible;
+  }
+  .ai-report-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none;
+    border: none;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+}

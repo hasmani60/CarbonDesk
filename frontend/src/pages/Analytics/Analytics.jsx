@@ -25,7 +25,6 @@ import {
 } from '../../utils/analysisHelpers';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import AIReportGenerator from '../../components/AIReportGenerator/AIReportGenerator';
-import AnalyticsChat from '../../components/AnalyticsChat/AnalyticsChat';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -598,8 +597,6 @@ const Analytics = () => {
       <div className="space-y-10">
 
         <AIReportGenerator />
-
-        <AnalyticsChat />
 
         {/* SECTION 1: KEY METRICS */}
         <section>

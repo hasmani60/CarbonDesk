@@ -387,17 +387,6 @@ export const analyticsAPI = {
 };
 
 // AI Reports API (async generation via n8n)
-export const analyticsChatsAPI = {
-  getQuota: () => apiClient.get('/analytics-chats/quota'),
-  getFilterOptions: () => apiClient.get('/analytics-chats/filter-options'),
-  list: (params) => apiClient.get('/analytics-chats', { params }),
-  create: (body) => apiClient.post('/analytics-chats', body),
-  getById: (id) => apiClient.get(`/analytics-chats/${id}`),
-  sendMessage: (id, content, refreshContext = false) =>
-    apiClient.post(`/analytics-chats/${id}/messages`, { content, refreshContext }),
-  delete: (id) => apiClient.delete(`/analytics-chats/${id}`)
-};
-
 export const reportsAPI = {
   getQuota: () => apiClient.get('/reports/quota'),
   getFilterOptions: () => apiClient.get('/reports/filter-options'),
@@ -554,7 +543,6 @@ export default {
   emissionsAPI,
   analyticsAPI,
   reportsAPI,
-  analyticsChatsAPI,
   monitorAPI,
   usersAPI,
   vehiclesAPI,

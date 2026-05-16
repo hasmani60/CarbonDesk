@@ -11,8 +11,6 @@ const ActivityLog = require('./ActivityLog');
 const MACCOpportunity = require('./MACCOpportunity');
 const Notification = require('./Notification');
 const AIReport = require('./AIReport');
-const AnalyticsChat = require('./AnalyticsChat');
-
 module.exports = {
   User,
   Organisation,
@@ -23,6 +21,5 @@ module.exports = {
   ActivityLog,
   MACCOpportunity,
   Notification,
-  AIReport,
-  AnalyticsChat
+  AIReport
 };

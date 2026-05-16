@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
 import {
   Sparkles,
   Loader2,
@@ -14,6 +13,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { reportsAPI } from '../../services/api';
+import AIReportViewer from './AIReportViewer';
 
 const POLL_MS = 4000;
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
@@ -388,7 +388,7 @@ export default function AIReportGenerator() {
 
   const quotaExhausted = quota != null && !quota.canGenerate;
   const quotaLabel =
-    quota != null ? `${quota.used} of ${quota.limit} AI uses (reports + chat)` : null;
+    quota != null ? `${quota.used} of ${quota.limit} AI reports used` : null;
 
   return (
     <section className="space-y-6">
@@ -624,9 +624,12 @@ export default function AIReportGenerator() {
             </button>
           </div>
           {showReportViewer && (
-            <article className="p-6 prose prose-emerald dark:prose-invert max-w-none max-h-[70vh] overflow-y-auto">
-              <ReactMarkdown>{activeReport.reportContent}</ReactMarkdown>
-            </article>
+            <AIReportViewer
+              title={reportTitleFromContent(activeReport.reportContent)}
+              periodLabel={formatReportPeriodLabel(activeReport)}
+              generatedAt={activeReport.generatedAt}
+              markdown={activeReport.reportContent}
+            />
           )}
         </div>
       )}
