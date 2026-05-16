@@ -2,7 +2,7 @@
 import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export const PageHeader = ({ title, breadcrumb = [], action }) => {
+export const PageHeader = ({ title, subtitle, breadcrumb = [], action }) => {
   return (
     <div className="flex items-center justify-between">
       <div>
@@ -21,6 +21,9 @@ export const PageHeader = ({ title, breadcrumb = [], action }) => {
           ))}
         </nav>
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">{title}</h1>
+        {subtitle && (
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-2xl">{subtitle}</p>
+        )}
       </div>
       {action && <div>{action}</div>}
     </div>

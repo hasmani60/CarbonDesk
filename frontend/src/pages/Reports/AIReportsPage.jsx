@@ -11,18 +11,15 @@ export default function AIReportsPage() {
   }, [logPageView]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="AI Carbon Reports"
+        subtitle="Generate GHG Protocol–aligned emissions reports from your organisation data. Organisation admins only."
         breadcrumb={[
           { label: 'Home', href: '/dashboard' },
           { label: 'AI Reports' }
         ]}
       />
-      <p className="text-sm text-gray-600 dark:text-gray-400 -mt-4">
-        Generate GHG Protocol–aligned emissions reports from your organisation data. Organisation
-        admins only.
-      </p>
       <AIReportGenerator />
     </div>
   );

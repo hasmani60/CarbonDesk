@@ -8,7 +8,10 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  FileText
+  FileText,
+  Calendar,
+  Filter,
+  Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -46,7 +49,37 @@ const STATUS_CONFIG = {
   }
 };
 
-function MultiSelectFilters({ label, options, selected, onChange }) {
+function CollapsibleSection({ title, icon: Icon, defaultOpen = true, badge, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="rounded-xl border border-gray-200/80 dark:border-slate-700/80 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50/80 dark:bg-slate-800/50 hover:bg-gray-100/80 dark:hover:bg-slate-800 text-left transition-colors"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+          {Icon && <Icon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+          {title}
+          {badge != null && badge > 0 && (
+            <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+              {badge}
+            </span>
+          )}
+        </span>
+        {open ? (
+          <ChevronUp className="w-4 h-4 text-gray-500 shrink-0" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+        )}
+      </button>
+      {open && <div className="p-4 pt-3 space-y-4 border-t border-gray-200/60 dark:border-slate-700/60">{children}</div>}
+    </div>
+  );
+}
+
+function MultiSelectFilters({ label, options, selected, onChange, compact }) {
   if (!options?.length) return null;
 
   const toggle = (value) => {
@@ -60,18 +93,22 @@ function MultiSelectFilters({ label, options, selected, onChange }) {
 
   return (
     <div>
-      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{label}</p>
-      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+      {label && (
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{label}</p>
+      )}
+      <div
+        className={`flex flex-wrap gap-2 ${compact ? 'max-h-28' : 'max-h-36'} overflow-y-auto pr-1`}
+      >
         {options.map((opt) => {
           const val = String(opt);
           const checked = selected.map(String).includes(val);
           return (
             <label
               key={val}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
+              className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
                 checked
                   ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
-                  : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300'
+                  : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-slate-500'
               }`}
             >
               <input
@@ -80,7 +117,7 @@ function MultiSelectFilters({ label, options, selected, onChange }) {
                 checked={checked}
                 onChange={() => toggle(opt)}
               />
-              {val}
+              <span className="leading-tight">{val}</span>
             </label>
           );
         })}
@@ -99,6 +136,46 @@ function StatusBadge({ status }) {
       <Icon className={`w-4 h-4 ${cfg.spin ? 'animate-spin' : ''}`} />
       {cfg.label}
     </span>
+  );
+}
+
+function QuotaBar({ quota }) {
+  if (!quota) return null;
+  const pct = quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : 0;
+  const low = quota.remaining <= 5 && quota.remaining > 0;
+  const exhausted = !quota.canGenerate;
+
+  return (
+    <div className="app-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">AI report quota</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {quota.used} of {quota.limit} used
+            {quota.remaining != null && ` · ${quota.remaining} remaining`}
+          </p>
+        </div>
+        <span
+          className={`text-sm font-semibold tabular-nums ${
+            exhausted
+              ? 'text-amber-700 dark:text-amber-300'
+              : low
+                ? 'text-amber-600 dark:text-amber-400'
+                : 'text-emerald-700 dark:text-emerald-400'
+          }`}
+        >
+          {pct}%
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-gray-200 dark:bg-slate-700 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${
+            exhausted ? 'bg-amber-500' : low ? 'bg-amber-400' : 'bg-emerald-500'
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -126,6 +203,17 @@ function formatReportPeriodLabel(report) {
   }
   if (f.reportingYear) return String(f.reportingYear);
   return null;
+}
+
+function countFilters(filters) {
+  if (!filters) return 0;
+  let n = 0;
+  if (filters.selectedScopes?.length) n += filters.selectedScopes.length;
+  if (filters.selectedFacilities?.length) n += filters.selectedFacilities.length;
+  if (filters.selectedDepartments?.length) n += filters.selectedDepartments.length;
+  if (filters.selectedSites?.length) n += filters.selectedSites.length;
+  if (filters.selectedCategories?.length) n += filters.selectedCategories.length;
+  return n;
 }
 
 export default function AIReportGenerator() {
@@ -239,7 +327,10 @@ export default function AIReportGenerator() {
         const latest = Array.isArray(list) ? list[0] : null;
         if (cancelled || !latest) return;
         if (['pending', 'processing', 'completed'].includes(latest.status)) {
-          await fetchReport(latest.id);
+          const data = await fetchReport(latest.id);
+          if (data.status === 'completed' && data.reportContent) {
+            setShowReportViewer(true);
+          }
         }
       } catch {
         /* ignore */
@@ -259,8 +350,8 @@ export default function AIReportGenerator() {
       try {
         const data = await fetchReport(activeReport.id);
         if (data.status === 'completed') {
-          setShowReportViewer(false);
-          toast.success('AI report is ready — click View report to read it');
+          setShowReportViewer(true);
+          toast.success('Your AI report is ready');
           clearInterval(pollRef.current);
         } else if (data.status === 'failed') {
           setShowReportViewer(false);
@@ -387,19 +478,35 @@ export default function AIReportGenerator() {
       : filterOptions?.locations || [];
 
   const quotaExhausted = quota != null && !quota.canGenerate;
-  const quotaLabel =
-    quota != null ? `${quota.used} of ${quota.limit} AI reports used` : null;
+  const filterCount =
+    selectedScopes.length +
+    selectedFacilities.length +
+    selectedDepartments.length +
+    selectedSites.length +
+    selectedCategories.length;
+
+  const isRunning =
+    activeReport?.status === 'pending' || activeReport?.status === 'processing';
+  const hasCompletedReport =
+    activeReport?.status === 'completed' && activeReport.reportContent;
+
+  const previewTitle = hasCompletedReport
+    ? reportTitleFromContent(activeReport.reportContent)
+    : null;
+  const previewPeriod = hasCompletedReport ? formatReportPeriodLabel(activeReport) : null;
 
   return (
-    <section className="space-y-6">
-      {(quotaLabel || activeReport?.status) && (
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          {quotaLabel && (
-            <span className="text-sm text-gray-600 dark:text-gray-400">{quotaLabel}</span>
-          )}
-          {activeReport?.status && <StatusBadge status={activeReport.status} />}
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-stretch gap-4">
+        <div className="flex-1 min-w-[min(100%,260px)]">
+          <QuotaBar quota={quota} />
         </div>
-      )}
+        {activeReport?.status && (
+          <div className="app-card px-5 flex items-center shrink-0">
+            <StatusBadge status={activeReport.status} />
+          </div>
+        )}
+      </div>
 
       {quotaExhausted && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
@@ -411,224 +518,286 @@ export default function AIReportGenerator() {
         </div>
       )}
 
-      <div className="app-card p-6 space-y-6">
-        {loadingOptions ? (
-          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading filter options…
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+        {/* Configuration */}
+        <div className="app-card p-5 sm:p-6 space-y-5">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              Report configuration
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Choose the reporting period and optional filters. Generation typically takes 1–3
+              minutes.
+            </p>
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Start date
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  End date
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  min={startDate || undefined}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Reporting month
-                </label>
-                <select
-                  value={reportingMonth}
-                  onChange={(e) => setReportingMonth(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                >
-                  <option value="">—</option>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>
-                      {new Date(2000, i, 1).toLocaleString('default', { month: 'long' })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Reporting year
-                </label>
-                <input
-                  type="number"
-                  min="2000"
-                  max="2100"
-                  placeholder="e.g. 2025"
-                  value={reportingYear}
-                  onChange={(e) => setReportingYear(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <MultiSelectFilters
-                label="Scopes"
-                options={filterOptions?.scopes || [1, 2, 3]}
-                selected={selectedScopes}
-                onChange={setSelectedScopes}
-              />
-              <MultiSelectFilters
-                label="Facilities / locations"
-                options={facilityOptions}
-                selected={selectedFacilities}
-                onChange={setSelectedFacilities}
-              />
-              <MultiSelectFilters
-                label="Departments"
-                options={filterOptions?.departments}
-                selected={selectedDepartments}
-                onChange={setSelectedDepartments}
-              />
-              <MultiSelectFilters
-                label="Sites"
-                options={filterOptions?.sites}
-                selected={selectedSites}
-                onChange={setSelectedSites}
-              />
-              <MultiSelectFilters
-                label="Categories"
-                options={filterOptions?.categories}
-                selected={selectedCategories}
-                onChange={setSelectedCategories}
-              />
+          {loadingOptions ? (
+            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm py-8 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading filter options…
             </div>
-
-            {!N8N_WEBHOOK_URL && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <p>
-                  Set <code className="text-xs">VITE_N8N_REPORT_WEBHOOK_URL</code> in your
-                  frontend environment so n8n can process reports asynchronously.
+          ) : (
+            <div className="space-y-4">
+              <CollapsibleSection title="Reporting period" icon={Calendar} defaultOpen>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Start date
+                    </label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      End date
+                    </label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate || undefined}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Reporting month
+                    </label>
+                    <select
+                      value={reportingMonth}
+                      onChange={(e) => setReportingMonth(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    >
+                      <option value="">—</option>
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {new Date(2000, i, 1).toLocaleString('default', { month: 'long' })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Reporting year
+                    </label>
+                    <input
+                      type="number"
+                      min="2000"
+                      max="2100"
+                      placeholder="e.g. 2025"
+                      value={reportingYear}
+                      onChange={(e) => setReportingYear(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Use either a date range or reporting month/year (or year only).
                 </p>
-              </div>
-            )}
+              </CollapsibleSection>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={
-                  submitting ||
-                  quotaExhausted ||
-                  activeReport?.status === 'pending' ||
-                  activeReport?.status === 'processing'
-                }
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 text-sm font-medium"
+              <CollapsibleSection
+                title="Scopes & breakdowns"
+                icon={Layers}
+                defaultOpen={false}
+                badge={filterCount}
               >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
-                Generate AI Report
-              </button>
-              {(activeReport?.status === 'pending' || activeReport?.status === 'processing') && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    disabled={cancelling}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    {cancelling ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <XCircle className="w-4 h-4" />
-                    )}
-                    Cancel & try again
-                  </button>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 w-full sm:w-auto">
-                    Stuck? Cancel clears this run so you can test again.
+                <MultiSelectFilters
+                  label="Scopes"
+                  options={filterOptions?.scopes || [1, 2, 3]}
+                  selected={selectedScopes}
+                  onChange={setSelectedScopes}
+                  compact
+                />
+                <MultiSelectFilters
+                  label="Facilities / locations"
+                  options={facilityOptions}
+                  selected={selectedFacilities}
+                  onChange={setSelectedFacilities}
+                  compact
+                />
+                <MultiSelectFilters
+                  label="Departments"
+                  options={filterOptions?.departments}
+                  selected={selectedDepartments}
+                  onChange={setSelectedDepartments}
+                  compact
+                />
+                <MultiSelectFilters
+                  label="Sites"
+                  options={filterOptions?.sites}
+                  selected={selectedSites}
+                  onChange={setSelectedSites}
+                  compact
+                />
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                title="Emission categories"
+                icon={Filter}
+                defaultOpen={false}
+                badge={selectedCategories.length}
+              >
+                <MultiSelectFilters
+                  options={filterOptions?.categories}
+                  selected={selectedCategories}
+                  onChange={setSelectedCategories}
+                />
+              </CollapsibleSection>
+
+              {!N8N_WEBHOOK_URL && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <p>
+                    Set <code className="text-xs">VITE_N8N_REPORT_WEBHOOK_URL</code> in your
+                    frontend environment so n8n can process reports asynchronously.
                   </p>
-                </>
+                </div>
               )}
-            </div>
-          </>
-        )}
-      </div>
 
-      {activeReport?.status === 'failed' && (
-        <div className="app-card p-4 border-red-200 dark:border-red-900 space-y-3">
-          <p className="text-sm text-red-700 dark:text-red-300">
-            {activeReport.error || 'Report generation failed. Please try again.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveReport(null)}
-            className="text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
-          >
-            Dismiss and start fresh
-          </button>
-        </div>
-      )}
-
-      {activeReport?.status === 'completed' && activeReport.reportContent && (
-        <div className="app-card overflow-hidden">
-          <div className="p-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 dark:border-slate-700/80">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {reportTitleFromContent(activeReport.reportContent)}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatReportPeriodLabel(activeReport) || 'Report ready'}
-                  {activeReport.generatedAt && (
-                    <span>
-                      {' '}
-                      · Generated{' '}
-                      {new Date(activeReport.generatedAt).toLocaleString()}
-                    </span>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={submitting || quotaExhausted || isRunning}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 text-sm font-medium shadow-sm"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
                   )}
-                </p>
+                  Generate AI Report
+                </button>
+                {isRunning && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      disabled={cancelling}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {cancelling ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      Cancel
+                    </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 w-full">
+                      Stuck? Cancel clears this run so you can try again.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowReportViewer((v) => !v)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 dark:hover:bg-emerald-500 shrink-0"
-            >
-              {showReportViewer ? (
-                <>
-                  <ChevronUp className="w-4 h-4" />
-                  Hide report
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="w-4 h-4" />
-                  View report
-                </>
-              )}
-            </button>
-          </div>
-          {showReportViewer && (
-            <AIReportViewer
-              title={reportTitleFromContent(activeReport.reportContent)}
-              periodLabel={formatReportPeriodLabel(activeReport)}
-              generatedAt={activeReport.generatedAt}
-              markdown={activeReport.reportContent}
-            />
           )}
         </div>
-      )}
+
+        {/* Preview / status */}
+        <div className="space-y-4 min-h-[320px]">
+          {activeReport?.status === 'failed' && (
+            <div className="app-card p-5 border-red-200 dark:border-red-900 space-y-3">
+              <div className="flex items-start gap-3">
+                <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-red-800 dark:text-red-200">Generation failed</p>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    {activeReport.error || 'Report generation failed. Please try again.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveReport(null)}
+                className="text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
+              >
+                Dismiss and start fresh
+              </button>
+            </div>
+          )}
+
+          {isRunning && (
+            <div className="app-card p-8 flex flex-col items-center justify-center text-center min-h-[320px]">
+              <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mb-4">
+                <Loader2 className="w-7 h-7 text-blue-600 dark:text-blue-400 animate-spin" />
+              </div>
+              <p className="font-semibold text-gray-900 dark:text-white">Generating your report</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-sm">
+                AI is analysing your emissions data and drafting a GHG Protocol–aligned report.
+                This panel will update automatically when ready.
+              </p>
+              {countFilters(activeReport.filters) > 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+                  {countFilters(activeReport.filters)} filter
+                  {countFilters(activeReport.filters) !== 1 ? 's' : ''} applied
+                </p>
+              )}
+            </div>
+          )}
+
+          {hasCompletedReport && (
+            <div className="app-card overflow-hidden flex flex-col min-h-[320px]">
+              {showReportViewer ? (
+                <>
+                  <AIReportViewer
+                    title={previewTitle}
+                    periodLabel={previewPeriod}
+                    generatedAt={activeReport.generatedAt}
+                    markdown={activeReport.reportContent}
+                  />
+                  <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700/80 bg-gray-50/50 dark:bg-slate-800/30">
+                    <button
+                      type="button"
+                      onClick={() => setShowReportViewer(false)}
+                      className="text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-400 inline-flex items-center gap-1"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      Collapse preview
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="p-6 flex flex-col items-center justify-center text-center flex-1 min-h-[280px]">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-3">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-white">{previewTitle}</p>
+                  {previewPeriod && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{previewPeriod}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowReportViewer(true)}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+                  >
+                    <FileText className="w-4 h-4" />
+                    View full report
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!activeReport && !loadingOptions && (
+            <div className="app-card p-8 flex flex-col items-center justify-center text-center min-h-[320px] border-dashed">
+              <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                <FileText className="w-7 h-7 text-gray-400 dark:text-gray-500" />
+              </div>
+              <p className="font-medium text-gray-900 dark:text-white">Report preview</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-xs">
+                Configure filters on the left and generate a report. The finished document will
+                appear here with print and download options.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
