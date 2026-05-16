@@ -6,7 +6,10 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -106,6 +109,25 @@ function toDateInputValue(date) {
   return d.toISOString().slice(0, 10);
 }
 
+function reportTitleFromContent(content) {
+  if (!content) return 'AI Carbon Report';
+  const match = content.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : 'AI Carbon Report';
+}
+
+function formatReportPeriodLabel(report) {
+  const f = report?.filters;
+  if (!f) return null;
+  if (f.startDate && f.endDate) {
+    return `${f.startDate} – ${f.endDate}`;
+  }
+  if (f.reportingYear && f.reportingMonth) {
+    return `${f.reportingMonth}/${f.reportingYear}`;
+  }
+  if (f.reportingYear) return String(f.reportingYear);
+  return null;
+}
+
 export default function AIReportGenerator() {
   const { user } = useAuth();
   const canGenerate = ['admin', 'analyst'].includes(user?.role);
@@ -124,6 +146,7 @@ export default function AIReportGenerator() {
   const [selectedCategories, setSelectedCategories] = useState([]);
 
   const [activeReport, setActiveReport] = useState(null);
+  const [showReportViewer, setShowReportViewer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
@@ -218,9 +241,11 @@ export default function AIReportGenerator() {
       try {
         const data = await fetchReport(activeReport.id);
         if (data.status === 'completed') {
-          toast.success('AI report is ready');
+          setShowReportViewer(false);
+          toast.success('AI report is ready — click View report to read it');
           clearInterval(pollRef.current);
         } else if (data.status === 'failed') {
+          setShowReportViewer(false);
           toast.error(data.error || 'Report generation failed');
           clearInterval(pollRef.current);
         }
@@ -264,6 +289,7 @@ export default function AIReportGenerator() {
       setCancelling(true);
       clearInterval(pollRef.current);
       await reportsAPI.cancel(activeReport.id);
+      setShowReportViewer(false);
       setActiveReport((prev) =>
         prev
           ? { ...prev, status: 'failed', error: 'Cancelled by user' }
@@ -295,6 +321,7 @@ export default function AIReportGenerator() {
       const created = await reportsAPI.generate(filters);
       const reportId = created.id;
 
+      setShowReportViewer(false);
       setActiveReport({
         id: reportId,
         status: 'pending',
@@ -506,9 +533,52 @@ export default function AIReportGenerator() {
       )}
 
       {activeReport?.status === 'completed' && activeReport.reportContent && (
-        <article className="app-card p-6 prose prose-emerald dark:prose-invert max-w-none">
-          <ReactMarkdown>{activeReport.reportContent}</ReactMarkdown>
-        </article>
+        <div className="app-card overflow-hidden">
+          <div className="p-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 dark:border-slate-700/80">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {reportTitleFromContent(activeReport.reportContent)}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {formatReportPeriodLabel(activeReport) || 'Report ready'}
+                  {activeReport.generatedAt && (
+                    <span>
+                      {' '}
+                      · Generated{' '}
+                      {new Date(activeReport.generatedAt).toLocaleString()}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowReportViewer((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 dark:hover:bg-emerald-500 shrink-0"
+            >
+              {showReportViewer ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  Hide report
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  View report
+                </>
+              )}
+            </button>
+          </div>
+          {showReportViewer && (
+            <article className="p-6 prose prose-emerald dark:prose-invert max-w-none max-h-[70vh] overflow-y-auto">
+              <ReactMarkdown>{activeReport.reportContent}</ReactMarkdown>
+            </article>
+          )}
+        </div>
       )}
     </section>
   );
