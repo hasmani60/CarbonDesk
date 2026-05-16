@@ -4,6 +4,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { Bell, User, Settings, X, PlusCircle, Activity, Download, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useState, useEffect } from 'react';
+import { formatDate } from '../../utils/formatters';
 
 const Header = () => {
   const { user } = useAuth();
@@ -37,7 +38,7 @@ const Header = () => {
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInHours < 48) return 'Yesterday';
-    return date.toLocaleDateString();
+    return formatDate(date);
   };
 
   const getNotificationIcon = (type) => {

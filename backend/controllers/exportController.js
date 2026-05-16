@@ -1,6 +1,7 @@
 // controllers/exportController.js
 const { Emission, Activity, User } = require('../models');
 const XLSX = require('xlsx');
+const { formatDate, formatTime } = require('../utils/dateFormat');
 
 // @desc    Export activities to CSV/Excel
 // @route   GET /api/export/activities
@@ -33,8 +34,8 @@ const exportActivities = async (req, res) => {
       'Email': activity.user?.email || '',
       'Action': activity.action.replace('_', ' ').toUpperCase(),
       'Details': activity.details || '',
-      'Date': activity.createdAt.toLocaleDateString(),
-      'Time': activity.createdAt.toLocaleTimeString(),
+      'Date': formatDate(activity.createdAt),
+      'Time': formatTime(activity.createdAt),
       'IP Address': activity.ipAddress || ''
     }));
 
@@ -94,11 +95,11 @@ const exportEmissions = async (req, res) => {
       'Amount': emission.amount,
       'Unit': emission.unit,
       'Total Emissions (CO2e)': emission.totalEmissions,
-      'Start Date': emission.accountingPeriod.start.toLocaleDateString(),
-      'End Date': emission.accountingPeriod.end.toLocaleDateString(),
+      'Start Date': formatDate(emission.accountingPeriod.start),
+      'End Date': formatDate(emission.accountingPeriod.end),
       'Status': emission.status,
       'Location': emission.location || '',
-      'Created Date': emission.createdAt.toLocaleDateString()
+      'Created Date': formatDate(emission.createdAt)
     }));
 
     if (format === 'xlsx') {

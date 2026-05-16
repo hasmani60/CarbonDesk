@@ -2,6 +2,7 @@
 // UPDATED: Mark as read now removes the notification from view
 import { Clock, Bell, Trash2, Check } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
+import { formatDate } from '../../utils/formatters';
 
 export const NotificationCard = ({ notification }) => {
   const { markAsRead, deleteNotification } = useNotifications();
@@ -28,17 +29,17 @@ export const NotificationCard = ({ notification }) => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return new Date().toLocaleDateString();
-    
+  const formatNotificationDate = (dateString) => {
+    if (!dateString) return formatDate(new Date());
+
     const date = new Date(dateString);
     const now = new Date();
     const diffInHours = Math.floor((now - date) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInHours < 48) return 'Yesterday';
-    return date.toLocaleDateString();
+    return formatDate(date);
   };
 
   const handleMarkAsRead = async (e) => {
@@ -106,7 +107,7 @@ export const NotificationCard = ({ notification }) => {
             {notification.user?.name || 'System'}
           </div>
           <div className="text-xs text-gray-500">
-            {formatDate(notification.createdAt)}
+            {formatNotificationDate(notification.createdAt)}
           </div>
         </div>
         {!notification.read && (

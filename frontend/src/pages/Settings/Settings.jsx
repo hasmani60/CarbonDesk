@@ -46,7 +46,7 @@ const Settings = () => {
   const [appPreferences, setAppPreferences] = useState({
     timezone: 'America/New_York',
     language: 'en',
-    dateFormat: 'YYYY-MM-DD',
+    dateFormat: 'DD-MM-YYYY',
     appearance: 'light'
   });
 
@@ -71,7 +71,7 @@ const Settings = () => {
     setAppPreferences({
       timezone: p.timezone || 'America/New_York',
       language: p.language || 'en',
-      dateFormat: p.dateFormat || 'YYYY-MM-DD',
+      dateFormat: p.dateFormat || 'DD-MM-YYYY',
       appearance: p.appearance || 'light'
     });
   }, [user]);
@@ -524,8 +524,9 @@ const Settings = () => {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                  <option value="DD-MM-YYYY">DD-MM-YYYY</option>
                   <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                   <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                 </select>
               </div>

@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { reportsAPI } from '../../services/api';
 import AIReportViewer from './AIReportViewer';
+import { formatPeriodRange, toDateInputValue } from '../../utils/formatters';
 
 const POLL_MS = 4000;
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
@@ -179,13 +180,6 @@ function QuotaBar({ quota }) {
   );
 }
 
-function toDateInputValue(date) {
-  if (!date) return '';
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
-
 function reportTitleFromContent(content) {
   if (!content) return 'AI Carbon Report';
   const match = content.match(/^#\s+(.+)$/m);
@@ -196,10 +190,10 @@ function formatReportPeriodLabel(report) {
   const f = report?.filters;
   if (!f) return null;
   if (f.startDate && f.endDate) {
-    return `${f.startDate} – ${f.endDate}`;
+    return formatPeriodRange(f.startDate, f.endDate);
   }
   if (f.reportingYear && f.reportingMonth) {
-    return `${f.reportingMonth}/${f.reportingYear}`;
+    return `${String(f.reportingMonth).padStart(2, '0')}-${f.reportingYear}`;
   }
   if (f.reportingYear) return String(f.reportingYear);
   return null;

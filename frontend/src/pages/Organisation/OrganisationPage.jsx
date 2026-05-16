@@ -19,6 +19,7 @@ import {
 import { organisationAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import { useAuth } from '../../context/AuthContext';
+import { formatDate } from '../../utils/formatters';
 
 const OrganisationPage = () => {
   const { user } = useAuth();
@@ -73,15 +74,6 @@ const OrganisationPage = () => {
       setLoading(false);
       setRefreshingStats(false);
     }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
   };
 
   if (loading) {
@@ -516,7 +508,9 @@ const OrganisationPage = () => {
                   <Calendar className="w-4 h-4 mr-1" />
                   Created On
                 </label>
-                <p className="mt-1 text-gray-900 dark:text-gray-100">{formatDate(organisation.created_at)}</p>
+                <p className="mt-1 text-gray-900 dark:text-gray-100">
+                  {organisation.created_at ? formatDate(organisation.created_at) : 'N/A'}
+                </p>
               </div>
 
               {organisation.created_by && (

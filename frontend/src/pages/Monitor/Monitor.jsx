@@ -40,6 +40,7 @@ import Pagination from '../../components/Pagination/Pagination';
 import TaskAssignmentModal from '../../components/TaskAssignmentModal/TaskAssignmentModal';
 import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader';
 import toast from 'react-hot-toast';
+import { formatDate, formatDateTime, formatPeriodRange } from '../../utils/formatters';
 
 const Monitor = () => {
   const { user, isAdmin, canVerifyEmissions } = useAuth();
@@ -444,11 +445,11 @@ const Monitor = () => {
   const formatAccountingPeriod = (period) => {
     if (!period) return 'N/A';
     if (typeof period === 'string') return period;
-    
-    if (period.start) {
-      const startDate = new Date(period.start);
-      return startDate.toLocaleDateString('en-GB');
+
+    if (period.start && period.end) {
+      return formatPeriodRange(period.start, period.end, ' to ');
     }
+    if (period.start) return formatDate(period.start);
     return 'N/A';
   };
 
@@ -502,7 +503,7 @@ const Monitor = () => {
         'Accounting Period': activity.accountingPeriod,
         'Location': activity.location || '',
         'Status': activity.status,
-        'Created At': new Date(activity.createdAt).toLocaleString(),
+        'Created At': formatDateTime(activity.createdAt),
         'Description': activity.description || '',
         'Organisation': user?.organisation?.name || 'N/A'
       }));
@@ -1215,11 +1216,11 @@ const Monitor = () => {
                                     </div>
                                     <div className="flex items-center text-gray-600">
                                       <Calendar className="w-4 h-4 mr-2" />
-                                      <span>Period: {new Date(task.start_date).toLocaleDateString()} to {new Date(task.end_date).toLocaleDateString()}</span>
+                                      <span>Period: {formatPeriodRange(task.start_date, task.end_date, ' to ')}</span>
                                     </div>
                                     <div className="flex items-center text-gray-600">
                                       <Calendar className="w-4 h-4 mr-2" />
-                                      <span>Deadline: {new Date(task.deadline).toLocaleDateString()}</span>
+                                      <span>Deadline: {formatDate(task.deadline)}</span>
                                     </div>
                                   </div>
 
@@ -1239,7 +1240,7 @@ const Monitor = () => {
                                     {task.status === 'completed' && task.completed_at && (
                                       <div className="flex items-center text-green-600 text-sm">
                                         <CheckCircle className="w-4 h-4 mr-1" />
-                                        <span>Completed {new Date(task.completed_at).toLocaleDateString()}</span>
+                                        <span>Completed {formatDate(task.completed_at)}</span>
                                       </div>
                                     )}
                                   </div>

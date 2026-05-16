@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { monitorAPI } from '../../services/api';
 import toast from 'react-hot-toast';
+import { formatDate } from '../../utils/formatters';
 
 const AssignedTasks = ({ 
   showHeader = true, 
@@ -357,7 +358,7 @@ const AssignedTasks = ({
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
-                    <span>Deadline: {new Date(task.deadline).toLocaleDateString()}</span>
+                    <span>Deadline: {formatDate(task.deadline)}</span>
                   </div>
                 </div>
 
@@ -406,7 +407,7 @@ const AssignedTasks = ({
                 {task.status === 'completed' && (
                   <div className="flex items-center text-green-600 text-sm">
                     <CheckCircle className="w-4 h-4 mr-1" />
-                    <span>Completed on {new Date(task.completed_at || task.updated_at).toLocaleDateString()}</span>
+                    <span>Completed on {formatDate(task.completed_at || task.updated_at)}</span>
                   </div>
                 )}
               </div>

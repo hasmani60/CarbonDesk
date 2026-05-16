@@ -19,6 +19,7 @@ import { useActivity } from '../../context/ActivityContext';
 import { adminAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '../../utils/formatters';
 
 const AdminMonitor = () => {
   const { user, isAdmin } = useAuth();
@@ -371,7 +372,7 @@ const AdminMonitor = () => {
   };
 
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleString();
+    return formatDateTime(timestamp);
   };
 
   const formatActionDisplay = (action) => {
@@ -876,7 +877,7 @@ const AdminMonitor = () => {
               <span className="text-sm text-gray-600 dark:text-gray-400">Live monitoring</span>
             </div>
             <span className="text-xs text-gray-500 dark:text-gray-500">
-              Updated: {lastUpdate.toLocaleTimeString()}
+              Updated: {formatDateTime(lastUpdate)}
             </span>
           </div>
         }

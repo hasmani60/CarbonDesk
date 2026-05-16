@@ -1,5 +1,6 @@
 // controllers/monitorController.js
 const { Activity, Task, Emission, User } = require('../models');
+const { formatDate } = require('../utils/dateFormat');
 
 // @desc    Get activities
 // @route   GET /api/monitor/activities
@@ -61,7 +62,7 @@ const getActivities = async (req, res) => {
       scope: `Scope ${Math.floor(Math.random() * 3) + 1}`, // Placeholder
       activityType: activity.details || activity.action.replace('_', ' '),
       source: 'System generated',
-      accountingPeriod: activity.createdAt.toLocaleDateString(),
+      accountingPeriod: formatDate(activity.createdAt),
       emissions: Math.floor(Math.random() * 1000),
       status: 'active',
       createdAt: activity.createdAt

@@ -25,6 +25,7 @@ import {
 } from '../../utils/analysisHelpers';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '../../utils/formatters';
 import { useTheme } from '../../context/ThemeContext';
 import {
   getRechartsTheme,
@@ -589,7 +590,7 @@ const Analytics = () => {
             <span className="font-medium text-gray-800 dark:text-gray-200">{user.organisation.name}</span>
           )}
           {user?.organisation?.name && <span aria-hidden className="mx-1 text-gray-400">•</span>}
-          <span className="text-gray-500 dark:text-gray-500">Updated {lastUpdate.toLocaleTimeString()}</span>
+          <span className="text-gray-500 dark:text-gray-500">Updated {formatDateTime(lastUpdate)}</span>
         </p>
       </div>
 

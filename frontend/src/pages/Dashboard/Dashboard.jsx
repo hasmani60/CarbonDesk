@@ -3,6 +3,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { RefreshCw, Plus, BarChart3, Filter, Users, Activity, Shield, Eye, Database, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { formatDateTime } from '../../utils/formatters';
 import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
 import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/api';
@@ -433,7 +434,7 @@ const Dashboard = () => {
                 </>
               )}
               <span className="text-xs">
-                Last updated: {lastUpdate.toLocaleTimeString()}
+                Last updated: {formatDateTime(lastUpdate)}
               </span>
             </div>
           </div>

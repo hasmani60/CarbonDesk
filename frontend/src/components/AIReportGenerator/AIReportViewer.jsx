@@ -7,6 +7,7 @@ import {
   printReportHtml,
   openReportHtmlPreview
 } from '../../utils/reportExport';
+import { formatDateTime } from '../../utils/formatters';
 
 const markdownComponents = {
   h1: ({ children }) => (
@@ -94,7 +95,7 @@ function exportOptions(title, periodLabel, generatedAt, markdown) {
   return {
     title: title || 'Carbon Report',
     periodLabel: periodLabel || '',
-    generatedAt: generatedAt ? new Date(generatedAt).toLocaleString() : '',
+    generatedAt: generatedAt ? formatDateTime(generatedAt) : '',
     markdown: markdown || ''
   };
 }
@@ -131,7 +132,7 @@ export default function AIReportViewer({
 
   if (!markdown) return null;
 
-  const metaLine = [periodLabel, generatedAt && `Generated ${new Date(generatedAt).toLocaleString()}`]
+  const metaLine = [periodLabel, generatedAt && `Generated ${formatDateTime(generatedAt)}`]
     .filter(Boolean)
     .join(' · ');
 

@@ -38,6 +38,7 @@ import { adminAPI } from '../../services/api';
 import { emissionFactors } from '../../data/complete_emission_factors_db';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import toast from 'react-hot-toast';
+import { formatDate, formatDateTime } from '../../utils/formatters';
 
 const UserManagement = () => {
   const { user, isAdmin } = useAuth();
@@ -513,10 +514,10 @@ const UserManagement = () => {
         'Email': userItem.email,
         'Role': userItem.role,
         'Status': userItem.status,
-        'Created': new Date(userItem.createdAt).toLocaleDateString(),
-        'Last Login': userItem.lastLogin ? new Date(userItem.lastLogin).toLocaleDateString() : 'Never',
+        'Created': formatDate(userItem.createdAt),
+        'Last Login': userItem.lastLogin ? formatDate(userItem.lastLogin) : 'Never',
         'Total Activities': userItem.statistics?.totalActivities || 0,
-        'Last Activity': userItem.statistics?.lastActivity ? new Date(userItem.statistics.lastActivity).toLocaleDateString() : 'Never',
+        'Last Activity': userItem.statistics?.lastActivity ? formatDate(userItem.statistics.lastActivity) : 'Never',
         'Restrictions': userItem.restrictions ? JSON.stringify(userItem.restrictions) : 'None'
       }));
 
@@ -607,7 +608,7 @@ const UserManagement = () => {
     if (diffInMinutes < 1) return 'Just now';
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
-    return date.toLocaleDateString();
+    return formatDate(date);
   };
 
   if (!isAdmin()) {
@@ -939,7 +940,7 @@ const UserManagement = () => {
                       {getRestrictionsDisplay(userItem)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {new Date(userItem.createdAt || userItem.created_at).toLocaleDateString()}
+                      {formatDate(userItem.createdAt || userItem.created_at)}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
@@ -1079,7 +1080,7 @@ const UserActivitiesModal = ({ user, activities, onClose }) => {
                         {activity.action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </h4>
                       <span className="text-sm text-gray-500">
-                        {new Date(activity.timestamp).toLocaleString()}
+                        {formatDateTime(activity.timestamp)}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">{activity.details}</p>

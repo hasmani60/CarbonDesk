@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { monitorAPI } from '../../services/api';
 import toast from 'react-hot-toast';
+import { formatDate } from '../../utils/formatters';
 
 const TaskWidget = ({ 
   maxTasks = 3, 
@@ -311,7 +312,7 @@ const TaskWidget = ({
                   </div>
                   <div className="flex items-center text-gray-500">
                     <Calendar className="w-3 h-3 mr-1" />
-                    <span>Deadline: {new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span>Deadline: {formatDate(task.deadline)}</span>
                   </div>
                 </div>
 

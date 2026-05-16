@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Eye, EyeOff } from 'lucide-react';
+import { formatDate } from '../../utils/formatters';
 
 const CompanyOperationsPortal = () => {
   const navigate = useNavigate();
@@ -894,7 +895,7 @@ const CompanyOperationsPortal = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(org.created_at).toLocaleDateString()}
+                          {formatDate(org.created_at)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <button
@@ -1383,7 +1384,7 @@ const CompanyOperationsPortal = () => {
                   <label className="block text-sm font-medium text-gray-700">Subscription ends</label>
                   <p className="mt-1 text-sm text-gray-900">
                     {selectedOrg.subscription_expires_at
-                      ? new Date(selectedOrg.subscription_expires_at).toLocaleDateString()
+                      ? formatDate(selectedOrg.subscription_expires_at)
                       : '—'}
                   </p>
                 </div>
