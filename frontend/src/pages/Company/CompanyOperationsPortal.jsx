@@ -41,6 +41,7 @@ const CompanyOperationsPortal = () => {
     subscription_tier: 'standard',
     max_users: 50,
     max_storage_gb: 10,
+    max_ai_reports: 10,
     registered_name: '',
     cin_number: '',
     registered_address: '',
@@ -57,6 +58,9 @@ const CompanyOperationsPortal = () => {
   // Organisation detail state
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgStats, setOrgStats] = useState(null);
+  const [aiReportLimitEdit, setAiReportLimitEdit] = useState('');
+  const [savingAiReportLimit, setSavingAiReportLimit] = useState(false);
+  const [aiReportLimitMsg, setAiReportLimitMsg] = useState('');
   const [showOrgDetail, setShowOrgDetail] = useState(false);
   const [superAdminNewPassword, setSuperAdminNewPassword] = useState('');
   const [superAdminConfirmPassword, setSuperAdminConfirmPassword] = useState('');
@@ -288,6 +292,7 @@ const CompanyOperationsPortal = () => {
       subscription_tier: 'standard',
       max_users: 50,
       max_storage_gb: 10,
+      max_ai_reports: 10,
       registered_name: '',
       cin_number: '',
       registered_address: '',
@@ -299,6 +304,45 @@ const CompanyOperationsPortal = () => {
       notes: ''
     });
     setCreateError('');
+  };
+
+  const handleSaveAiReportLimit = async () => {
+    if (!selectedOrg?.id) return;
+    const parsed = parseInt(String(aiReportLimitEdit), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setAiReportLimitMsg('Enter a valid non-negative number');
+      return;
+    }
+    setSavingAiReportLimit(true);
+    setAiReportLimitMsg('');
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}`,
+        { max_ai_reports: parsed },
+        { headers: getAuthHeaders() }
+      );
+      if (response.data.success) {
+        setSelectedOrg((prev) => ({
+          ...prev,
+          max_ai_reports: response.data.data.max_ai_reports
+        }));
+        setAiReportLimitEdit(String(response.data.data.max_ai_reports));
+        const statsResponse = await axios.get(
+          `${API_BASE_URL}/api/company/organisations/${selectedOrg.id}/stats`,
+          { headers: getAuthHeaders() }
+        );
+        if (statsResponse.data.success) {
+          setOrgStats(statsResponse.data.data.stats);
+        }
+        setAiReportLimitMsg('AI report limit updated');
+      }
+    } catch (error) {
+      setAiReportLimitMsg(
+        error.response?.data?.message || 'Failed to update AI report limit'
+      );
+    } finally {
+      setSavingAiReportLimit(false);
+    }
   };
 
   const loadOrganisationDetails = async (orgId) => {
@@ -317,11 +361,19 @@ const CompanyOperationsPortal = () => {
       ]);
 
       if (detailsResponse.data.success) {
-        setSelectedOrg(detailsResponse.data.data);
+        const org = detailsResponse.data.data;
+        setSelectedOrg(org);
+        setAiReportLimitEdit(
+          org.max_ai_reports != null ? String(org.max_ai_reports) : ''
+        );
       }
 
       if (statsResponse.data.success) {
         setOrgStats(statsResponse.data.data.stats);
+        const stats = statsResponse.data.data.stats;
+        if (stats?.max_ai_reports != null && !detailsResponse.data.success) {
+          setAiReportLimitEdit(String(stats.max_ai_reports));
+        }
       }
 
       let canManage = false;
@@ -1147,6 +1199,23 @@ const CompanyOperationsPortal = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max AI reports
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={createFormData.max_ai_reports}
+                      onChange={(e) =>
+                        setCreateFormData({
+                          ...createFormData,
+                          max_ai_reports: parseInt(e.target.value, 10) || 0
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1307,6 +1376,10 @@ const CompanyOperationsPortal = () => {
                   <p className="mt-1 text-sm text-gray-900">{selectedOrg.max_users ?? '—'}</p>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700">AI report limit</label>
+                  <p className="mt-1 text-sm text-gray-900">{selectedOrg.max_ai_reports ?? '—'}</p>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700">Subscription ends</label>
                   <p className="mt-1 text-sm text-gray-900">
                     {selectedOrg.subscription_expires_at
@@ -1320,7 +1393,7 @@ const CompanyOperationsPortal = () => {
               {orgStats && (
                 <div className="border-t border-gray-200 pt-4">
                   <h4 className="font-semibold text-gray-900 mb-3">Statistics</h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="text-sm text-gray-500">Total Users</p>
                       <p className="text-2xl font-bold text-gray-900">
@@ -1332,7 +1405,51 @@ const CompanyOperationsPortal = () => {
                         ) : null}
                       </p>
                     </div>
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-500">AI reports generated</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {orgStats.ai_reports_used ?? 0}
+                        {orgStats.max_ai_reports != null ? (
+                          <span className="text-lg font-normal text-gray-500">
+                            {' '}/ {orgStats.max_ai_reports}
+                          </span>
+                        ) : null}
+                      </p>
+                      {orgStats.ai_reports_remaining != null && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {orgStats.ai_reports_remaining} remaining
+                        </p>
+                      )}
+                    </div>
                   </div>
+
+                  {operator?.permissions?.canManageOrgs && (
+                    <div className="mt-4 flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Adjust max AI reports
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={aiReportLimitEdit}
+                          onChange={(e) => setAiReportLimitEdit(e.target.value)}
+                          className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveAiReportLimit}
+                        disabled={savingAiReportLimit}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        {savingAiReportLimit ? 'Saving…' : 'Save limit'}
+                      </button>
+                      {aiReportLimitMsg && (
+                        <p className="text-sm text-gray-600">{aiReportLimitMsg}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

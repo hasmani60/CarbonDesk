@@ -130,8 +130,9 @@ function formatReportPeriodLabel(report) {
 
 export default function AIReportGenerator() {
   const { user } = useAuth();
-  const canGenerate = ['admin', 'analyst'].includes(user?.role);
+  const canGenerate = user?.role === 'admin';
 
+  const [quota, setQuota] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
   const [loadingOptions, setLoadingOptions] = useState(true);
 
@@ -181,6 +182,23 @@ export default function AIReportGenerator() {
     setActiveReport(data);
     return data;
   }, []);
+
+  useEffect(() => {
+    if (!canGenerate) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = await reportsAPI.getQuota();
+        if (!cancelled) setQuota(q);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canGenerate]);
 
   useEffect(() => {
     if (!canGenerate) return undefined;
@@ -320,6 +338,15 @@ export default function AIReportGenerator() {
       setSubmitting(true);
       const created = await reportsAPI.generate(filters);
       const reportId = created.id;
+      if (created.quota) {
+        setQuota((prev) => ({
+          ...(prev || {}),
+          used: created.quota.used,
+          limit: created.quota.limit,
+          remaining: created.quota.remaining,
+          canGenerate: created.quota.remaining > 0
+        }));
+      }
 
       setShowReportViewer(false);
       setActiveReport({
@@ -341,6 +368,9 @@ export default function AIReportGenerator() {
       }
     } catch (err) {
       console.error(err);
+      if (err.code === 'AI_REPORT_QUOTA_EXCEEDED' && err.quota) {
+        setQuota(err.quota);
+      }
       toast.error(err.message || 'Failed to start report generation');
     } finally {
       setSubmitting(false);
@@ -356,6 +386,10 @@ export default function AIReportGenerator() {
       ? filterOptions.facilities
       : filterOptions?.locations || [];
 
+  const quotaExhausted = quota != null && !quota.canGenerate;
+  const quotaLabel =
+    quota != null ? `${quota.used} of ${quota.limit} AI reports used` : null;
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -363,8 +397,23 @@ export default function AIReportGenerator() {
           <Sparkles className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
           AI Carbon Report
         </h2>
-        {activeReport?.status && <StatusBadge status={activeReport.status} />}
+        <div className="flex flex-wrap items-center gap-3">
+          {quotaLabel && (
+            <span className="text-sm text-gray-600 dark:text-gray-400">{quotaLabel}</span>
+          )}
+          {activeReport?.status && <StatusBadge status={activeReport.status} />}
+        </div>
       </div>
+
+      {quotaExhausted && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <p>
+            Your organisation has used all AI report generations allowed on your plan.
+            Contact your platform administrator to increase the limit.
+          </p>
+        </div>
+      )}
 
       <div className="app-card p-6 space-y-6">
         {loadingOptions ? (
@@ -480,6 +529,7 @@ export default function AIReportGenerator() {
                 onClick={handleGenerate}
                 disabled={
                   submitting ||
+                  quotaExhausted ||
                   activeReport?.status === 'pending' ||
                   activeReport?.status === 'processing'
                 }

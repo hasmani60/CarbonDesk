@@ -122,6 +122,7 @@ apiClient.interceptors.response.use(
         message: error.response.data?.message || 'Access denied. Insufficient permissions.',
         status: 'ACCESS_DENIED',
         code: error.response.data?.code,
+        quota: error.response.data?.quota,
         response: error.response
       });
     }
@@ -387,6 +388,7 @@ export const analyticsAPI = {
 
 // AI Reports API (async generation via n8n)
 export const reportsAPI = {
+  getQuota: () => apiClient.get('/reports/quota'),
   getFilterOptions: () => apiClient.get('/reports/filter-options'),
   generate: (filters) => apiClient.post('/reports/generate', filters),
   getById: (id) => apiClient.get(`/reports/${id}`),

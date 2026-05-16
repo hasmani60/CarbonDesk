@@ -6,9 +6,11 @@ const emailService = require('../utils/emailService');
 const logger = require('../utils/logger');
 const {
   resolveMaxUsersForTier,
+  resolveMaxAiReportsForTier,
   resolveMaxStorageGbForTier,
   defaultSubscriptionExpiresAt
 } = require('../utils/organisationLimits');
+const { getOrganisationQuota } = require('../services/aiReportQuotaService');
 
 const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(12);
@@ -132,6 +134,7 @@ const createOrganisation = async (req, res) => {
       subscription_tier,
       max_users,
       max_storage_gb,
+      max_ai_reports,
       notes,
       registered_name,
       cin_number,
@@ -190,6 +193,7 @@ const createOrganisation = async (req, res) => {
     const tier = subscription_tier || 'standard';
     const resolvedMaxUsers = resolveMaxUsersForTier(tier, max_users);
     const resolvedStorageGb = resolveMaxStorageGbForTier(tier, max_storage_gb);
+    const resolvedMaxAiReports = resolveMaxAiReportsForTier(tier, max_ai_reports);
 
     // FIXED: Set both _id and id to the same value
     const organisation = await Organisation.create({
@@ -206,6 +210,7 @@ const createOrganisation = async (req, res) => {
       subscription_tier: tier,
       max_users: resolvedMaxUsers,
       max_storage_gb: resolvedStorageGb,
+      max_ai_reports: resolvedMaxAiReports,
       registered_name: registered_name || name,
       cin_number,
       registered_address,
@@ -261,6 +266,7 @@ const createOrganisation = async (req, res) => {
           name: organisation.name,
           display_name: organisation.display_name,
           max_users: organisation.max_users,
+          max_ai_reports: organisation.max_ai_reports,
           subscription_expires_at: organisation.subscription_expires_at
         },
         super_admin: {
@@ -351,17 +357,40 @@ const getOrganisationById = async (req, res) => {
 
 const updateOrganisation = async (req, res) => {
   try {
-    const updates = req.body;
-    delete updates.id;
-    delete updates._id;
-    
-    const org = await Organisation.findOneAndUpdate(
+    const org = await Organisation.findOne({ id: req.params.id });
+    if (!org) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+
+    const $set = {};
+    const { max_ai_reports, max_users, max_storage_gb, notes, display_name } = req.body;
+
+    if (max_ai_reports !== undefined) {
+      $set.max_ai_reports = resolveMaxAiReportsForTier(org.subscription_tier, max_ai_reports);
+    }
+    if (max_users !== undefined) {
+      $set.max_users = resolveMaxUsersForTier(org.subscription_tier, max_users);
+    }
+    if (max_storage_gb !== undefined) {
+      $set.max_storage_gb = resolveMaxStorageGbForTier(org.subscription_tier, max_storage_gb);
+    }
+    if (notes !== undefined) $set.notes = notes;
+    if (display_name !== undefined) $set.display_name = display_name;
+
+    if (Object.keys($set).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields to update'
+      });
+    }
+
+    const updated = await Organisation.findOneAndUpdate(
       { id: req.params.id },
-      { $set: updates },
+      { $set },
       { new: true }
     );
-    
-    res.json({ success: true, data: org });
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -383,15 +412,19 @@ const getOrganisationStats = async (req, res) => {
   try {
     const orgId = req.params.id;
     const org = await Organisation.findOne({ id: orgId }).select(
-      'max_users subscription_tier subscription_expires_at'
+      'max_users max_ai_reports subscription_tier subscription_expires_at'
     );
     const totalUsers = await User.countDocuments({ organisation_id: orgId });
+    const aiReportQuota = await getOrganisationQuota(orgId);
     res.json({
       success: true,
       data: {
         stats: {
           totalUsers,
           max_users: org?.max_users ?? null,
+          max_ai_reports: aiReportQuota?.limit ?? org?.max_ai_reports ?? null,
+          ai_reports_used: aiReportQuota?.used ?? 0,
+          ai_reports_remaining: aiReportQuota?.remaining ?? null,
           subscription_tier: org?.subscription_tier ?? null,
           subscription_expires_at: org?.subscription_expires_at ?? null
         }

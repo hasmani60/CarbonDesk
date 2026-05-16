@@ -58,6 +58,12 @@ const organisationSchema = new mongoose.Schema({
     type: Number,
     default: 10
   },
+  /** Max AI carbon reports this organisation may generate (set by company operator). */
+  max_ai_reports: {
+    type: Number,
+    default: 10,
+    min: 0
+  },
   registered_name: String,
   cin_number: String,
   registered_address: String,

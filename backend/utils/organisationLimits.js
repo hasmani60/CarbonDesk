@@ -11,15 +11,18 @@ function intEnv(name, fallback) {
 const tierDefaults = () => ({
   basic: {
     maxUsers: intEnv('TIER_BASIC_MAX_USERS', 10),
-    maxStorageGb: intEnv('TIER_BASIC_MAX_STORAGE_GB', 5)
+    maxStorageGb: intEnv('TIER_BASIC_MAX_STORAGE_GB', 5),
+    maxAiReports: intEnv('TIER_BASIC_MAX_AI_REPORTS', 3)
   },
   standard: {
     maxUsers: intEnv('TIER_STANDARD_MAX_USERS', 50),
-    maxStorageGb: intEnv('TIER_STANDARD_MAX_STORAGE_GB', 10)
+    maxStorageGb: intEnv('TIER_STANDARD_MAX_STORAGE_GB', 10),
+    maxAiReports: intEnv('TIER_STANDARD_MAX_AI_REPORTS', 10)
   },
   premium: {
     maxUsers: intEnv('TIER_PREMIUM_MAX_USERS', 200),
-    maxStorageGb: intEnv('TIER_PREMIUM_MAX_STORAGE_GB', 50)
+    maxStorageGb: intEnv('TIER_PREMIUM_MAX_STORAGE_GB', 50),
+    maxAiReports: intEnv('TIER_PREMIUM_MAX_AI_REPORTS', 50)
   }
 });
 
@@ -33,6 +36,21 @@ function resolveMaxUsersForTier(subscriptionTier, requestedMaxUsers) {
   }
   const r = parseInt(String(requestedMaxUsers), 10);
   if (!Number.isFinite(r) || r < 1) {
+    return cap;
+  }
+  return Math.min(r, cap);
+}
+
+function resolveMaxAiReportsForTier(subscriptionTier, requestedMax) {
+  const tier = ['basic', 'standard', 'premium'].includes(subscriptionTier)
+    ? subscriptionTier
+    : 'standard';
+  const cap = tierDefaults()[tier].maxAiReports;
+  if (requestedMax == null || requestedMax === '') {
+    return cap;
+  }
+  const r = parseInt(String(requestedMax), 10);
+  if (!Number.isFinite(r) || r < 0) {
     return cap;
   }
   return Math.min(r, cap);
@@ -65,6 +83,7 @@ function defaultSubscriptionExpiresAt() {
 
 module.exports = {
   resolveMaxUsersForTier,
+  resolveMaxAiReportsForTier,
   resolveMaxStorageGbForTier,
   defaultSubscriptionExpiresAt,
   tierDefaults

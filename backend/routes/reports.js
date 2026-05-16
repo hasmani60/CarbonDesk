@@ -1,12 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 const { addOrganisationContext, requireOrganisation } = require('../middleware/organisationScope');
 const { reportAutomationGate } = require('../middleware/reportAutomationGate');
+const { authorizeReportOrgAdmin } = require('../middleware/reportGenerationAuth');
 const reportController = require('../controllers/reportController');
-
-/** Same as report generation UI: automation user must be admin or analyst */
-const reportAuthors = authorizeRoles('admin', 'analyst');
 
 /** Browser / app: JWT only */
 const orgUser = [
@@ -15,20 +13,22 @@ const orgUser = [
   requireOrganisation
 ];
 
-router.get('/filter-options', ...orgUser, reportController.getFilterOptions);
+router.get('/quota', ...orgUser, authorizeReportOrgAdmin, reportController.getReportQuota);
 
-router.post('/generate', ...orgUser, reportAuthors, reportController.generateReport);
+router.get('/filter-options', ...orgUser, authorizeReportOrgAdmin, reportController.getFilterOptions);
+
+router.post('/generate', ...orgUser, authorizeReportOrgAdmin, reportController.generateReport);
 
 router.post(
   '/prepare-data',
   reportAutomationGate,
-  reportAuthors,
+  authorizeReportOrgAdmin,
   reportController.prepareReportData
 );
 
 const callbackStack = [
   reportAutomationGate,
-  reportAuthors,
+  authorizeReportOrgAdmin,
   reportController.reportCallback
 ];
 router.patch('/:id/callback', ...callbackStack);
@@ -37,7 +37,7 @@ router.post('/:id/callback', ...callbackStack);
 
 router.get('/', ...orgUser, reportController.listReports);
 
-router.patch('/:id/cancel', ...orgUser, reportAuthors, reportController.cancelReport);
+router.patch('/:id/cancel', ...orgUser, authorizeReportOrgAdmin, reportController.cancelReport);
 
 router.get('/:id', ...orgUser, reportController.getReportById);
 

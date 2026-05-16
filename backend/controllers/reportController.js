@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const { AIReport } = require('../models');
 const reportDataService = require('../services/reportDataService');
+const {
+  assertCanGenerateReport,
+  getOrganisationQuota
+} = require('../services/aiReportQuotaService');
 const logger = require('../utils/logger');
 
 const ALLOWED_STATUS = ['pending', 'processing', 'completed', 'failed'];
@@ -9,6 +13,23 @@ const ALLOWED_STATUS = ['pending', 'processing', 'completed', 'failed'];
  * @desc  Distinct filter dimensions for the organisation
  * @route GET /api/reports/filter-options
  */
+/**
+ * @desc  AI report generation quota for the organisation
+ * @route GET /api/reports/quota
+ */
+const getReportQuota = async (req, res) => {
+  try {
+    const quota = await getOrganisationQuota(req.organisationId);
+    if (!quota) {
+      return res.status(404).json({ success: false, message: 'Organisation not found' });
+    }
+    res.json({ success: true, data: quota });
+  } catch (error) {
+    logger.error('getReportQuota error', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const getFilterOptions = async (req, res) => {
   try {
     const options = await reportDataService.getFilterOptions(req.organisationId);
@@ -25,6 +46,7 @@ const getFilterOptions = async (req, res) => {
  */
 const generateReport = async (req, res) => {
   try {
+    const quota = await assertCanGenerateReport(req.organisationId);
     const filters = req.body || {};
     const report = await AIReport.create({
       organisation_id: req.organisationId,
@@ -44,13 +66,24 @@ const generateReport = async (req, res) => {
         id: report._id.toString(),
         status: report.status,
         filters: report.filters,
-        createdAt: report.created_at
+        createdAt: report.created_at,
+        quota: {
+          used: quota.used + 1,
+          limit: quota.limit,
+          remaining: Math.max(0, quota.remaining - 1)
+        }
       },
       message: 'Report generation started'
     });
   } catch (error) {
     logger.error('generateReport error', error);
-    res.status(500).json({ success: false, message: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({
+      success: false,
+      message: error.message,
+      code: error.code,
+      quota: error.quota
+    });
   }
 };
 
@@ -306,6 +339,7 @@ const cancelReport = async (req, res) => {
 };
 
 module.exports = {
+  getReportQuota,
   getFilterOptions,
   generateReport,
   prepareReportData,
