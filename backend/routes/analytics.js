@@ -5,6 +5,62 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth'); // Your auth middleware
 const Emission = require('../models/Emission'); // Your Emission model
 const MACCOpportunity = require('../models/MACCOpportunity'); // Create this model
+const { buildEmissionMatch } = require('../utils/emissionQueryUtils');
+
+/**
+ * Build $match from query string (supports JSON `filters` or individual fields).
+ */
+function emissionMatchFromRequest(req) {
+  const organisationId = req.user.organisation_id;
+  let filters = { organisationId, excludeRejected: true };
+
+  if (req.query.filters) {
+    try {
+      const parsed =
+        typeof req.query.filters === 'string'
+          ? JSON.parse(req.query.filters)
+          : req.query.filters;
+      if (parsed && typeof parsed === 'object') {
+        filters = { ...filters, ...parsed, organisationId };
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+
+  const q = req.query;
+  if (q.startDate) filters.startDate = q.startDate;
+  if (q.endDate) filters.endDate = q.endDate;
+  if (q.reportingMonth != null) filters.reportingMonth = q.reportingMonth;
+  if (q.reportingYear != null) filters.reportingYear = q.reportingYear;
+  if (q.selectedScopes != null) {
+    filters.selectedScopes = Array.isArray(q.selectedScopes)
+      ? q.selectedScopes
+      : String(q.selectedScopes).split(',').map((s) => s.trim());
+  }
+  if (q.selectedFacilities != null) {
+    filters.selectedFacilities = Array.isArray(q.selectedFacilities)
+      ? q.selectedFacilities
+      : String(q.selectedFacilities).split(',').map((s) => s.trim());
+  }
+  if (q.selectedDepartments != null) {
+    filters.selectedDepartments = Array.isArray(q.selectedDepartments)
+      ? q.selectedDepartments
+      : String(q.selectedDepartments).split(',').map((s) => s.trim());
+  }
+  if (q.selectedSites != null) {
+    filters.selectedSites = Array.isArray(q.selectedSites)
+      ? q.selectedSites
+      : String(q.selectedSites).split(',').map((s) => s.trim());
+  }
+  if (q.selectedCategories != null) {
+    filters.selectedCategories = Array.isArray(q.selectedCategories)
+      ? q.selectedCategories
+      : String(q.selectedCategories).split(',').map((s) => s.trim());
+  }
+
+  return buildEmissionMatch(filters);
+}
 
 /** Normalise emission date so $year/$month work (handles Date + ISO strings); drops invalid/null dates. */
 const stagesValidEmissionDate = [
@@ -50,11 +106,11 @@ router.get('/health', async (req, res) => {
  */
 router.get('/overview', authenticateToken, async (req, res) => {
   try {
-    const { organisation_id } = req.user;
+    const match = emissionMatchFromRequest(req);
 
     // Aggregate emissions by scope
     const stats = await Emission.aggregate([
-      { $match: { organisation_id } },
+      { $match: match },
       {
         $group: {
           _id: '$scope',
@@ -104,10 +160,10 @@ router.get('/overview', authenticateToken, async (req, res) => {
  */
 router.get('/scope-migration', authenticateToken, async (req, res) => {
   try {
-    const { organisation_id } = req.user;
+    const match = emissionMatchFromRequest(req);
 
     const periodData = await Emission.aggregate([
-      { $match: { organisation_id } },
+      { $match: match },
       ...stagesValidEmissionDate,
       {
         $group: {
@@ -170,10 +226,10 @@ router.get('/scope-migration', authenticateToken, async (req, res) => {
  */
 router.get('/pareto', authenticateToken, async (req, res) => {
   try {
-    const { organisation_id } = req.user;
+    const match = emissionMatchFromRequest(req);
 
     const categoryData = await Emission.aggregate([
-      { $match: { organisation_id } },
+      { $match: match },
       {
         $group: {
           _id: { $ifNull: ['$category', 'Uncategorized'] },

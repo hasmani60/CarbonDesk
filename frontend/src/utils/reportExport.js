@@ -92,13 +92,57 @@ const REPORT_DOCUMENT_STYLES = `
     border-radius: 8px;
     overflow-x: auto;
   }
+  .report-charts { margin-top: 2.5rem; padding-top: 2rem; border-top: 1px solid #e5e7eb; }
+  .report-charts h2 {
+    font-size: 1.2rem;
+    color: #111827;
+    margin: 0 0 0.5rem;
+    padding-left: 0.75rem;
+    border-left: 4px solid #10b981;
+  }
+  .report-charts .intro { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }
+  .report-chart-block { margin-bottom: 2rem; break-inside: avoid; }
+  .report-chart-block figcaption {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.75rem;
+  }
+  .report-chart-block img {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    display: block;
+  }
   @media print {
     body { padding: 0.5in; }
     .report-cover { break-after: avoid; }
     .report-body h2 { break-after: avoid; }
     .report-body table { break-inside: avoid; }
+    .report-chart-block { break-inside: avoid; }
   }
 `;
+
+function buildChartsHtml(chartImages = []) {
+  if (!chartImages?.length) return '';
+  const figures = chartImages
+    .map(
+      (chart) => `
+    <figure class="report-chart-block">
+      <figcaption>${String(chart.title || 'Chart').replace(/</g, '&lt;')}</figcaption>
+      <img src="${chart.dataUrl}" alt="${String(chart.title || 'Chart').replace(/"/g, '&quot;')}" />
+    </figure>`
+    )
+    .join('');
+  return `
+  <section class="report-charts">
+    <h2>Analytics charts</h2>
+    <p class="intro">Visual summary from your organisation analytics.</p>
+    ${figures}
+  </section>`;
+}
 
 export function markdownToHtml(markdown) {
   if (!markdown) return '';
@@ -107,10 +151,10 @@ export function markdownToHtml(markdown) {
   );
 }
 
-export function buildFullReportHtml({ title, periodLabel, generatedAt, markdown }) {
+export function buildFullReportHtml({ title, periodLabel, generatedAt, markdown, chartImages = [] }) {
   const safeTitle = (title || 'Carbon Report').replace(/</g, '');
   const metaParts = [periodLabel, generatedAt ? `Generated ${generatedAt}` : ''].filter(Boolean);
-  const bodyHtml = markdownToHtml(markdown);
+  const bodyHtml = markdownToHtml(markdown) + buildChartsHtml(chartImages);
 
   return `<!DOCTYPE html>
 <html lang="en">

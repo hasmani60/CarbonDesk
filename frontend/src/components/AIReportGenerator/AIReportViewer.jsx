@@ -91,12 +91,13 @@ function bodyMarkdown(markdown, title) {
   return trimmed;
 }
 
-function exportOptions(title, periodLabel, generatedAt, markdown) {
+function exportOptions(title, periodLabel, generatedAt, markdown, chartImages) {
   return {
     title: title || 'Carbon Report',
     periodLabel: periodLabel || '',
     generatedAt: generatedAt ? formatDateTime(generatedAt) : '',
-    markdown: markdown || ''
+    markdown: markdown || '',
+    chartImages: chartImages || []
   };
 }
 
@@ -105,10 +106,11 @@ export default function AIReportViewer({
   periodLabel,
   generatedAt,
   markdown,
+  chartImages = [],
   showCover = false
 }) {
   const content = bodyMarkdown(markdown, title);
-  const opts = exportOptions(title, periodLabel, generatedAt, markdown);
+  const opts = exportOptions(title, periodLabel, generatedAt, markdown, chartImages);
 
   const handlePrint = () => {
     const result = printReportHtml(opts);
@@ -189,6 +191,32 @@ export default function AIReportViewer({
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {content}
           </ReactMarkdown>
+
+          {chartImages.length > 0 && (
+            <section className="mt-12 pt-8 border-t border-gray-200 dark:border-slate-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 pl-3 border-l-4 border-emerald-500">
+                Analytics charts
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Charts use the same reporting period
+                {periodLabel ? ` (${periodLabel})` : ''} and filters as this report.
+              </p>
+              <div className="space-y-8">
+                {chartImages.map((chart) => (
+                  <figure key={chart.id} className="report-chart-figure">
+                    <figcaption className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">
+                      {chart.title}
+                    </figcaption>
+                    <img
+                      src={chart.dataUrl}
+                      alt={chart.title}
+                      className="w-full rounded-lg border border-gray-200 dark:border-slate-600 bg-white"
+                    />
+                  </figure>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </article>
     </div>

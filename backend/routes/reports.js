@@ -39,6 +39,13 @@ router.get('/', ...orgUser, reportController.listReports);
 
 router.patch('/:id/cancel', ...orgUser, authorizeReportOrgAdmin, reportController.cancelReport);
 
+router.patch(
+  '/:id/chart-images',
+  ...orgUser,
+  authorizeReportOrgAdmin,
+  reportController.saveChartImages
+);
+
 router.get('/:id', ...orgUser, reportController.getReportById);
 
 module.exports = router;

@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { reportsAPI } from '../../services/api';
 import AIReportViewer from './AIReportViewer';
+import ReportChartSnapshots from './ReportChartSnapshots';
 import { formatPeriodRange, toDateInputValue } from '../../utils/formatters';
 
 const POLL_MS = 4000;
@@ -232,7 +233,10 @@ export default function AIReportGenerator() {
   const [showReportViewer, setShowReportViewer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [capturingCharts, setCapturingCharts] = useState(false);
   const pollRef = useRef(null);
+  const chartCaptureRef = useRef(null);
+  const chartCaptureStartedRef = useRef(null);
 
   const buildFiltersPayload = useCallback(
     () => ({
@@ -360,6 +364,56 @@ export default function AIReportGenerator() {
     return () => clearInterval(pollRef.current);
   }, [activeReport?.id, activeReport?.status, fetchReport]);
 
+  const reportChartImages =
+    activeReport?.chartImages?.length > 0
+      ? activeReport.chartImages
+      : activeReport?.metadata?.chartImages || [];
+
+  useEffect(() => {
+    if (activeReport?.status !== 'completed' || !activeReport?.id || !activeReport?.reportContent) {
+      return undefined;
+    }
+    if (reportChartImages.length > 0) return undefined;
+    if (chartCaptureStartedRef.current === activeReport.id) return undefined;
+
+    chartCaptureStartedRef.current = activeReport.id;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setCapturingCharts(true);
+        for (let i = 0; i < 24 && !cancelled; i += 1) {
+          if (chartCaptureRef.current?.isReady?.()) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        if (cancelled || !chartCaptureRef.current?.captureAll) return;
+
+        const images = await chartCaptureRef.current.captureAll();
+        if (cancelled || !images?.length) return;
+
+        await reportsAPI.saveChartImages(activeReport.id, images);
+        setActiveReport((prev) =>
+          prev
+            ? {
+                ...prev,
+                chartImages: images,
+                metadata: { ...(prev.metadata || {}), chartImages: images }
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error('Chart capture failed', err);
+      } finally {
+        if (!cancelled) setCapturingCharts(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeReport?.id, activeReport?.status, activeReport?.reportContent, reportChartImages.length]);
+
   const triggerN8nWebhook = async (reportId, filters) => {
     if (!N8N_WEBHOOK_URL) {
       throw new Error(
@@ -433,12 +487,14 @@ export default function AIReportGenerator() {
         }));
       }
 
+      chartCaptureStartedRef.current = null;
       setShowReportViewer(false);
       setActiveReport({
         id: reportId,
         status: 'pending',
         filters,
-        reportContent: null
+        reportContent: null,
+        chartImages: []
       });
 
       try {
@@ -490,7 +546,13 @@ export default function AIReportGenerator() {
   const previewPeriod = hasCompletedReport ? formatReportPeriodLabel(activeReport) : null;
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-5 relative">
+      <div
+        className="fixed -left-[9999px] top-0 opacity-0 pointer-events-none overflow-hidden"
+        aria-hidden
+      >
+        <ReportChartSnapshots ref={chartCaptureRef} filters={activeReport?.filters} />
+      </div>
       <div className="flex flex-wrap items-stretch gap-4">
         <div className="flex-1 min-w-[min(100%,260px)]">
           <QuotaBar quota={quota} />
@@ -739,11 +801,18 @@ export default function AIReportGenerator() {
             <div className="app-card overflow-hidden flex flex-col min-h-[320px]">
               {showReportViewer ? (
                 <>
+                  {capturingCharts && reportChartImages.length === 0 && (
+                    <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700/80 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Adding analytics charts to report…
+                    </div>
+                  )}
                   <AIReportViewer
                     title={previewTitle}
                     periodLabel={previewPeriod}
                     generatedAt={activeReport.generatedAt}
                     markdown={activeReport.reportContent}
+                    chartImages={reportChartImages}
                   />
                   <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700/80 bg-gray-50/50 dark:bg-slate-800/30">
                     <button

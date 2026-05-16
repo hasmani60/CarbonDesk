@@ -393,7 +393,9 @@ export const reportsAPI = {
   generate: (filters) => apiClient.post('/reports/generate', filters),
   getById: (id) => apiClient.get(`/reports/${id}`),
   list: (params) => apiClient.get('/reports', { params }),
-  cancel: (id) => apiClient.patch(`/reports/${id}/cancel`)
+  cancel: (id) => apiClient.patch(`/reports/${id}/cancel`),
+  saveChartImages: (id, chartImages) =>
+    apiClient.patch(`/reports/${id}/chart-images`, { chartImages })
 };
 
 // Monitor API

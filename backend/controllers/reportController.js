@@ -258,7 +258,8 @@ const getReportById = async (req, res) => {
         updatedAt: report.updated_at,
         createdBy: report.createdBy,
         createdByName: report.createdByName,
-        metadata: report.metadata
+        metadata: report.metadata,
+        chartImages: report.metadata?.chartImages || []
       }
     });
   } catch (error) {
@@ -344,6 +345,57 @@ const cancelReport = async (req, res) => {
   }
 };
 
+/**
+ * @desc  Save chart snapshot images (base64 PNG) for a completed report
+ * @route PATCH /api/reports/:id/chart-images
+ */
+const saveChartImages = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { chartImages } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid report id' });
+    }
+
+    if (!Array.isArray(chartImages)) {
+      return res.status(400).json({ success: false, message: 'chartImages must be an array' });
+    }
+
+    if (chartImages.length > 6) {
+      return res.status(400).json({ success: false, message: 'Maximum 6 chart images allowed' });
+    }
+
+    const sanitized = chartImages
+      .filter((img) => img?.id && img?.dataUrl && String(img.dataUrl).startsWith('data:image/'))
+      .map((img) => ({
+        id: String(img.id).slice(0, 64),
+        title: String(img.title || 'Chart').slice(0, 120),
+        dataUrl: String(img.dataUrl)
+      }));
+
+    const report = await AIReport.findOne({ _id: id, organisation_id: req.organisationId });
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Report not found' });
+    }
+
+    report.metadata = {
+      ...(report.metadata || {}),
+      chartImages: sanitized,
+      chartImagesCapturedAt: new Date().toISOString()
+    };
+    await report.save();
+
+    res.json({
+      success: true,
+      data: { chartImages: sanitized }
+    });
+  } catch (error) {
+    logger.error('saveChartImages error', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getReportQuota,
   getFilterOptions,
@@ -352,5 +404,6 @@ module.exports = {
   reportCallback,
   getReportById,
   listReports,
-  cancelReport
+  cancelReport,
+  saveChartImages
 };
