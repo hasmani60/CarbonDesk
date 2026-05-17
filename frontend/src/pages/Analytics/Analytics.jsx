@@ -25,6 +25,7 @@ import {
 } from '../../utils/analysisHelpers';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import Scope3TransportSummary from '../../components/Scope3TransportSummary/Scope3TransportSummary';
+import EmployeeCommuteEmissionsSummary from '../../components/EmployeeCommuteEmissionsSummary/EmployeeCommuteEmissionsSummary';
 import toast from 'react-hot-toast';
 import { formatDateTime } from '../../utils/formatters';
 import { useTheme } from '../../context/ThemeContext';
@@ -665,6 +666,8 @@ const Analytics = () => {
             </div>
           </div>
         </section>
+
+        <EmployeeCommuteEmissionsSummary />
 
         <Scope3TransportSummary />
 

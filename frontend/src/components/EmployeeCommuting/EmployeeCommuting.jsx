@@ -1,66 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Users,
   CalendarCheck,
-  BarChart3,
   Plus,
   Pencil,
   UserX,
-  AlertTriangle,
-  Save
+  Save,
+  BarChart3
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend
-} from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { employeesAPI } from '../../services/api';
+import {
+  TRANSPORT_MODES,
+  FUEL_BASED_MODES,
+  formatCommuteMode,
+} from '../../utils/commuteModes';
 import toast from 'react-hot-toast';
 
-const TRANSPORT_MODES = [
-  { value: 'personal_car_petrol', label: 'Car (Petrol)' },
-  { value: 'personal_car_diesel', label: 'Car (Diesel)' },
-  { value: 'two_wheeler_petrol', label: 'Two-wheeler (Petrol)' },
-  { value: 'two_wheeler_diesel', label: 'Two-wheeler (Diesel)' },
-  { value: 'cng_vehicle', label: 'CNG Vehicle' },
-  { value: 'electric_vehicle', label: 'Electric Vehicle' },
-  { value: 'bus', label: 'Bus' },
-  { value: 'metro', label: 'Metro' },
-  { value: 'train', label: 'Train' },
-  { value: 'cab_shared', label: 'Cab (Shared)' },
-  { value: 'cab_solo', label: 'Cab (Solo)' },
-  { value: 'bicycle', label: 'Bicycle' },
-  { value: 'walking', label: 'Walking' }
-];
-
-const FUEL_BASED = new Set([
-  'personal_car_petrol',
-  'personal_car_diesel',
-  'two_wheeler_petrol',
-  'two_wheeler_diesel',
-  'cng_vehicle'
-]);
-
-const MODE_COLORS = ['#059669', '#2563eb', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#4b5563'];
-
-const formatMode = (mode) =>
-  TRANSPORT_MODES.find((m) => m.value === mode)?.label || mode?.replace(/_/g, ' ');
-
 const todayISO = () => new Date().toISOString().slice(0, 10);
-
-const currentMonthISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
 
 const emptyForm = () => ({
   name: '',
@@ -89,10 +47,6 @@ const EmployeeCommuting = () => {
   const [attendanceDate, setAttendanceDate] = useState(todayISO());
   const [attendanceMap, setAttendanceMap] = useState({});
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-
-  const [summaryMonth, setSummaryMonth] = useState(currentMonthISO());
-  const [summary, setSummary] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const loadEmployees = useCallback(async () => {
     try {
@@ -135,25 +89,6 @@ const EmployeeCommuting = () => {
     }
   }, [tab, loadAttendance]);
 
-  const loadSummary = useCallback(async () => {
-    try {
-      setSummaryLoading(true);
-      const data = await employeesAPI.getEmissions(summaryMonth);
-      setSummary(data);
-    } catch (err) {
-      toast.error(err.message || 'Failed to load emissions summary');
-      setSummary(null);
-    } finally {
-      setSummaryLoading(false);
-    }
-  }, [summaryMonth]);
-
-  useEffect(() => {
-    if (tab === 'summary') {
-      loadSummary();
-    }
-  }, [tab, loadSummary]);
-
   const openAdd = () => {
     setEditing(null);
     setForm(emptyForm());
@@ -168,9 +103,10 @@ const EmployeeCommuting = () => {
       home_to_office_distance_km: String(emp.home_to_office_distance_km ?? ''),
       transport_mode: emp.transport_mode || 'personal_car_petrol',
       vehicle_number: emp.vehicle_number || '',
-      vehicle_fuel_efficiency_kmpl: emp.vehicle_fuel_efficiency_kmpl != null
-        ? String(emp.vehicle_fuel_efficiency_kmpl)
-        : ''
+      vehicle_fuel_efficiency_kmpl:
+        emp.vehicle_fuel_efficiency_kmpl != null
+          ? String(emp.vehicle_fuel_efficiency_kmpl)
+          : ''
     });
     setModalOpen(true);
   };
@@ -187,7 +123,7 @@ const EmployeeCommuting = () => {
       vehicle_number: form.vehicle_number.trim()
     };
 
-    if (FUEL_BASED.has(form.transport_mode)) {
+    if (FUEL_BASED_MODES.has(form.transport_mode)) {
       payload.vehicle_fuel_efficiency_kmpl = parseFloat(form.vehicle_fuel_efficiency_kmpl);
     }
 
@@ -223,23 +159,6 @@ const EmployeeCommuting = () => {
 
   const activeEmployees = employees.filter((e) => e.is_active !== false);
 
-  const initAttendanceRows = () => {
-    const map = { ...attendanceMap };
-    activeEmployees.forEach((emp) => {
-      const id = emp.id || emp._id;
-      if (map[id] === undefined) {
-        map[id] = false;
-      }
-    });
-    setAttendanceMap(map);
-  };
-
-  useEffect(() => {
-    if (tab === 'attendance' && activeEmployees.length && Object.keys(attendanceMap).length === 0) {
-      initAttendanceRows();
-    }
-  }, [tab, activeEmployees.length]);
-
   const saveAttendance = async () => {
     if (!canMarkAttendance) return;
     const records = activeEmployees.map((emp) => ({
@@ -272,30 +191,29 @@ const EmployeeCommuting = () => {
 
   const tabs = [
     { id: 'employees', label: 'Manage Employees', icon: Users },
-    { id: 'attendance', label: 'Mark Attendance', icon: CalendarCheck },
-    { id: 'summary', label: 'Emissions Summary', icon: BarChart3 }
+    { id: 'attendance', label: 'Mark Attendance', icon: CalendarCheck }
   ];
-
-  const barData = (summary?.by_employee || [])
-    .filter((e) => e.total_co2e_kg > 0)
-    .map((e) => ({ name: e.name, co2e: e.total_co2e_kg }));
-
-  const pieData = (summary?.by_mode || []).map((m) => ({
-    name: formatMode(m.transport_mode),
-    value: m.total_co2e_kg
-  }));
 
   return (
     <div className="border rounded-lg border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900/50 overflow-hidden mb-6">
       <div className="p-4 border-b border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🚗</span>
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">Employee Commuting</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Scope 3 Category 7 — track commute distance, attendance, and emissions
-            </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🚗</span>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Employee Commuting</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Scope 3 Category 7 — manage employees and daily attendance
+              </p>
+            </div>
           </div>
+          <Link
+            to="/analytics"
+            className="inline-flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 hover:underline"
+          >
+            <BarChart3 className="w-4 h-4" />
+            View emissions in Analytics
+          </Link>
         </div>
         <div className="flex flex-wrap gap-2 mt-4">
           {tabs.map(({ id, label, icon: Icon }) => (
@@ -354,11 +272,9 @@ const EmployeeCommuting = () => {
                         <td className="py-2 pr-3 font-medium">{emp.name}</td>
                         <td className="py-2 pr-3">{emp.employee_id || '—'}</td>
                         <td className="py-2 pr-3">{emp.home_to_office_distance_km}</td>
-                        <td className="py-2 pr-3">{formatMode(emp.transport_mode)}</td>
+                        <td className="py-2 pr-3">{formatCommuteMode(emp.transport_mode)}</td>
                         <td className="py-2 pr-3">{emp.vehicle_number || '—'}</td>
-                        <td className="py-2 pr-3">
-                          {emp.vehicle_fuel_efficiency_kmpl ?? '—'}
-                        </td>
+                        <td className="py-2 pr-3">{emp.vehicle_fuel_efficiency_kmpl ?? '—'}</td>
                         <td className="py-2 pr-3">
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${
@@ -482,113 +398,6 @@ const EmployeeCommuting = () => {
             )}
           </>
         )}
-
-        {tab === 'summary' && (
-          <>
-            <label className="text-sm block mb-4">
-              <span className="text-gray-600 dark:text-gray-400">Month</span>
-              <input
-                type="month"
-                value={summaryMonth}
-                onChange={(e) => setSummaryMonth(e.target.value)}
-                className="ml-2 border rounded-lg px-3 py-2 dark:bg-slate-800 dark:border-slate-600"
-              />
-            </label>
-
-            {summary?.missing_factors?.length > 0 && (
-              <div className="mb-4 flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-200">
-                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium">Missing emission factors</p>
-                  <p>
-                    No scope3_commute factors found for:{' '}
-                    {summary.missing_factors.map(formatMode).join(', ')}. Refresh after backend
-                    deploy, or ask an admin to run the commute factor seed.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {summary?.missing_fuel_efficiency?.length > 0 && (
-              <div className="mb-4 flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-200">
-                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium">Fuel efficiency required</p>
-                  <p>
-                    Add km/L for:{' '}
-                    {summary.missing_fuel_efficiency.map((e) => e.name).join(', ')} (Manage
-                    Employees tab).
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {summaryLoading ? (
-              <p className="text-sm text-gray-500 py-8 text-center">Calculating emissions…</p>
-            ) : summary ? (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-slate-800/80">
-                    <p className="text-xs text-gray-500">Active employees</p>
-                    <p className="text-2xl font-bold">{summary.employee_count}</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-slate-800/80">
-                    <p className="text-xs text-gray-500">Working days recorded</p>
-                    <p className="text-2xl font-bold">{summary.working_days_recorded}</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/40">
-                    <p className="text-xs text-emerald-700 dark:text-emerald-400">Total CO₂e</p>
-                    <p className="text-2xl font-bold text-emerald-800 dark:text-emerald-300">
-                      {summary.total_co2e_kg?.toFixed(2)} kg
-                    </p>
-                    <p className="text-sm text-emerald-600">
-                      {(summary.total_co2e_tonnes ?? summary.total_co2e_kg / 1000).toFixed(4)} t
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="h-64">
-                    <p className="text-sm font-medium mb-2">CO₂e per employee</p>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={barData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-25} textAnchor="end" height={60} />
-                        <YAxis />
-                        <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} kg`, 'CO₂e']} />
-                        <Bar dataKey="co2e" fill="#059669" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="h-64">
-                    <p className="text-sm font-medium mb-2">By transport mode</p>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={pieData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          label={({ name, percent }) =>
-                            `${name} ${(percent * 100).toFixed(0)}%`
-                          }
-                        >
-                          {pieData.map((_, i) => (
-                            <Cell key={i} fill={MODE_COLORS[i % MODE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} kg`, 'CO₂e']} />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </>
-        )}
       </div>
 
       {modalOpen && canManage && (
@@ -623,7 +432,9 @@ const EmployeeCommuting = () => {
                   min="0"
                   step="0.1"
                   value={form.home_to_office_distance_km}
-                  onChange={(e) => setForm({ ...form, home_to_office_distance_km: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, home_to_office_distance_km: e.target.value })
+                  }
                   className="w-full mt-1 border rounded-lg px-3 py-2 dark:bg-slate-800"
                 />
               </div>
@@ -641,7 +452,7 @@ const EmployeeCommuting = () => {
                   ))}
                 </select>
               </div>
-              {FUEL_BASED.has(form.transport_mode) && (
+              {FUEL_BASED_MODES.has(form.transport_mode) && (
                 <>
                   <div>
                     <label className="text-sm text-gray-600">Vehicle number</label>
@@ -690,6 +501,5 @@ const EmployeeCommuting = () => {
     </div>
   );
 };
-
 
 export default EmployeeCommuting;
