@@ -11,6 +11,7 @@ import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
 import EmployeeCommuting from '../../components/EmployeeCommuting/EmployeeCommuting';
+import ProductionInput from '../../components/ProductionInput/ProductionInput';
 import toast from 'react-hot-toast';
 
 /** DB/JWT may store scope ids as strings — avoid .includes(1) failing on ["1"] */
@@ -566,6 +567,8 @@ const Input = () => {
           className="mb-6"
         />
       )}
+
+      <ProductionInput />
 
       {activeScope === '3' && canAccessScope('3') && (
         <EmployeeCommuting />

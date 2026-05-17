@@ -501,6 +501,15 @@ export const employeesAPI = {
     apiClient.get('/employees/commute-total', { params })
 };
 
+// Production output API (operational data for intensity metrics)
+export const productionAPI = {
+  list: (params) => apiClient.get('/production', { params }),
+  getSummary: (params) => apiClient.get('/production/summary', { params }),
+  create: (data) => apiClient.post('/production', data),
+  update: (id, data) => apiClient.put(`/production/${id}`, data),
+  remove: (id) => apiClient.delete(`/production/${id}`)
+};
+
 // Road routes API — place search, factory site & driving distance
 export const roadAPI = {
   searchPlaces: (q, limit = 10) =>
@@ -664,6 +673,7 @@ export default {
   usersAPI,
   vehiclesAPI,
   employeesAPI,
+  productionAPI,
   flightsAPI,
   seaAPI,
   roadAPI,

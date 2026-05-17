@@ -509,6 +509,13 @@ app.use('/api/employees',
   require('./routes/employees')
 );
 
+app.use('/api/production',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/production')
+);
+
 app.use('/api/flights',
   authenticateToken,
   addOrganisationContext,
