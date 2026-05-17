@@ -103,10 +103,14 @@ const Input = () => {
       'distance': `Select vehicle type and enter distance travelled`,
       'passenger-distance': categoryName.includes('Business Travel - Air')
         ? `Select origin & destination airports, or enter distance manually`
-        : `Enter number of passengers and distance travelled`,
+        : categoryName.includes('Business Travel - Sea')
+          ? `Select origin & destination ports, or enter distance manually`
+          : `Enter number of passengers and distance travelled`,
       'freight': categoryName.includes('Freighting Goods - Air')
         ? `Select airports for route distance, or enter distance manually`
-        : `Enter cargo weight and distance transported`,
+        : categoryName.includes('Freighting Goods - Sea')
+          ? `Select ports for route distance, or enter distance manually`
+          : `Enter cargo weight and distance transported`,
       'refrigerant': `Select refrigerant type and enter amount leaked/used`,
       'accommodation': `Enter number of room nights`,
       'homeworking': `Enter number of employee working hours`,

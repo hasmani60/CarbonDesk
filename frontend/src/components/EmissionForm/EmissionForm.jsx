@@ -9,7 +9,9 @@ import { emissionFactors } from '../../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
 import { isFreightActivity, TRANSPORT_CATEGORY_OPTIONS } from '../../utils/transportCategory';
 import { supportsFlightRoute } from '../../utils/flightActivity';
+import { supportsSeaRoute } from '../../utils/seaActivity';
 import FlightRoutePicker from '../FlightRoutePicker/FlightRoutePicker';
+import SeaRoutePicker from '../SeaRoutePicker/SeaRoutePicker';
 
 const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const { user } = useAuth();
@@ -38,10 +40,15 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   });
 
   const useFlightRoute = supportsFlightRoute(activity);
+  const useSeaRoute = supportsSeaRoute(activity);
   const [originAirport, setOriginAirport] = useState(null);
   const [destinationAirport, setDestinationAirport] = useState(null);
   const [flightRoundTrip, setFlightRoundTrip] = useState(false);
   const [flightRouteMeta, setFlightRouteMeta] = useState(null);
+  const [originPort, setOriginPort] = useState(null);
+  const [destinationPort, setDestinationPort] = useState(null);
+  const [seaRoundTrip, setSeaRoundTrip] = useState(false);
+  const [seaRouteMeta, setSeaRouteMeta] = useState(null);
   
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -306,6 +313,21 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         };
       }
 
+      if (useSeaRoute && seaRouteMeta) {
+        activityData.sea_route = {
+          origin_code: seaRouteMeta.origin.code,
+          origin_name: seaRouteMeta.origin.name,
+          destination_code: seaRouteMeta.destination.code,
+          destination_name: seaRouteMeta.destination.name,
+          great_circle_km: seaRouteMeta.great_circle_km,
+          sea_distance_km: seaRouteMeta.sea_distance_km,
+          distance_km: seaRouteMeta.distance_km,
+          round_trip: seaRouteMeta.round_trip,
+          routing_factor: seaRouteMeta.routing_factor,
+          method: seaRouteMeta.method
+        };
+      }
+
       const totalEmissions = calculatedAmount * factorData.factor;
       const co2 = calculatedAmount * (factorData.co2 || 0);
       const ch4 = calculatedAmount * (factorData.ch4 || 0);
@@ -328,7 +350,9 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         location: formData.location,
         description: formData.description || (flightRouteMeta
           ? `${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}${flightRouteMeta.round_trip ? ' (round trip)' : ''}`
-          : ''),
+          : seaRouteMeta
+            ? `${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}${seaRouteMeta.round_trip ? ' (round trip)' : ''}`
+            : ''),
         notes: formData.description,
         
         // Activity-specific data
@@ -426,6 +450,16 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
 
   const handleFlightDistanceCalculated = (distanceKm, meta) => {
     setFlightRouteMeta(meta);
+    if (distanceKm != null && distanceKm > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        distance: String(distanceKm)
+      }));
+    }
+  };
+
+  const handleSeaDistanceCalculated = (distanceKm, meta) => {
+    setSeaRouteMeta(meta);
     if (distanceKm != null && distanceKm > 0) {
       setFormData((prev) => ({
         ...prev,
@@ -568,12 +602,18 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Distance travelled"
               />
-              {useFlightRoute && flightRouteMeta && (
-                <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">
-                  From airports: {flightRouteMeta.origin.iata} → {flightRouteMeta.destination.iata}
-                  {flightRouteMeta.round_trip ? ' (round trip)' : ''}. Editable if needed.
+              {(useFlightRoute && flightRouteMeta) || (useSeaRoute && seaRouteMeta) ? (
+                <p
+                  className={`text-xs mt-1 ${
+                    useSeaRoute ? 'text-teal-600 dark:text-teal-400' : 'text-sky-600 dark:text-sky-400'
+                  }`}
+                >
+                  {useFlightRoute && flightRouteMeta
+                    ? `From airports: ${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}`
+                    : `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`}
+                  {(flightRouteMeta?.round_trip || seaRouteMeta?.round_trip) ? ' (round trip)' : ''}. Editable if needed.
                 </p>
-              )}
+              ) : null}
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -633,12 +673,18 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Transport distance"
               />
-              {useFlightRoute && flightRouteMeta && (
-                <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">
-                  From airports: {flightRouteMeta.origin.iata} → {flightRouteMeta.destination.iata}
-                  {flightRouteMeta.round_trip ? ' (round trip)' : ''}. Editable if needed.
+              {(useFlightRoute && flightRouteMeta) || (useSeaRoute && seaRouteMeta) ? (
+                <p
+                  className={`text-xs mt-1 ${
+                    useSeaRoute ? 'text-teal-600 dark:text-teal-400' : 'text-sky-600 dark:text-sky-400'
+                  }`}
+                >
+                  {useFlightRoute && flightRouteMeta
+                    ? `From airports: ${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}`
+                    : `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`}
+                  {(flightRouteMeta?.round_trip || seaRouteMeta?.round_trip) ? ' (round trip)' : ''}. Editable if needed.
                 </p>
-              )}
+              ) : null}
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -842,6 +888,23 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 errors={{
                   originAirport: errors.originAirport,
                   destinationAirport: errors.destinationAirport
+                }}
+              />
+            )}
+
+            {formData.source && useSeaRoute && (
+              <SeaRoutePicker
+                origin={originPort}
+                destination={destinationPort}
+                roundTrip={seaRoundTrip}
+                onOriginChange={setOriginPort}
+                onDestinationChange={setDestinationPort}
+                onRoundTripChange={setSeaRoundTrip}
+                onDistanceCalculated={handleSeaDistanceCalculated}
+                disabled={loading}
+                errors={{
+                  originPort: errors.originPort,
+                  destinationPort: errors.destinationPort
                 }}
               />
             )}

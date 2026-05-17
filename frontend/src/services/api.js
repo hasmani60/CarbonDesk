@@ -457,6 +457,21 @@ export const employeesAPI = {
     apiClient.get('/employees/commute-total', { params })
 };
 
+// Sea routes API — port search & sea distance
+export const seaAPI = {
+  searchPorts: (q, limit = 20) =>
+    apiClient.get('/sea/ports', { params: { q, limit } }),
+  getPort: (code) => apiClient.get(`/sea/ports/${code}`),
+  getDistance: ({ origin, destination, roundTrip }) =>
+    apiClient.get('/sea/distance', {
+      params: {
+        origin,
+        destination,
+        roundTrip: roundTrip ? 'true' : undefined
+      }
+    })
+};
+
 // Flights API — airport search & great-circle distance
 export const flightsAPI = {
   searchAirports: (q, limit = 20) =>
@@ -582,6 +597,7 @@ export default {
   vehiclesAPI,
   employeesAPI,
   flightsAPI,
+  seaAPI,
   generatorsAPI,
   organisationAPI,
   organizationAPI,

@@ -502,6 +502,12 @@ app.use('/api/flights',
   require('./routes/flights')
 );
 
+app.use('/api/sea',
+  authenticateToken,
+  addOrganisationContext,
+  require('./routes/sea')
+);
+
 app.use('/api/monitor', 
   authenticateToken, 
   addOrganisationContext, 
