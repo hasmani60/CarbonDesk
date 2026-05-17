@@ -25,6 +25,8 @@ import Analytics from './pages/Analytics/Analytics';
 import AIReportsPage from './pages/Reports/AIReportsPage';
 import Settings from './pages/Settings/Settings';
 import OrganisationPage from './pages/Organisation/OrganisationPage';
+import OffsetOpportunitiesPage from './pages/OffsetOpportunities/OffsetOpportunitiesPage';
+import OffsetDetailPage from './pages/OffsetOpportunities/OffsetDetailPage';
 
 // Admin pages
 import AdminMonitor from './pages/Admin/AdminMonitor';
@@ -124,6 +126,24 @@ function App() {
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'viewer']}>
                         <Analytics />
+                      </ProtectedRoute>
+                    }
+                  />
+
+                  {/* Offset Opportunities */}
+                  <Route
+                    path="offset-opportunities"
+                    element={
+                      <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
+                        <OffsetOpportunitiesPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="offset-opportunities/:id"
+                    element={
+                      <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
+                        <OffsetDetailPage />
                       </ProtectedRoute>
                     }
                   />

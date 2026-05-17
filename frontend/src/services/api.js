@@ -510,6 +510,26 @@ export const productionAPI = {
   remove: (id) => apiClient.delete(`/production/${id}`)
 };
 
+export const offsetsAPI = {
+  list: (params) => apiClient.get('/offsets', { params }),
+  getSummary: (params) => apiClient.get('/offsets/summary', { params }),
+  getNetEmissions: (params) => apiClient.get('/offsets/net-emissions', { params }),
+  getById: (id) => apiClient.get(`/offsets/${id}`),
+  create: (data) => apiClient.post('/offsets', data),
+  update: (id, data) => apiClient.put(`/offsets/${id}`, data),
+  remove: (id) => apiClient.delete(`/offsets/${id}`),
+  applyUtilization: (data) => apiClient.post('/offsets/utilize', data),
+  listUtilizations: (params) => apiClient.get('/offsets/utilizations', { params }),
+  uploadDocuments: (offsetId, formData) =>
+    apiClient.post(`/offsets/${offsetId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+  deleteDocument: (offsetId, docId) =>
+    apiClient.delete(`/offsets/${offsetId}/documents/${docId}`),
+  downloadDocumentUrl: (offsetId, docId) =>
+    `${API_BASE_URL}/offsets/${offsetId}/documents/${docId}/download`
+};
+
 // Road routes API — place search, factory site & driving distance
 export const roadAPI = {
   searchPlaces: (q, limit = 10) =>
@@ -674,6 +694,7 @@ export default {
   vehiclesAPI,
   employeesAPI,
   productionAPI,
+  offsetsAPI,
   flightsAPI,
   seaAPI,
   roadAPI,

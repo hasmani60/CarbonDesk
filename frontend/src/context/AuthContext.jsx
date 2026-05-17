@@ -404,9 +404,9 @@ export const AuthProvider = ({ children }) => {
     
     // Define role-based page access
     const rolePageAccess = {
-      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/settings', '/organisation'],
-      contributor: ['/dashboard', '/input', '/monitor', '/settings', '/organisation'],
-      viewer: ['/dashboard', '/monitor', '/organisation']
+      analyst: ['/dashboard', '/input', '/monitor', '/analytics', '/offset-opportunities', '/settings', '/organisation'],
+      contributor: ['/dashboard', '/input', '/monitor', '/offset-opportunities', '/settings', '/organisation'],
+      viewer: ['/dashboard', '/monitor', '/analytics', '/offset-opportunities', '/organisation']
     };
     
     const allowedPages = rolePageAccess[user?.role] || [];

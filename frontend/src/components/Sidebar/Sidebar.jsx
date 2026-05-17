@@ -18,7 +18,8 @@ import {
   Users,
   Menu,
   Building2,
-  Sparkles
+  Sparkles,
+  Leaf
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useState, useEffect } from 'react';
@@ -76,6 +77,7 @@ const Sidebar = () => {
         },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/offset-opportunities', icon: Leaf, label: 'Offset Opportunities' },
         { path: '/reports', icon: Sparkles, label: 'AI Reports' },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
@@ -83,6 +85,7 @@ const Sidebar = () => {
       analyst: [
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/offset-opportunities', icon: Leaf, label: 'Offset Opportunities' },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],
@@ -100,6 +103,7 @@ const Sidebar = () => {
             { path: '/input?section=commute', label: 'Employee commuting' }
           ]
         },
+        { path: '/offset-opportunities', icon: Leaf, label: 'Offset Opportunities' },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ],
@@ -107,6 +111,7 @@ const Sidebar = () => {
         { path: '/dashboard', icon: Home, label: 'Dashboard' },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/offset-opportunities', icon: Leaf, label: 'Offset Opportunities' },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
         { path: '/settings', icon: Settings, label: 'Settings' }
       ]
@@ -189,6 +194,9 @@ const Sidebar = () => {
     }
     if (path === '/admin') {
       return location.pathname.startsWith('/admin');
+    }
+    if (path === '/offset-opportunities') {
+      return location.pathname.startsWith('/offset-opportunities');
     }
     return location.pathname === path;
   };

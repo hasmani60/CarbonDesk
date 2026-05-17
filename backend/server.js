@@ -516,6 +516,13 @@ app.use('/api/production',
   require('./routes/production')
 );
 
+app.use('/api/offsets',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/offsets')
+);
+
 app.use('/api/flights',
   authenticateToken,
   addOrganisationContext,
