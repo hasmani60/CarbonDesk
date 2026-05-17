@@ -1221,6 +1221,15 @@ const connectDB = async () => {
       host: conn.connection.host, 
       database: conn.connection.name 
     });
+
+    try {
+      const { ensureScope3CommuteFactors } = require('./services/scope3CommuteFactorSeed');
+      const count = await ensureScope3CommuteFactors();
+      logger.info('Scope 3 commute emission factors ready', { count });
+    } catch (seedErr) {
+      logger.warn('Could not ensure scope3_commute factors', { error: seedErr.message });
+    }
+
     return true;
   } catch (error) {
     logger.error('MongoDB connection failed', error);

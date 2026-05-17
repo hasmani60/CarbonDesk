@@ -8,6 +8,7 @@ const {
   startOfDayUTC,
   monthRangeUTC
 } = require('../services/commuteEmissionService');
+const { ensureScope3CommuteFactors } = require('../services/scope3CommuteFactorSeed');
 const logger = require('../utils/logger');
 
 const validateEmployeePayload = (body, isUpdate = false) => {
@@ -297,6 +298,8 @@ const getEmissions = async (req, res) => {
       attendanceByEmployee[key].push(row);
     }
 
+    await ensureScope3CommuteFactors();
+
     const missingFactors = await getMissingCommuteFactors(
       orgId,
       employees.map((e) => e.transport_mode)
@@ -362,6 +365,14 @@ const getEmissions = async (req, res) => {
       total_co2e_kg: parseFloat(co2.toFixed(4))
     }));
 
+    const missing_fuel_efficiency = employees
+      .filter(
+        (e) =>
+          FUEL_BASED_MODES.includes(e.transport_mode) &&
+          (!e.vehicle_fuel_efficiency_kmpl || e.vehicle_fuel_efficiency_kmpl <= 0)
+      )
+      .map((e) => ({ employee_id: e._id.toString(), name: e.name }));
+
     res.json({
       success: true,
       data: {
@@ -371,6 +382,7 @@ const getEmissions = async (req, res) => {
         employee_count: employees.length,
         working_days_recorded: workingDaysRecorded.size,
         missing_factors: missingFactors,
+        missing_fuel_efficiency,
         by_employee: byEmployee,
         by_mode: byMode
       }

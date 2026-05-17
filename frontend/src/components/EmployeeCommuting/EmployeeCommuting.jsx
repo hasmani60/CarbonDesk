@@ -501,8 +501,23 @@ const EmployeeCommuting = () => {
                 <div className="text-sm">
                   <p className="font-medium">Missing emission factors</p>
                   <p>
-                    Configure scope3_commute factors for:{' '}
-                    {summary.missing_factors.map(formatMode).join(', ')}. Contact an admin.
+                    No scope3_commute factors found for:{' '}
+                    {summary.missing_factors.map(formatMode).join(', ')}. Refresh after backend
+                    deploy, or ask an admin to run the commute factor seed.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {summary?.missing_fuel_efficiency?.length > 0 && (
+              <div className="mb-4 flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-200">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium">Fuel efficiency required</p>
+                  <p>
+                    Add km/L for:{' '}
+                    {summary.missing_fuel_efficiency.map((e) => e.name).join(', ')} (Manage
+                    Employees tab).
                   </p>
                 </div>
               </div>

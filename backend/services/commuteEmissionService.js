@@ -21,10 +21,19 @@ async function getCommuteEmissionFactor(organisationId, transportMode) {
 
   if (orgFactor) return orgFactor;
 
-  return EmissionFactor.findOne({
-    ...baseQuery,
-    $or: [{ organisation_id: null }, { organisation_id: { $exists: false } }]
+  const globalFactor = await EmissionFactor.findOne({
+    scope: 3,
+    category: COMMUTE_CATEGORY,
+    subcategory: transportMode,
+    isActive: true,
+    $or: [
+      { organisation_id: null },
+      { organisation_id: { $exists: false } },
+      { organisation_id: '' }
+    ]
   }).lean();
+
+  return globalFactor;
 }
 
 /**
