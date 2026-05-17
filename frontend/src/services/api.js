@@ -44,6 +44,16 @@ apiClient.interceptors.response.use(
     // HANDLE 429 RATE LIMIT ERRORS WITH RETRY
     // ============================================
     if (error.response?.status === 429) {
+      // Nominatim rate limits — client retries make it worse; surface message immediately
+      if (config.url?.includes('/road/places')) {
+        return Promise.reject({
+          message:
+            error.response.data?.message ||
+            'Location search is busy. Wait a few seconds and try a more specific address.',
+          status: 429
+        });
+      }
+
       // Initialize retry count if not present
       if (!config._retryCount) {
         config._retryCount = 0;

@@ -7,7 +7,18 @@ const USER_AGENT =
   'CarbonDesk/1.0 (carbon-accounting; support@carbondesk.local)';
 
 const geocodeCache = new Map();
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — reduce repeat Nominatim calls
+const MIN_SEARCH_LENGTH = 3;
+
+/** Nominatim usage policy: max 1 request per second. */
+const NOMINATIM_MIN_INTERVAL_MS = 1100;
+let nominatimQueue = Promise.resolve();
+let lastNominatimAt = 0;
+const inFlightRequests = new Map();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function httpsGetJson(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -17,6 +28,7 @@ function httpsGetJson(url, headers = {}) {
         headers: {
           'User-Agent': USER_AGENT,
           Accept: 'application/json',
+          'Accept-Language': 'en',
           ...headers
         }
       },
@@ -46,6 +58,56 @@ function httpsGetJson(url, headers = {}) {
   });
 }
 
+async function httpsGetJsonWithRetry(url, maxRetries = 2) {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await httpsGetJson(url);
+    } catch (error) {
+      lastError = error;
+      if (error.statusCode === 429 && attempt < maxRetries) {
+        await sleep(2000 * (attempt + 1));
+        continue;
+      }
+      if (error.statusCode === 429) {
+        const rateErr = new Error(
+          'Location search is temporarily busy (OpenStreetMap rate limit). Wait a few seconds and try again, or type a more specific address.'
+        );
+        rateErr.statusCode = 429;
+        throw rateErr;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Serialize all Nominatim HTTP calls globally (1 req/sec).
+ */
+function enqueueNominatim(taskKey, fn) {
+  if (taskKey && inFlightRequests.has(taskKey)) {
+    return inFlightRequests.get(taskKey);
+  }
+
+  const run = nominatimQueue.then(async () => {
+    const elapsed = Date.now() - lastNominatimAt;
+    const wait = Math.max(0, NOMINATIM_MIN_INTERVAL_MS - elapsed);
+    if (wait > 0) await sleep(wait);
+    lastNominatimAt = Date.now();
+    return fn();
+  });
+
+  nominatimQueue = run.catch(() => {});
+
+  if (taskKey) {
+    inFlightRequests.set(taskKey, run);
+    run.finally(() => inFlightRequests.delete(taskKey));
+  }
+
+  return run;
+}
+
 function normalizePlace(item) {
   return {
     place_id: String(item.place_id),
@@ -63,7 +125,7 @@ function normalizePlace(item) {
  */
 async function searchPlaces(query, limit = 10) {
   const q = String(query || '').trim();
-  if (q.length < 2) return [];
+  if (q.length < MIN_SEARCH_LENGTH) return [];
 
   const cacheKey = `search:${q.toLowerCase()}:${limit}`;
   const cached = geocodeCache.get(cacheKey);
@@ -71,17 +133,24 @@ async function searchPlaces(query, limit = 10) {
     return cached.data;
   }
 
-  const url =
-    `${NOMINATIM_BASE}/search?format=json&addressdetails=1&limit=${limit}` +
-    `&q=${encodeURIComponent(q)}`;
+  return enqueueNominatim(cacheKey, async () => {
+    const cachedAgain = geocodeCache.get(cacheKey);
+    if (cachedAgain && Date.now() - cachedAgain.ts < CACHE_TTL_MS) {
+      return cachedAgain.data;
+    }
 
-  const rows = await httpsGetJson(url);
-  const places = (Array.isArray(rows) ? rows : [])
-    .filter((r) => r.lat && r.lon)
-    .map(normalizePlace);
+    const url =
+      `${NOMINATIM_BASE}/search?format=json&addressdetails=1&limit=${limit}` +
+      `&q=${encodeURIComponent(q)}`;
 
-  geocodeCache.set(cacheKey, { ts: Date.now(), data: places });
-  return places;
+    const rows = await httpsGetJsonWithRetry(url);
+    const places = (Array.isArray(rows) ? rows : [])
+      .filter((r) => r.lat && r.lon)
+      .map(normalizePlace);
+
+    geocodeCache.set(cacheKey, { ts: Date.now(), data: places });
+    return places;
+  });
 }
 
 /**
@@ -98,7 +167,7 @@ async function getPlaceById(placeId) {
   }
 
   const url = `${NOMINATIM_BASE}/lookup?format=json&addressdetails=1&place_ids=${encodeURIComponent(id)}`;
-  const rows = await httpsGetJson(url);
+  const rows = await enqueueNominatim(`lookup:${id}`, () => httpsGetJsonWithRetry(url));
   if (!Array.isArray(rows) || !rows[0]) return null;
 
   const place = normalizePlace(rows[0]);

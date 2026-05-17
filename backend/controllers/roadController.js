@@ -34,10 +34,14 @@ const searchPlacesHandler = async (req, res) => {
     const places = await searchPlaces(q, limit);
     res.json({ success: true, data: places });
   } catch (error) {
-    console.error('searchPlaces error:', error.message);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    if (status !== 429) {
+      console.error('searchPlaces error:', error.message);
+    }
+    res.status(status).json({
       success: false,
-      message: error.message || 'Failed to search locations'
+      message: error.message || 'Failed to search locations',
+      retryAfterSeconds: status === 429 ? 3 : undefined
     });
   }
 };

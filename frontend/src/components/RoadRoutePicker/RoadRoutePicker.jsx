@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Truck, ArrowRight, Loader2, MapPin, RotateCcw, Factory, AlertCircle } from 'lucide-react';
 import { roadAPI } from '../../services/api';
 import { formatPlaceLabel } from '../../utils/roadActivity';
+import {
+  PLACE_SEARCH_DEBOUNCE_MS,
+  PLACE_SEARCH_MIN_CHARS,
+  placeSearchRateLimitMessage
+} from '../../utils/geocodingSearch';
 
 function PlaceAutocomplete({
   label,
@@ -16,6 +21,7 @@ function PlaceAutocomplete({
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const debounceRef = useRef(null);
   const wrapRef = useRef(null);
 
@@ -32,16 +38,19 @@ function PlaceAutocomplete({
   }, []);
 
   const runSearch = useCallback(async (term) => {
-    if (!term || term.length < 2) {
+    if (!term || term.length < PLACE_SEARCH_MIN_CHARS) {
       setResults([]);
+      setSearchError('');
       return;
     }
     setLoading(true);
+    setSearchError('');
     try {
       const list = await roadAPI.searchPlaces(term);
       setResults(Array.isArray(list) ? list : []);
-    } catch {
+    } catch (err) {
       setResults([]);
+      setSearchError(placeSearchRateLimitMessage(err));
     } finally {
       setLoading(false);
     }
@@ -54,7 +63,7 @@ function PlaceAutocomplete({
     onChange(null);
     setOpen(true);
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(term), 320);
+    debounceRef.current = setTimeout(() => runSearch(term), PLACE_SEARCH_DEBOUNCE_MS);
   };
 
   const pick = (place) => {
@@ -100,6 +109,9 @@ function PlaceAutocomplete({
         } bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100`}
       />
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+      {searchError && !error && (
+        <p className="text-amber-700 dark:text-amber-400 text-xs mt-1">{searchError}</p>
+      )}
       {open && !locked && (loading || results.length > 0) && (
         <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg">
           {loading && (

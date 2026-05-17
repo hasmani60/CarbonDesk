@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Factory, MapPin, Loader2, Save, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { roadAPI } from '../../services/api';
 import { formatPlaceLabel } from '../../utils/roadActivity';
+import {
+  PLACE_SEARCH_DEBOUNCE_MS,
+  PLACE_SEARCH_MIN_CHARS,
+  placeSearchRateLimitMessage
+} from '../../utils/geocodingSearch';
 import toast from 'react-hot-toast';
 
 export default function FactorySiteSettings({ organisation, onUpdated }) {
@@ -12,6 +17,7 @@ export default function FactorySiteSettings({ organisation, onUpdated }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const debounceRef = useRef(null);
   const wrapRef = useRef(null);
 
@@ -41,16 +47,19 @@ export default function FactorySiteSettings({ organisation, onUpdated }) {
   }, []);
 
   const runSearch = async (term) => {
-    if (!term || term.length < 2) {
+    if (!term || term.length < PLACE_SEARCH_MIN_CHARS) {
       setSearchResults([]);
+      setSearchError('');
       return;
     }
     setSearchLoading(true);
+    setSearchError('');
     try {
       const list = await roadAPI.searchPlaces(term);
       setSearchResults(Array.isArray(list) ? list : []);
-    } catch {
+    } catch (err) {
       setSearchResults([]);
+      setSearchError(placeSearchRateLimitMessage(err));
     } finally {
       setSearchLoading(false);
     }
@@ -61,7 +70,7 @@ export default function FactorySiteSettings({ organisation, onUpdated }) {
     setSearchQuery(term);
     setSearchOpen(true);
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(term), 320);
+    debounceRef.current = setTimeout(() => runSearch(term), PLACE_SEARCH_DEBOUNCE_MS);
   };
 
   const saveFromPlace = async (place) => {
@@ -183,9 +192,12 @@ export default function FactorySiteSettings({ organisation, onUpdated }) {
                 onChange={handleSearchInput}
                 onFocus={() => searchQuery && setSearchOpen(true)}
                 disabled={saving}
-                placeholder="Search address or place name"
+                placeholder={`Search address (min ${PLACE_SEARCH_MIN_CHARS} characters)`}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500"
               />
+              {searchError && (
+                <p className="text-amber-700 dark:text-amber-400 text-xs mt-1">{searchError}</p>
+              )}
               {searchOpen && (searchLoading || searchResults.length > 0) && (
                 <ul className="absolute z-20 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg">
                   {searchLoading && (
