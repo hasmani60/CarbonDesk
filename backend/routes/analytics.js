@@ -6,6 +6,7 @@ const { authenticateToken } = require('../middleware/auth'); // Your auth middle
 const Emission = require('../models/Emission'); // Your Emission model
 const MACCOpportunity = require('../models/MACCOpportunity'); // Create this model
 const { buildEmissionMatch } = require('../utils/emissionQueryUtils');
+const { materialTransportMatchFilter } = require('../utils/transportEmissionUtils');
 
 /**
  * Build $match from query string (supports JSON `filters` or individual fields).
@@ -216,6 +217,92 @@ router.get('/scope-migration', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch scope migration data'
+    });
+  }
+});
+
+/**
+ * Scope 3 material transport split (GHG Cat. 4 upstream vs Cat. 9 downstream)
+ * GET /api/analytics/scope3-transport-breakdown
+ */
+router.get('/scope3-transport-breakdown', authenticateToken, async (req, res) => {
+  try {
+    const match = {
+      ...emissionMatchFromRequest(req),
+      ...materialTransportMatchFilter()
+    };
+
+    const rows = await Emission.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $ifNull: ['$transport_category', 'raw_material']
+          },
+          total_co2e: sumCo2,
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    let upstream = 0;
+    let downstream = 0;
+    let upstreamCount = 0;
+    let downstreamCount = 0;
+
+    rows.forEach((row) => {
+      const val = row.total_co2e || 0;
+      const cnt = row.count || 0;
+      if (row._id === 'finished_product') {
+        downstream = val;
+        downstreamCount = cnt;
+      } else {
+        upstream += val;
+        upstreamCount += cnt;
+      }
+    });
+
+    const transportSubtotal = upstream + downstream;
+
+    res.json({
+      success: true,
+      data: {
+        category_4_upstream: {
+          label: 'Category 4: Upstream Transport (Raw Material)',
+          transport_category: 'raw_material',
+          total_co2e: parseFloat(upstream.toFixed(4)),
+          count: upstreamCount
+        },
+        category_9_downstream: {
+          label: 'Category 9: Downstream Transport (Finished Product)',
+          transport_category: 'finished_product',
+          total_co2e: parseFloat(downstream.toFixed(4)),
+          count: downstreamCount
+        },
+        transport_subtotal: {
+          label: 'Transport Subtotal',
+          total_co2e: parseFloat(transportSubtotal.toFixed(4)),
+          count: upstreamCount + downstreamCount
+        },
+        chart_data: [
+          {
+            name: 'Upstream (Raw Material)',
+            value: parseFloat(upstream.toFixed(4)),
+            key: 'raw_material'
+          },
+          {
+            name: 'Downstream (Finished Product)',
+            value: parseFloat(downstream.toFixed(4)),
+            key: 'finished_product'
+          }
+        ].filter((d) => d.value > 0)
+      }
+    });
+  } catch (error) {
+    console.error('Scope 3 transport breakdown error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Scope 3 transport breakdown'
     });
   }
 });

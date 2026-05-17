@@ -40,6 +40,8 @@ import Pagination from '../../components/Pagination/Pagination';
 import TaskAssignmentModal from '../../components/TaskAssignmentModal/TaskAssignmentModal';
 import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader';
 import toast from 'react-hot-toast';
+import TransportCategoryBadge from '../../components/TransportCategoryBadge/TransportCategoryBadge';
+import { isMaterialTransportRow } from '../../utils/transportCategory';
 import { formatDate, formatDateTime, formatPeriodRange } from '../../utils/formatters';
 
 const Monitor = () => {
@@ -255,7 +257,9 @@ const Monitor = () => {
         startDate: emission.startDate || emission.start_date,
         endDate: emission.endDate || emission.end_date,
         emissionFactor: emission.factor || emission.emissionFactor || 1.0,
-        organisation_id: emission.organisation_id
+        organisation_id: emission.organisation_id,
+        transport_category: emission.transport_category,
+        isMaterialTransport: isMaterialTransportRow(emission)
       };
       });
 
@@ -865,6 +869,7 @@ const Monitor = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Scope</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-48">Activity Type</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-48">Source</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-32">Category</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-24">Amount</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-32">Emissions</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-emerald-800 dark:text-emerald-300 uppercase tracking-wider w-32">Period</th>
@@ -903,6 +908,13 @@ const Monitor = () => {
                           <div className="max-w-xs truncate" title={activity.source}>
                             {activity.source}
                           </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {activity.isMaterialTransport ? (
+                            <TransportCategoryBadge category={activity.transport_category} />
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900 dark:text-white text-right tabular-nums">
                           {isEditing ? (

@@ -9,6 +9,10 @@ const { addOrganisationToData } = require('../middleware/organisationScope');
 const { contributorMaySubmitEmission } = require('../utils/contributorEmissionAccess');
 const { notifyAdminsAnalystsNewEmission } = require('../services/notificationService');
 const logger = require('../utils/logger');
+const {
+  isMaterialTransportEmission,
+  normalizeTransportCategory
+} = require('../utils/transportEmissionUtils');
 
 // Import emission factors from database
 const { emissionFactors } = require('../data/complete_emission_factors_db');
@@ -431,6 +435,28 @@ const createEmission = async (req, res) => {
       }
     }
     
+    const transportCheckDoc = {
+      scope: parseInt(emissionData.scope),
+      category,
+      activityType: category,
+      unit: emissionsCalc.unit,
+      activityData: emissionData.activityData
+    };
+
+    let transportCategory;
+    if (isMaterialTransportEmission(transportCheckDoc)) {
+      if (
+        emissionData.transport_category &&
+        !['raw_material', 'finished_product'].includes(emissionData.transport_category)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'transport_category must be raw_material or finished_product'
+        });
+      }
+      transportCategory = normalizeTransportCategory(emissionData.transport_category);
+    }
+
     // Create new emission document (persist source/subcategory explicitly — UI Monitor/Analytics use these)
     const newEmission = new Emission({
       scope: parseInt(emissionData.scope),
@@ -449,7 +475,14 @@ const createEmission = async (req, res) => {
       organisation_id: emissionData.organisation_id,
       organisation_name: emissionData.organisation_name || req.organisation?.name,
       created_by: req.user.id, // This might be a string, MongoDB will convert it
-      created_by_name: req.user.name || 'Unknown User'
+      created_by_name: req.user.name || 'Unknown User',
+      activityData: emissionData.activityData || {},
+      location: emissionData.location,
+      description: emissionData.description,
+      startDate: emissionData.startDate,
+      endDate: emissionData.endDate,
+      accountingPeriod: emissionData.accountingPeriod,
+      ...(transportCategory ? { transport_category: transportCategory } : {})
     });
     
     console.log('💾 About to save emission:', {
@@ -655,7 +688,8 @@ const updateEmission = async (req, res) => {
     const allowedFields = [
       'scope', 'category', 'subcategory', 'source', 'activityType', 'activity',
       'quantity', 'amount', 'unit', 'co2e',
-      'date', 'status', 'notes', 'location', 'description'
+      'date', 'status', 'notes', 'location', 'description',
+      'transport_category', 'activityData'
     ];
     
     const updateData = {};
@@ -669,6 +703,29 @@ const updateEmission = async (req, res) => {
       updateData.amount = updateData.quantity;
     } else if (updateData.amount !== undefined && updateData.quantity === undefined) {
       updateData.quantity = updateData.amount;
+    }
+
+    if (updates.transport_category !== undefined) {
+      const merged = {
+        scope: emission.scope,
+        category: updates.category || emission.category,
+        activityType: updates.activityType || emission.activityType,
+        unit: updates.unit || emission.unit,
+        activityData: updates.activityData || emission.activityData
+      };
+      if (!isMaterialTransportEmission(merged)) {
+        return res.status(400).json({
+          success: false,
+          message: 'transport_category applies only to Scope 3 material transport entries'
+        });
+      }
+      if (!['raw_material', 'finished_product'].includes(updates.transport_category)) {
+        return res.status(400).json({
+          success: false,
+          message: 'transport_category must be raw_material or finished_product'
+        });
+      }
+      updateData.transport_category = normalizeTransportCategory(updates.transport_category);
     }
 
     if (Object.keys(updateData).length === 0) {

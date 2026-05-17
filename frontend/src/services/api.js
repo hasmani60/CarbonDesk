@@ -308,6 +308,8 @@ export const analyticsAPI = {
   
   getScopeMigration: (params) => apiClient.get('/analytics/scope-migration', { params }),
   getPareto: (params) => apiClient.get('/analytics/pareto', { params }),
+  getScope3TransportBreakdown: (params) =>
+    apiClient.get('/analytics/scope3-transport-breakdown', { params }),
   getParetoDrilldown: (category) => apiClient.get(`/analytics/pareto/drilldown/${encodeURIComponent(category)}`),
   getVelocity: (params) => apiClient.get('/analytics/velocity', { params }),
   
@@ -440,6 +442,19 @@ export const vehiclesAPI = {
   getMyVehicles: (params) => apiClient.get('/vehicles', { params: { ...params, owner: 'me' } })
 };
 
+// Employees API (Scope 3 Category 7 — commute)
+export const employeesAPI = {
+  list: (params) => apiClient.get('/employees', { params }),
+  create: (data) => apiClient.post('/employees', data),
+  update: (id, data) => apiClient.put(`/employees/${id}`, data),
+  remove: (id) => apiClient.delete(`/employees/${id}`),
+  getAttendance: (date) =>
+    apiClient.get('/employees/attendance', { params: { date } }),
+  bulkAttendance: (payload) => apiClient.post('/employees/attendance/bulk', payload),
+  getEmissions: (month) =>
+    apiClient.get('/employees/emissions', { params: { month } })
+};
+
 // Generators API
 export const generatorsAPI = {
   getAll: (params) => apiClient.get('/generators', { params }),
@@ -548,6 +563,7 @@ export default {
   monitorAPI,
   usersAPI,
   vehiclesAPI,
+  employeesAPI,
   generatorsAPI,
   organisationAPI,
   organizationAPI,

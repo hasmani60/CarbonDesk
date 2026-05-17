@@ -489,6 +489,12 @@ app.use('/api/generators',
   requireOrganisation,
   require('./routes/generators')
 );
+app.use('/api/employees',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/employees')
+);
 app.use('/api/monitor', 
   authenticateToken, 
   addOrganisationContext, 

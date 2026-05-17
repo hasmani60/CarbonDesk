@@ -10,6 +10,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
+import EmployeeCommuting from '../../components/EmployeeCommuting/EmployeeCommuting';
 import toast from 'react-hot-toast';
 
 /** DB/JWT may store scope ids as strings — avoid .includes(1) failing on ["1"] */
@@ -549,6 +550,10 @@ const Input = () => {
           onTaskClick={handleTaskClick}
           className="mb-6"
         />
+      )}
+
+      {activeScope === '3' && canAccessScope('3') && (
+        <EmployeeCommuting />
       )}
 
       {user?.role === 'contributor' && user?.restrictions && (

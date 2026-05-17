@@ -7,6 +7,7 @@ import { useActivity } from '../../context/ActivityContext';
 import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
+import { isFreightActivity, TRANSPORT_CATEGORY_OPTIONS } from '../../utils/transportCategory';
 
 const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const { user } = useAuth();
@@ -30,7 +31,8 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
     weight: '',
     nights: '',
     hours: '',
-    refrigerantAmount: ''
+    refrigerantAmount: '',
+    transport_category: 'raw_material'
   });
   
   const [loading, setLoading] = useState(false);
@@ -332,7 +334,10 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         },
         // Omit status — backend sets submitted (contributors) or verified (admin/analyst)
         created_by: user?.id,
-        created_by_name: user?.name || 'Unknown User'
+        created_by_name: user?.name || 'Unknown User',
+        ...(isFreightActivity(activity)
+          ? { transport_category: formData.transport_category || 'raw_material' }
+          : {})
       };
       
       // ============================================
@@ -712,6 +717,38 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isFreightActivity(activity) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Material transport category*
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                {TRANSPORT_CATEGORY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      setFormData((prev) => ({ ...prev, transport_category: opt.value }))
+                    }
+                    className={`flex-1 px-4 py-3 text-sm font-medium rounded-lg border-2 transition-colors ${
+                      formData.transport_category === opt.value
+                        ? opt.value === 'raw_material'
+                          ? 'border-green-600 bg-green-50 text-green-900 dark:bg-green-950/40 dark:text-green-200'
+                          : 'border-blue-600 bg-blue-50 text-blue-900 dark:bg-blue-950/40 dark:text-blue-200'
+                        : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Raw material = Scope 3 Category 4 (upstream). Finished product = Category 9 (downstream).
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4">
             {/* Source Selection */}
             <div>

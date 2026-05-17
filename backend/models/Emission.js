@@ -108,6 +108,13 @@ const emissionSchema = new mongoose.Schema({
   },
   verified_at: Date,
   
+  // Scope 3 material transport — GHG Protocol Cat. 4 (upstream) vs Cat. 9 (downstream)
+  transport_category: {
+    type: String,
+    enum: ['raw_material', 'finished_product'],
+    index: true
+  },
+
   // Additional information
   location: String,
   description: String,

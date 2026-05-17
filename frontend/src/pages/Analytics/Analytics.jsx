@@ -24,6 +24,7 @@ import {
   generateMACCData
 } from '../../utils/analysisHelpers';
 import PageHeader from '../../components/PageHeader/PageHeader';
+import Scope3TransportSummary from '../../components/Scope3TransportSummary/Scope3TransportSummary';
 import toast from 'react-hot-toast';
 import { formatDateTime } from '../../utils/formatters';
 import { useTheme } from '../../context/ThemeContext';
@@ -664,6 +665,8 @@ const Analytics = () => {
             </div>
           </div>
         </section>
+
+        <Scope3TransportSummary />
 
         {/* SECTION 2: HIGH-LEVEL OVERVIEW CHARTS */}
         <section>

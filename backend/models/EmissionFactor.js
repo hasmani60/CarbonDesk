@@ -51,12 +51,20 @@ const emissionFactorSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  organisation_id: {
+    type: String,
+    default: null,
+    index: true
   }
 }, {
   timestamps: true
 });
 
-// Create a compound index for fast lookups
-emissionFactorSchema.index({ scope: 1, category: 1, subcategory: 1 }, { unique: true });
+// Global factors: unique per scope/category/subcategory when organisation_id is null
+emissionFactorSchema.index(
+  { scope: 1, category: 1, subcategory: 1, organisation_id: 1 },
+  { unique: true }
+);
 
 module.exports = mongoose.model('EmissionFactor', emissionFactorSchema);
