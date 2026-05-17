@@ -103,6 +103,7 @@ const defaultCorsOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000',
+  'https://carbon-desk.vercel.app',
   normalizeCorsOrigin(process.env.CLIENT_URL)
 ].filter(Boolean);
 
@@ -120,12 +121,24 @@ const corsOrigins = [
   )
 ];
 
+const isAllowedCorsOrigin = (originNorm) => {
+  if (!originNorm) return false;
+  if (corsOrigins.includes(originNorm)) return true;
+  if (
+    process.env.CORS_ALLOW_VERCEL !== 'false' &&
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(originNorm)
+  ) {
+    return true;
+  }
+  return false;
+};
+
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true);
 
     const originNorm = normalizeCorsOrigin(origin);
-    if (corsOrigins.includes(originNorm)) {
+    if (isAllowedCorsOrigin(originNorm)) {
       callback(null, true);
     } else {
       if (process.env.NODE_ENV === 'production') {

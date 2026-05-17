@@ -1,7 +1,11 @@
 const https = require('https');
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+/** Komoot Photon — better for production (shared IPs); no 1 req/s policy like Nominatim. */
+const PHOTON_BASE = 'https://photon.komoot.io';
 const OSRM_BASE = 'https://router.project-osrm.org';
+/** photon (default) | nominatim | auto (photon then nominatim) */
+const GEOCODER_SEARCH = (process.env.GEOCODER_SEARCH || 'photon').toLowerCase();
 const USER_AGENT =
   process.env.NOMINATIM_USER_AGENT ||
   'CarbonDesk/1.0 (carbon-accounting; support@carbondesk.local)';
@@ -60,7 +64,7 @@ function httpsGetJson(url, headers = {}) {
   });
 }
 
-async function httpsGetJsonWithRetry(url, maxRetries = 2) {
+async function httpsGetJsonWithRetry(url, maxRetries = 4) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -68,12 +72,12 @@ async function httpsGetJsonWithRetry(url, maxRetries = 2) {
     } catch (error) {
       lastError = error;
       if (error.statusCode === 429 && attempt < maxRetries) {
-        await sleep(2000 * (attempt + 1));
+        await sleep(3000 * (attempt + 1));
         continue;
       }
       if (error.statusCode === 429) {
         const rateErr = new Error(
-          'Location search is temporarily busy (OpenStreetMap rate limit). Wait a few seconds and try again, or type a more specific address.'
+          'Location search is temporarily busy. Wait a few seconds and try a more specific address (e.g. city or postcode).'
         );
         rateErr.statusCode = 429;
         throw rateErr;
@@ -82,6 +86,64 @@ async function httpsGetJsonWithRetry(url, maxRetries = 2) {
     }
   }
   throw lastError;
+}
+
+function cacheSearchResults(cacheKey, places) {
+  geocodeCache.set(cacheKey, { ts: Date.now(), data: places });
+  for (const p of places) {
+    if (p.place_id) searchPlaceById.set(String(p.place_id), p);
+  }
+  return places;
+}
+
+function normalizePhotonFeature(feature) {
+  const props = feature.properties || {};
+  const coords = feature.geometry?.coordinates;
+  if (!coords || coords.length < 2) return null;
+
+  const lon = parseFloat(coords[0]);
+  const lat = parseFloat(coords[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const line1 =
+    props.housenumber && props.street
+      ? `${props.housenumber} ${props.street}`
+      : props.street || props.name;
+  const parts = [
+    line1,
+    props.name && props.name !== line1 ? props.name : null,
+    props.city || props.town || props.village || props.district,
+    props.state,
+    props.country
+  ].filter(Boolean);
+
+  const osmType = props.osm_type || 'N';
+  const osmId = props.osm_id;
+  const place_id =
+    osmId != null
+      ? `photon:${osmType}:${osmId}`
+      : `photon:${lat.toFixed(5)},${lon.toFixed(5)}`;
+
+  return {
+    place_id,
+    label: [...new Set(parts)].join(', ') || `${lat}, ${lon}`,
+    name: props.name || line1 || '',
+    lat,
+    lon,
+    country: (props.countrycode || props.country || '').toString().toUpperCase().slice(0, 2),
+    type: props.type || props.osm_value || 'place'
+  };
+}
+
+/**
+ * Place search via Photon (recommended for Render / multi-tenant production).
+ */
+async function searchPlacesPhoton(query, limit = 10) {
+  const url =
+    `${PHOTON_BASE}/api/?q=${encodeURIComponent(query)}&limit=${limit}&lang=en`;
+  const data = await httpsGetJson(url);
+  const features = Array.isArray(data?.features) ? data.features : [];
+  return features.map(normalizePhotonFeature).filter(Boolean);
 }
 
 /**
@@ -122,8 +184,23 @@ function normalizePlace(item) {
   };
 }
 
+async function searchPlacesNominatim(query, limit = 10) {
+  const cacheKey = `search:nom:${query.toLowerCase()}:${limit}`;
+
+  return enqueueNominatim(cacheKey, async () => {
+    const url =
+      `${NOMINATIM_BASE}/search?format=json&addressdetails=1&limit=${limit}` +
+      `&q=${encodeURIComponent(query)}`;
+
+    const rows = await httpsGetJsonWithRetry(url);
+    return (Array.isArray(rows) ? rows : [])
+      .filter((r) => r.lat && r.lon)
+      .map(normalizePlace);
+  });
+}
+
 /**
- * Search places (addresses, cities, POIs) via OpenStreetMap Nominatim.
+ * Search places — Photon by default (production-safe); Nominatim as fallback.
  */
 async function searchPlaces(query, limit = 10) {
   const q = String(query || '').trim();
@@ -135,27 +212,42 @@ async function searchPlaces(query, limit = 10) {
     return cached.data;
   }
 
-  return enqueueNominatim(cacheKey, async () => {
-    const cachedAgain = geocodeCache.get(cacheKey);
-    if (cachedAgain && Date.now() - cachedAgain.ts < CACHE_TTL_MS) {
-      return cachedAgain.data;
+  const usePhoton = GEOCODER_SEARCH === 'photon' || GEOCODER_SEARCH === 'auto';
+  const useNominatim = GEOCODER_SEARCH === 'nominatim' || GEOCODER_SEARCH === 'auto';
+
+  if (usePhoton) {
+    try {
+      const photonPlaces = await searchPlacesPhoton(q, limit);
+      if (photonPlaces.length) {
+        return cacheSearchResults(cacheKey, photonPlaces);
+      }
+      if (GEOCODER_SEARCH === 'photon') {
+        return cacheSearchResults(cacheKey, []);
+      }
+    } catch (photonErr) {
+      if (GEOCODER_SEARCH === 'photon') {
+        const err = new Error(
+          photonErr.message || 'Location search failed. Try again in a moment.'
+        );
+        err.statusCode = photonErr.statusCode || 503;
+        throw err;
+      }
     }
+  }
 
-    const url =
-      `${NOMINATIM_BASE}/search?format=json&addressdetails=1&limit=${limit}` +
-      `&q=${encodeURIComponent(q)}`;
-
-    const rows = await httpsGetJsonWithRetry(url);
-    const places = (Array.isArray(rows) ? rows : [])
-      .filter((r) => r.lat && r.lon)
-      .map(normalizePlace);
-
-    geocodeCache.set(cacheKey, { ts: Date.now(), data: places });
-    for (const p of places) {
-      if (p.place_id) searchPlaceById.set(String(p.place_id), p);
+  if (useNominatim) {
+    try {
+      const places = await searchPlacesNominatim(q, limit);
+      return cacheSearchResults(cacheKey, places);
+    } catch (nomErr) {
+      if (nomErr.statusCode === 429) {
+        throw nomErr;
+      }
+      throw nomErr;
     }
-    return places;
-  });
+  }
+
+  return [];
 }
 
 /**
