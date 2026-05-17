@@ -67,9 +67,11 @@ const Sidebar = () => {
           label: 'Input',
           hasSubmenu: true,
           submenu: [
-            { path: '/input?scope=1', label: 'Scope 1' },
-            { path: '/input?scope=2', label: 'Scope 2' },
-            { path: '/input?scope=3', label: 'Scope 3' }
+            { path: '/input?section=emissions&scope=1', label: 'Scope 1' },
+            { path: '/input?section=emissions&scope=2', label: 'Scope 2' },
+            { path: '/input?section=emissions&scope=3', label: 'Scope 3' },
+            { path: '/input?section=production', label: 'Production' },
+            { path: '/input?section=commute', label: 'Employee commuting' }
           ]
         },
         { path: '/monitor', icon: Monitor, label: 'Monitor' },
@@ -91,9 +93,11 @@ const Sidebar = () => {
           label: 'Input',
           hasSubmenu: true,
           submenu: [
-            { path: '/input?scope=1', label: 'Scope 1' },
-            { path: '/input?scope=2', label: 'Scope 2' },
-            { path: '/input?scope=3', label: 'Scope 3' }
+            { path: '/input?section=emissions&scope=1', label: 'Scope 1' },
+            { path: '/input?section=emissions&scope=2', label: 'Scope 2' },
+            { path: '/input?section=emissions&scope=3', label: 'Scope 3' },
+            { path: '/input?section=production', label: 'Production' },
+            { path: '/input?section=commute', label: 'Employee commuting' }
           ]
         },
         { path: '/organisation', icon: Building2, label: 'Organisation' },
@@ -191,12 +195,24 @@ const Sidebar = () => {
 
   // FIXED: Correct submenu active state checking
   const isSubmenuActive = (path) => {
-    if (path.includes('scope=')) {
-      const currentScope = new URLSearchParams(location.search).get('scope');
-      const pathScope = path.split('scope=')[1];
-      return location.pathname === '/input' && currentScope === pathScope;
+    if (location.pathname !== '/input') return false;
+    const locParams = new URLSearchParams(location.search);
+    const pathParams = new URLSearchParams(path.split('?')[1] || '');
+
+    const pathSection = pathParams.get('section');
+    if (pathSection === 'production' || pathSection === 'commute') {
+      return locParams.get('section') === pathSection;
     }
-    return location.pathname === path;
+
+    if (pathParams.get('scope')) {
+      const pathScope = pathParams.get('scope');
+      const currentScope = locParams.get('scope');
+      const currentSection = locParams.get('section');
+      const onEmissions = !currentSection || currentSection === 'emissions';
+      return onEmissions && currentScope === pathScope;
+    }
+
+    return false;
   };
 
   const getRoleDisplay = (role) => {

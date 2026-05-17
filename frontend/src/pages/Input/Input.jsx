@@ -631,11 +631,7 @@ const Input = () => {
         />
       )}
 
-      {activeSection === 'production' && (
-        <div className="input-section-panel">
-          <ProductionInput />
-        </div>
-      )}
+      {activeSection === 'production' && <ProductionInput />}
 
       {activeSection === 'commute' && showCommuteSection && (
         <div className="input-section-panel">
