@@ -29,6 +29,10 @@
     @apply mb-4;
   }
 
+  .input-section-panel {
+    @apply rounded-2xl border border-gray-200/90 dark:border-slate-700/90 overflow-hidden;
+  }
+
   /* Form density: stacked auth / admin forms */
   .form-stack {
     @apply space-y-5;

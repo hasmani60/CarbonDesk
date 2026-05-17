@@ -140,7 +140,7 @@ export default function ProductionInput() {
   };
 
   return (
-    <div className="app-card overflow-hidden border-l-4 border-violet-500">
+    <div className="app-card overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-200 dark:border-slate-700 bg-violet-50/60 dark:bg-violet-950/25">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3">

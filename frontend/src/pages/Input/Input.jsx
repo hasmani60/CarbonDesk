@@ -12,7 +12,14 @@ import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
 import EmployeeCommuting from '../../components/EmployeeCommuting/EmployeeCommuting';
 import ProductionInput from '../../components/ProductionInput/ProductionInput';
+import InputSectionNav from './InputSectionNav';
 import toast from 'react-hot-toast';
+
+const INPUT_SECTIONS = {
+  emissions: { title: 'Emission activities', subtitle: 'Log Scope 1, 2 and 3 emissions by activity' },
+  production: { title: 'Production output', subtitle: 'Record monthly production volumes for intensity metrics' },
+  commute: { title: 'Employee commuting', subtitle: 'Scope 3 Category 7 — employees and attendance' }
+};
 
 /** DB/JWT may store scope ids as strings — avoid .includes(1) failing on ["1"] */
 function scopeAllowListIncludes(list, scopeVal) {
@@ -27,6 +34,7 @@ const Input = () => {
   const { logPageView, logEmissionAction } = useActivity();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [activeSection, setActiveSection] = useState('emissions');
   const [activeScope, setActiveScope] = useState('1');
   const [activities, setActivities] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -219,20 +227,41 @@ const Input = () => {
     initializeScope();
   }, [user]);
 
-  // Handle URL scope parameter changes
+  const showCommuteSection = canAccessScope('3');
+
+  // Sync section from URL
+  useEffect(() => {
+    const sectionParam = searchParams.get('section');
+    if (sectionParam === 'production') {
+      setActiveSection('production');
+    } else if (sectionParam === 'commute' && showCommuteSection) {
+      setActiveSection('commute');
+    } else if (sectionParam === 'commute' && !showCommuteSection) {
+      setActiveSection('emissions');
+    } else {
+      setActiveSection('emissions');
+    }
+  }, [searchParams, showCommuteSection]);
+
+  // Handle URL scope parameter changes (emissions section only)
   useEffect(() => {
     const scopeParam = searchParams.get('scope');
-    if (scopeParam && ['1', '2', '3'].includes(scopeParam) && scopeParam !== activeScope) {
+    if (
+      activeSection === 'emissions' &&
+      scopeParam &&
+      ['1', '2', '3'].includes(scopeParam) &&
+      scopeParam !== activeScope
+    ) {
       handleScopeChange(scopeParam, false);
     }
-  }, [searchParams]);
+  }, [searchParams, activeSection]);
 
   // Load activities when active scope changes
   useEffect(() => {
-    if (activeScope) {
+    if (activeSection === 'emissions' && activeScope) {
       loadActivities();
     }
-  }, [activeScope, user]);
+  }, [activeSection, activeScope, user]);
 
   const initializeScope = () => {
     if (!user) return;
@@ -246,21 +275,43 @@ const Input = () => {
       return;
     }
 
-    if (scopeParam && ['1', '2', '3'].includes(scopeParam)) {
-      if (canAccessScope(scopeParam)) {
-        setActiveScope(scopeParam);
-        setAccessDenied(false);
+    const sectionParam = searchParams.get('section') || 'emissions';
+    const nextParams = { section: sectionParam };
+    if (sectionParam === 'emissions') {
+      if (scopeParam && ['1', '2', '3'].includes(scopeParam)) {
+        if (canAccessScope(scopeParam)) {
+          setActiveScope(scopeParam);
+          setAccessDenied(false);
+          nextParams.scope = scopeParam;
+        } else {
+          const firstAllowed = allowedScopes[0].toString();
+          setActiveScope(firstAllowed);
+          nextParams.scope = firstAllowed;
+          toast.warning(`Access denied to Scope ${scopeParam}. Redirected to Scope ${firstAllowed}.`);
+        }
       } else {
         const firstAllowed = allowedScopes[0].toString();
         setActiveScope(firstAllowed);
-        setSearchParams({ scope: firstAllowed });
-        toast.warning(`Access denied to Scope ${scopeParam}. Redirected to Scope ${firstAllowed}.`);
+        nextParams.scope = firstAllowed;
       }
-    } else {
-      const firstAllowed = allowedScopes[0].toString();
-      setActiveScope(firstAllowed);
-      setSearchParams({ scope: firstAllowed });
     }
+    setSearchParams(nextParams);
+  };
+
+  const handleSectionChange = (section) => {
+    if (section === 'commute' && !showCommuteSection) {
+      toast.error('Employee commuting requires Scope 3 access');
+      return;
+    }
+    setActiveSection(section);
+    setExpandedActivities({});
+    const params = new URLSearchParams(searchParams);
+    params.set('section', section);
+    if (section === 'emissions') {
+      if (!params.get('scope')) params.set('scope', activeScope);
+    }
+    setSearchParams(params);
+    logPageView(`Input - ${INPUT_SECTIONS[section]?.title || section}`);
   };
 
   const loadActivities = () => {
@@ -350,7 +401,7 @@ const Input = () => {
 
     setActiveScope(scope);
     if (updateUrl) {
-      setSearchParams({ scope });
+      setSearchParams({ section: 'emissions', scope });
     }
     setExpandedActivities({});
     setSelectedActivity(null);
@@ -408,6 +459,10 @@ const Input = () => {
   // Task Widget Integration - Handle task clicks to navigate to relevant scope/activity
   const handleTaskClick = (task) => {
     if (!task) return;
+
+    if (activeSection !== 'emissions') {
+      handleSectionChange('emissions');
+    }
     
     // Check if user can access the task's scope
     if (task.scope && canAccessScope(task.scope.toString())) {
@@ -548,33 +603,47 @@ const Input = () => {
     );
   }
 
+  const sectionMeta = INPUT_SECTIONS[activeSection] || INPUT_SECTIONS.emissions;
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <PageHeader 
-        title="Add Emission"
+      <PageHeader
+        title={sectionMeta.title}
         breadcrumb={[
           { label: 'App', href: '/' },
-          { label: 'Add Emission' }
+          { label: 'Input', href: '/input?section=emissions' },
+          { label: sectionMeta.title }
         ]}
       />
+      <p className="text-sm text-gray-600 dark:text-gray-400 -mt-4">{sectionMeta.subtitle}</p>
 
-      {/* Task Widget for Contributors - Show tasks to help them complete assigned work */}
-      {user?.role === 'contributor' && (
-        <TaskWidget 
+      <InputSectionNav
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        showCommute={showCommuteSection}
+      />
+
+      {user?.role === 'contributor' && activeSection === 'emissions' && (
+        <TaskWidget
           maxTasks={3}
           showQuickActions={true}
           onTaskClick={handleTaskClick}
-          className="mb-6"
         />
       )}
 
-      <ProductionInput />
-
-      {activeScope === '3' && canAccessScope('3') && (
-        <EmployeeCommuting />
+      {activeSection === 'production' && (
+        <div className="input-section-panel">
+          <ProductionInput />
+        </div>
       )}
 
-      {user?.role === 'contributor' && user?.restrictions && (
+      {activeSection === 'commute' && showCommuteSection && (
+        <div className="input-section-panel">
+          <EmployeeCommuting />
+        </div>
+      )}
+
+      {activeSection === 'emissions' && user?.role === 'contributor' && user?.restrictions && (
         <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Shield className="w-5 h-5 text-blue-600" />
@@ -598,7 +667,8 @@ const Input = () => {
         </div>
       )}
 
-      <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
+      {activeSection === 'emissions' && (
+      <div className="input-section-panel bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
           <div className="flex space-x-1">
             {availableScopes.map((scope) => (
@@ -713,6 +783,7 @@ const Input = () => {
           )}
         </div>
       </div>
+      )}
 
 
     </div>
