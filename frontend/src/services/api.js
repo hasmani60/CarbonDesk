@@ -452,7 +452,9 @@ export const employeesAPI = {
     apiClient.get('/employees/attendance', { params: { date } }),
   bulkAttendance: (payload) => apiClient.post('/employees/attendance/bulk', payload),
   getEmissions: (month) =>
-    apiClient.get('/employees/emissions', { params: { month } })
+    apiClient.get('/employees/emissions', { params: { month } }),
+  getCommuteTotal: (params) =>
+    apiClient.get('/employees/commute-total', { params })
 };
 
 // Generators API

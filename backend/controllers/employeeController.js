@@ -9,6 +9,7 @@ const {
   monthRangeUTC
 } = require('../services/commuteEmissionService');
 const { ensureScope3CommuteFactors } = require('../services/scope3CommuteFactorSeed');
+const { aggregateCommuteEmissions } = require('../services/commuteAnalyticsService');
 const logger = require('../utils/logger');
 
 const validateEmployeePayload = (body, isUpdate = false) => {
@@ -393,6 +394,45 @@ const getEmissions = async (req, res) => {
   }
 };
 
+const getCommuteTotal = async (req, res) => {
+  try {
+    const orgId = req.organisationId;
+    let startDate = null;
+    let endDate = null;
+
+    if (req.query.startDate) {
+      startDate = new Date(req.query.startDate);
+      if (Number.isNaN(startDate.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid startDate' });
+      }
+    }
+    if (req.query.endDate) {
+      endDate = new Date(req.query.endDate);
+      if (Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid endDate' });
+      }
+    }
+
+    const commute = await aggregateCommuteEmissions(orgId, startDate, endDate);
+
+    res.json({
+      success: true,
+      data: {
+        total_co2e_kg: commute.total_co2e_kg,
+        present_days: commute.present_days,
+        employee_count: commute.employee_count,
+        missing_factors: commute.missing_factors
+      }
+    });
+  } catch (error) {
+    logger.error('getCommuteTotal error', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to calculate commute emissions total'
+    });
+  }
+};
+
 module.exports = {
   listEmployees,
   createEmployee,
@@ -400,5 +440,6 @@ module.exports = {
   deleteEmployee,
   bulkAttendance,
   getAttendance,
-  getEmissions
+  getEmissions,
+  getCommuteTotal
 };

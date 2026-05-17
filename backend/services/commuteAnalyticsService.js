@@ -139,7 +139,122 @@ async function aggregateCommuteEmissionsByMonth(organisationId, startDate = null
   return monthTotals;
 }
 
+const COMMUTE_ACTIVITY_LABEL = 'Employee Commuting (Category 7)';
+
+function includesScope3InFilters(filters = {}) {
+  const raw =
+    filters.selectedScopes ||
+    filters.scopes ||
+    (filters.scope != null ? [filters.scope] : null);
+  if (raw == null) return true;
+  const arr = Array.isArray(raw) ? raw : String(raw).split(',').map((s) => s.trim());
+  const scopes = [...new Set(arr.map((s) => parseInt(s, 10)).filter((n) => n >= 1 && n <= 3))];
+  return scopes.length === 0 || scopes.includes(3);
+}
+
+/**
+ * Merge commute into scope-3 / company totals (kg CO2e).
+ */
+function applyCommuteToTotals({
+  scope3Co2e = 0,
+  scope3Count = 0,
+  totalCo2e = 0,
+  totalCount = 0,
+  commute
+}) {
+  const kg = commute?.total_co2e_kg || 0;
+  const days = commute?.present_days || 0;
+  return {
+    scope3_co2e: scope3Co2e + kg,
+    scope3_count: scope3Count + days,
+    total_co2e: totalCo2e + kg,
+    total_count: totalCount + days,
+    commute_co2e_kg: kg,
+    commute_present_days: days
+  };
+}
+
+/**
+ * Add commute CO2e to each period's scope3 and total (array of { period, scope1, scope2, scope3, total }).
+ */
+function mergeCommuteIntoScopePeriods(periods, commuteByMonth) {
+  if (!commuteByMonth?.size) return periods;
+
+  const periodMap = Object.fromEntries(periods.map((p) => [p.period, { ...p }]));
+
+  commuteByMonth.forEach((co2e, period) => {
+    if (!periodMap[period]) {
+      periodMap[period] = {
+        period,
+        scope1: 0,
+        scope2: 0,
+        scope3: 0,
+        total: 0
+      };
+    }
+    periodMap[period].scope3 = (periodMap[period].scope3 || 0) + co2e;
+    periodMap[period].total = (periodMap[period].total || 0) + co2e;
+  });
+
+  return Object.values(periodMap).sort((a, b) =>
+    String(a.period).localeCompare(String(b.period))
+  );
+}
+
+/**
+ * Merge commute into dashboard monthly trend rows ({ month, total_co2e, count }).
+ */
+function mergeCommuteIntoMonthlyTrend(monthlyTrend, commuteByMonth) {
+  if (!commuteByMonth?.size) return monthlyTrend;
+
+  const byMonth = Object.fromEntries(
+    (monthlyTrend || []).map((row) => {
+      const key = row.month || row.date;
+      return [key, { ...row }];
+    })
+  );
+
+  commuteByMonth.forEach((co2e, period) => {
+    if (byMonth[period]) {
+      byMonth[period].total_co2e = (byMonth[period].total_co2e || 0) + co2e;
+    } else {
+      byMonth[period] = { month: period, total_co2e: co2e, count: 0 };
+    }
+  });
+
+  return Object.values(byMonth).sort((a, b) =>
+    String(a.month || a.date).localeCompare(String(b.month || b.date))
+  );
+}
+
+/**
+ * Include employee commuting in scope-3 top-activities list when material.
+ */
+function upsertCommuteInTopActivities(activities, commuteKg, limit = 3) {
+  if (!commuteKg || commuteKg <= 0) return activities;
+
+  const merged = [
+    ...activities,
+    {
+      activity: COMMUTE_ACTIVITY_LABEL,
+      scope: 3,
+      count: 0,
+      total_co2e: parseFloat(commuteKg.toFixed(2))
+    }
+  ]
+    .sort((a, b) => (b.total_co2e || 0) - (a.total_co2e || 0))
+    .slice(0, limit);
+
+  return merged;
+}
+
 module.exports = {
+  COMMUTE_ACTIVITY_LABEL,
   aggregateCommuteEmissions,
-  aggregateCommuteEmissionsByMonth
+  aggregateCommuteEmissionsByMonth,
+  includesScope3InFilters,
+  applyCommuteToTotals,
+  mergeCommuteIntoScopePeriods,
+  mergeCommuteIntoMonthlyTrend,
+  upsertCommuteInTopActivities
 };

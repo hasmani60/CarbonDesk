@@ -9,10 +9,11 @@ const { buildEmissionMatch, resolveDateRange } = require('../utils/emissionQuery
 const { materialTransportMatchFilter } = require('../utils/transportEmissionUtils');
 const {
   aggregateCommuteEmissions,
-  aggregateCommuteEmissionsByMonth
+  aggregateCommuteEmissionsByMonth,
+  COMMUTE_ACTIVITY_LABEL
 } = require('../services/commuteAnalyticsService');
 
-const COMMUTE_PARETO_LABEL = 'Employee Commuting (Category 7)';
+const COMMUTE_PARETO_LABEL = COMMUTE_ACTIVITY_LABEL;
 
 /**
  * Build $match from query string (supports JSON `filters` or individual fields).

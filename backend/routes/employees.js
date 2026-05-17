@@ -8,13 +8,15 @@ const {
   deleteEmployee,
   bulkAttendance,
   getAttendance,
-  getEmissions
+  getEmissions,
+  getCommuteTotal
 } = require('../controllers/employeeController');
 
 const readRoles = ['admin', 'analyst', 'contributor', 'viewer'];
 const manageRoles = ['admin', 'analyst'];
 const attendanceRoles = ['admin', 'analyst', 'contributor'];
 
+router.get('/commute-total', authorizeRoles(...readRoles), getCommuteTotal);
 router.get('/emissions', authorizeRoles(...readRoles), getEmissions);
 router.get('/attendance', authorizeRoles(...readRoles), getAttendance);
 router.post('/attendance/bulk', authorizeRoles(...attendanceRoles), bulkAttendance);

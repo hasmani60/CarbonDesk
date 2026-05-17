@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
-import { monitorAPI, emissionsAPI } from '../../services/api';
+import { monitorAPI, emissionsAPI, employeesAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import {
   getDisplayedActivityQuantity,
@@ -216,6 +216,17 @@ const Monitor = () => {
         else if (emission.scope === 2) stats.scope2.total += emissionValue;
         else if (emission.scope === 3) stats.scope3.total += emissionValue;
       });
+
+      try {
+        const commuteRes = await employeesAPI.getCommuteTotal();
+        const commutePayload = commuteRes?.data?.data ?? commuteRes?.data ?? commuteRes;
+        const commuteKg = Number(commutePayload?.total_co2e_kg) || 0;
+        if (commuteKg > 0) {
+          stats.scope3.total += commuteKg;
+        }
+      } catch (commuteErr) {
+        console.warn('Could not load employee commute total for Monitor stats:', commuteErr);
+      }
       
       setEmissionStats({
         total: stats.scope1.total + stats.scope2.total + stats.scope3.total,

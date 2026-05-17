@@ -6,6 +6,12 @@ const {
   additionalMatchFromBuilt,
   resolveDateRange
 } = require('../utils/emissionQueryUtils');
+const {
+  aggregateCommuteEmissions,
+  aggregateCommuteEmissionsByMonth,
+  includesScope3InFilters,
+  mergeCommuteIntoMonthlyTrend
+} = require('./commuteAnalyticsService');
 
 const sumCo2 = { $sum: { $ifNull: ['$co2e', 0] } };
 
@@ -174,7 +180,7 @@ class ReportDataService {
     ]);
 
     const totals = totalStats[0] || { entryCount: 0, total_co2e: 0, verified_count: 0 };
-    const totalCo2e = totals.total_co2e || 0;
+    let totalCo2e = totals.total_co2e || 0;
 
     const byScope = { scope1: 0, scope2: 0, scope3: 0, scope1Count: 0, scope2Count: 0, scope3Count: 0 };
     scopeStats.forEach((s) => {
@@ -186,12 +192,39 @@ class ReportDataService {
       }
     });
 
-    const monthlyTrend = await advancedAnalyticsService.getHistoricalEmissions(
+    let scope3CommuteCo2e = 0;
+    let scope3CommutePresentDays = 0;
+    if (includesScope3InFilters(filters)) {
+      const commute = await aggregateCommuteEmissions(
+        organisationId,
+        startDate,
+        endDate
+      );
+      scope3CommuteCo2e = commute.total_co2e_kg;
+      scope3CommutePresentDays = commute.present_days;
+      byScope.scope3 = round2(byScope.scope3 + scope3CommuteCo2e);
+      byScope.scope3Count += scope3CommutePresentDays;
+      byScope.scope3_activity_co2e = round2(byScope.scope3 - scope3CommuteCo2e);
+      byScope.scope3_commute_co2e = round2(scope3CommuteCo2e);
+      byScope.scope3_commute_present_days = scope3CommutePresentDays;
+      totalCo2e += scope3CommuteCo2e;
+    }
+
+    let monthlyTrend = await advancedAnalyticsService.getHistoricalEmissions(
       startIso,
       endIso,
       organisationId,
       additionalMatch
     );
+
+    if (includesScope3InFilters(filters)) {
+      const commuteByMonth = await aggregateCommuteEmissionsByMonth(
+        organisationId,
+        startDate,
+        endDate
+      );
+      monthlyTrend = mergeCommuteIntoMonthlyTrend(monthlyTrend, commuteByMonth);
+    }
 
     let trajectory = null;
     try {

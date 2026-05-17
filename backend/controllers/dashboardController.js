@@ -4,6 +4,13 @@
 const Emission = require('../models/Emission'); // You'll need to create this model
 const User = require('../models/User'); // Adjust path as needed
 const { scopeQuery } = require('../middleware/organisationScope');
+const {
+  aggregateCommuteEmissions,
+  aggregateCommuteEmissionsByMonth,
+  applyCommuteToTotals,
+  mergeCommuteIntoMonthlyTrend,
+  upsertCommuteInTopActivities
+} = require('../services/commuteAnalyticsService');
 
 /**
  * Aggregation pipeline: top emission rows by display label & scope (for dashboard pie breakdown).
@@ -203,12 +210,30 @@ const getDashboardSummary = async (req, res) => {
     ]);
     
     // 5. Top activities — global top 5 (legacy) + per-scope top 3 (for dashboard pies: scope rows can be missing from global top 5)
-    const [topActivities, topScope1Acts, topScope2Acts, topScope3Acts] = await Promise.all([
-      Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, {}, 5)),
-      Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 1 }, 3)),
-      Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 2 }, 3)),
-      Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 3 }, 3))
-    ]);
+    const [topActivities, topScope1Acts, topScope2Acts, topScope3ActsRaw, commute] =
+      await Promise.all([
+        Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, {}, 5)),
+        Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 1 }, 3)),
+        Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 2 }, 3)),
+        Emission.aggregate(buildTopActivitiesPipeline(mongoFilter, { scope: 3 }, 3)),
+        aggregateCommuteEmissions(orgFilter.organisation_id)
+      ]);
+
+    const topScope3Acts = upsertCommuteInTopActivities(
+      topScope3ActsRaw,
+      commute.total_co2e_kg,
+      3
+    );
+
+    const commuteByMonth = await aggregateCommuteEmissionsByMonth(
+      orgFilter.organisation_id,
+      sixMonthsAgo,
+      new Date()
+    );
+    const monthlyTrendWithCommute = mergeCommuteIntoMonthlyTrend(
+      monthlyTrend,
+      commuteByMonth
+    );
     
     // 6. Get user statistics for this organisation
     const userStats = await User.aggregate([
@@ -241,17 +266,29 @@ const getDashboardSummary = async (req, res) => {
     const scope1Data = emissionsByScope.find(s => s._id === 1) || { total_co2e: 0, count: 0 };
     const scope2Data = emissionsByScope.find(s => s._id === 2) || { total_co2e: 0, count: 0 };
     const scope3Data = emissionsByScope.find(s => s._id === 3) || { total_co2e: 0, count: 0 };
-    
-    const scope1Percentage = totalEmissions.total_co2e > 0 
-      ? ((scope1Data.total_co2e || 0) / totalEmissions.total_co2e * 100).toFixed(1)
+
+    const mergedTotals = applyCommuteToTotals({
+      scope3Co2e: scope3Data.total_co2e || 0,
+      scope3Count: scope3Data.count || 0,
+      totalCo2e: totalEmissions.total_co2e || 0,
+      totalCount: totalEmissions.total_count || 0,
+      commute
+    });
+
+    const companyTotalCo2e = mergedTotals.total_co2e;
+    const scope3TotalCo2e = mergedTotals.scope3_co2e;
+    const scope3CountWithCommute = mergedTotals.scope3_count;
+
+    const scope1Percentage = companyTotalCo2e > 0
+      ? ((scope1Data.total_co2e || 0) / companyTotalCo2e * 100).toFixed(1)
       : 0;
-    
-    const scope2Percentage = totalEmissions.total_co2e > 0 
-      ? ((scope2Data.total_co2e || 0) / totalEmissions.total_co2e * 100).toFixed(1)
+
+    const scope2Percentage = companyTotalCo2e > 0
+      ? ((scope2Data.total_co2e || 0) / companyTotalCo2e * 100).toFixed(1)
       : 0;
-    
-    const scope3Percentage = totalEmissions.total_co2e > 0 
-      ? ((scope3Data.total_co2e || 0) / totalEmissions.total_co2e * 100).toFixed(1)
+
+    const scope3Percentage = companyTotalCo2e > 0
+      ? (scope3TotalCo2e / companyTotalCo2e * 100).toFixed(1)
       : 0;
     
     const verificationRate = totalEmissions.total_count > 0
@@ -282,8 +319,8 @@ const getDashboardSummary = async (req, res) => {
         industry_type: req.organisation.industry_type
       },
       overview: {
-        total_emissions: parseFloat((totalEmissions.total_co2e || 0).toFixed(2)),
-        total_count: totalEmissions.total_count || 0,
+        total_emissions: parseFloat(companyTotalCo2e.toFixed(2)),
+        total_count: mergedTotals.total_count || 0,
         verified_count: totalEmissions.verified_count || 0,
         draft_count: totalEmissions.draft_count || 0,
         verification_rate: parseFloat(verificationRate)
@@ -300,13 +337,15 @@ const getDashboardSummary = async (req, res) => {
           percentage: parseFloat(scope2Percentage)
         },
         scope_3: {
-          total_co2e: parseFloat((scope3Data.total_co2e || 0).toFixed(2)),
-          count: scope3Data.count || 0,
-          percentage: parseFloat(scope3Percentage)
+          total_co2e: parseFloat(scope3TotalCo2e.toFixed(2)),
+          count: scope3CountWithCommute,
+          percentage: parseFloat(scope3Percentage),
+          commute_co2e: parseFloat((mergedTotals.commute_co2e_kg || 0).toFixed(2)),
+          activity_co2e: parseFloat((scope3Data.total_co2e || 0).toFixed(2))
         }
       },
       recent_emissions: recentEmissions,
-      monthly_trend: monthlyTrend,
+      monthly_trend: monthlyTrendWithCommute,
       top_activities: topActivities,
       top_activities_by_scope: {
         scope_1: topScope1Acts,
@@ -316,7 +355,7 @@ const getDashboardSummary = async (req, res) => {
       user_stats: userStatsData
     };
     
-    console.log(`✅ Dashboard loaded for ${req.organisation.name}: ${totalEmissions.total_count} emissions, ${totalEmissions.total_co2e?.toFixed(2)} kg CO2e`);
+    console.log(`✅ Dashboard loaded for ${req.organisation.name}: ${totalEmissions.total_count} emissions, ${companyTotalCo2e.toFixed(2)} kg CO2e (incl. commute)`);
     console.log('📊 =================================\n');
     
     res.json({

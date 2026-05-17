@@ -2,7 +2,14 @@
 // Advanced analytics — MongoDB (Emission collection). SQLite/localDB removed for production parity.
 
 const Emission = require('../models/Emission');
-const { buildEmissionMatch } = require('../utils/emissionQueryUtils');
+const { buildEmissionMatch, resolveDateRange } = require('../utils/emissionQueryUtils');
+const {
+  aggregateCommuteEmissions,
+  aggregateCommuteEmissionsByMonth,
+  includesScope3InFilters,
+  mergeCommuteIntoScopePeriods,
+  COMMUTE_ACTIVITY_LABEL
+} = require('./commuteAnalyticsService');
 
 /** Period label helpers for aggregation */
 function periodExpression(interval) {
@@ -87,7 +94,18 @@ class AnalysisService {
         avg_co2e: r.avg_co2e
       }));
 
-      const scopeTotals = this._calculateScopeTotals(timeSeriesData);
+      let scopeTotals = this._calculateScopeTotals(timeSeriesData);
+
+      if (includesScope3InFilters(filters)) {
+        const { startDate, endDate } = resolveDateRange(filters);
+        const commuteByMonth = await aggregateCommuteEmissionsByMonth(
+          organisationId,
+          startDate,
+          endDate
+        );
+        scopeTotals = mergeCommuteIntoScopePeriods(scopeTotals, commuteByMonth);
+      }
+
       const burdenShifts = this._detectBurdenShifting(scopeTotals);
       const sankeyData = this._generateSankeyData(scopeTotals, burdenShifts);
       const metrics = this._calculateMigrationMetrics(scopeTotals, burdenShifts);
@@ -135,6 +153,35 @@ class AnalysisService {
       });
 
       const aggregatedData = await this._getHierarchicalAggregationMongo(match, drillDownLevel);
+
+      const scopeNum = scope != null ? parseInt(scope, 10) : null;
+      const includeCommute =
+        drillDownLevel === 'activity' && (!scopeNum || scopeNum === 3) && includesScope3InFilters(filters);
+
+      if (includeCommute) {
+        const { startDate: rangeStart, endDate: rangeEnd } = resolveDateRange(filters);
+        const commute = await aggregateCommuteEmissions(
+          organisationId,
+          rangeStart,
+          rangeEnd
+        );
+        if (commute.total_co2e_kg > 0) {
+          aggregatedData.push({
+            name: COMMUTE_ACTIVITY_LABEL,
+            scope: 3,
+            category: 'Employee Commuting',
+            activity: COMMUTE_ACTIVITY_LABEL,
+            total_co2e: commute.total_co2e_kg,
+            count: commute.present_days,
+            avg_co2e: commute.present_days
+              ? commute.total_co2e_kg / commute.present_days
+              : 0,
+            earliest_date: rangeStart,
+            latest_date: rangeEnd
+          });
+        }
+      }
+
       const paretoData = this._calculatePareto(aggregatedData);
       const hotspots = this._identifyHotspots(paretoData);
       const concentrationMetrics = this._calculateConcentrationRisk(paretoData);
