@@ -457,6 +457,21 @@ export const employeesAPI = {
     apiClient.get('/employees/commute-total', { params })
 };
 
+// Flights API — airport search & great-circle distance
+export const flightsAPI = {
+  searchAirports: (q, limit = 20) =>
+    apiClient.get('/flights/airports', { params: { q, limit } }),
+  getAirport: (iata) => apiClient.get(`/flights/airports/${iata}`),
+  getDistance: ({ origin, destination, roundTrip }) =>
+    apiClient.get('/flights/distance', {
+      params: {
+        origin,
+        destination,
+        roundTrip: roundTrip ? 'true' : undefined
+      }
+    })
+};
+
 // Generators API
 export const generatorsAPI = {
   getAll: (params) => apiClient.get('/generators', { params }),
@@ -566,6 +581,7 @@ export default {
   usersAPI,
   vehiclesAPI,
   employeesAPI,
+  flightsAPI,
   generatorsAPI,
   organisationAPI,
   organizationAPI,

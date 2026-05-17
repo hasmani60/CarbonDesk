@@ -8,6 +8,8 @@ import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/complete_emission_factors_db';
 import toast from 'react-hot-toast';
 import { isFreightActivity, TRANSPORT_CATEGORY_OPTIONS } from '../../utils/transportCategory';
+import { supportsFlightRoute } from '../../utils/flightActivity';
+import FlightRoutePicker from '../FlightRoutePicker/FlightRoutePicker';
 
 const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const { user } = useAuth();
@@ -34,6 +36,12 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
     refrigerantAmount: '',
     transport_category: 'raw_material'
   });
+
+  const useFlightRoute = supportsFlightRoute(activity);
+  const [originAirport, setOriginAirport] = useState(null);
+  const [destinationAirport, setDestinationAirport] = useState(null);
+  const [flightRoundTrip, setFlightRoundTrip] = useState(false);
+  const [flightRouteMeta, setFlightRouteMeta] = useState(null);
   
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -283,6 +291,21 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
           break;
       }
 
+      if (useFlightRoute && flightRouteMeta) {
+        activityData.flight_route = {
+          origin_iata: flightRouteMeta.origin.iata,
+          origin_name: flightRouteMeta.origin.name,
+          destination_iata: flightRouteMeta.destination.iata,
+          destination_name: flightRouteMeta.destination.name,
+          great_circle_km: flightRouteMeta.great_circle_km,
+          flight_distance_km: flightRouteMeta.flight_distance_km,
+          distance_km: flightRouteMeta.distance_km,
+          round_trip: flightRouteMeta.round_trip,
+          routing_factor: flightRouteMeta.routing_factor,
+          method: flightRouteMeta.method
+        };
+      }
+
       const totalEmissions = calculatedAmount * factorData.factor;
       const co2 = calculatedAmount * (factorData.co2 || 0);
       const ch4 = calculatedAmount * (factorData.ch4 || 0);
@@ -303,7 +326,9 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         endDate: formData.endDate,
         date: formData.startDate,
         location: formData.location,
-        description: formData.description,
+        description: formData.description || (flightRouteMeta
+          ? `${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}${flightRouteMeta.round_trip ? ' (round trip)' : ''}`
+          : ''),
         notes: formData.description,
         
         // Activity-specific data
@@ -396,6 +421,16 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFlightDistanceCalculated = (distanceKm, meta) => {
+    setFlightRouteMeta(meta);
+    if (distanceKm != null && distanceKm > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        distance: String(distanceKm)
+      }));
     }
   };
 
@@ -533,6 +568,12 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Distance travelled"
               />
+              {useFlightRoute && flightRouteMeta && (
+                <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">
+                  From airports: {flightRouteMeta.origin.iata} → {flightRouteMeta.destination.iata}
+                  {flightRouteMeta.round_trip ? ' (round trip)' : ''}. Editable if needed.
+                </p>
+              )}
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -592,6 +633,12 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Transport distance"
               />
+              {useFlightRoute && flightRouteMeta && (
+                <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">
+                  From airports: {flightRouteMeta.origin.iata} → {flightRouteMeta.destination.iata}
+                  {flightRouteMeta.round_trip ? ' (round trip)' : ''}. Editable if needed.
+                </p>
+              )}
               {errors.distance && (
                 <p className="text-red-500 text-xs mt-1 flex items-center">
                   <AlertCircle className="w-3 h-3 mr-1" />
@@ -781,6 +828,23 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 </p>
               )}
             </div>
+
+            {formData.source && useFlightRoute && (
+              <FlightRoutePicker
+                origin={originAirport}
+                destination={destinationAirport}
+                roundTrip={flightRoundTrip}
+                onOriginChange={setOriginAirport}
+                onDestinationChange={setDestinationAirport}
+                onRoundTripChange={setFlightRoundTrip}
+                onDistanceCalculated={handleFlightDistanceCalculated}
+                disabled={loading}
+                errors={{
+                  originAirport: errors.originAirport,
+                  destinationAirport: errors.destinationAirport
+                }}
+              />
+            )}
 
             {/* Activity-specific inputs */}
             {formData.source && renderActivityInputs()}
