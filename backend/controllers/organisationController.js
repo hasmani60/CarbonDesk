@@ -185,7 +185,8 @@ const getOrganisationDetails = async (req, res) => {
           is_active: organisation.is_active,
           created_at: organisation.created_at,
           created_by: formatCreatedByForResponse(organisation.created_by),
-          notes: organisation.notes
+          notes: organisation.notes,
+          site_coordinates: organisation.config?.site_coordinates || null
         },
         settings: settings.toObject(),
         stats
@@ -225,6 +226,8 @@ const updateOrganisationDetails = async (req, res) => {
     delete updates.subscription_tier;
     delete updates.max_users;
     delete updates.is_active;
+    delete updates.config;
+    delete updates.site_coordinates;
 
     updates.updated_at = new Date();
 

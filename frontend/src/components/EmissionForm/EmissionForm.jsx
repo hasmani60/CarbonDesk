@@ -10,8 +10,14 @@ import toast from 'react-hot-toast';
 import { isFreightActivity, TRANSPORT_CATEGORY_OPTIONS } from '../../utils/transportCategory';
 import { supportsFlightRoute } from '../../utils/flightActivity';
 import { supportsSeaRoute } from '../../utils/seaActivity';
+import {
+  supportsRoadRoute,
+  isMaterialRoadFreight,
+  getFactoryEndpointRole
+} from '../../utils/roadActivity';
 import FlightRoutePicker from '../FlightRoutePicker/FlightRoutePicker';
 import SeaRoutePicker from '../SeaRoutePicker/SeaRoutePicker';
+import RoadRoutePicker from '../RoadRoutePicker/RoadRoutePicker';
 
 const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const { user } = useAuth();
@@ -41,6 +47,11 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
 
   const useFlightRoute = supportsFlightRoute(activity);
   const useSeaRoute = supportsSeaRoute(activity);
+  const useRoadRoute = supportsRoadRoute(activity);
+  const materialRoadFreight = isMaterialRoadFreight(activity);
+  const factoryEndpointRole = materialRoadFreight
+    ? getFactoryEndpointRole(formData.transport_category)
+    : null;
   const [originAirport, setOriginAirport] = useState(null);
   const [destinationAirport, setDestinationAirport] = useState(null);
   const [flightRoundTrip, setFlightRoundTrip] = useState(false);
@@ -49,7 +60,11 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
   const [destinationPort, setDestinationPort] = useState(null);
   const [seaRoundTrip, setSeaRoundTrip] = useState(false);
   const [seaRouteMeta, setSeaRouteMeta] = useState(null);
-  
+  const [originPlace, setOriginPlace] = useState(null);
+  const [destinationPlace, setDestinationPlace] = useState(null);
+  const [roadRoundTrip, setRoadRoundTrip] = useState(false);
+  const [roadRouteMeta, setRoadRouteMeta] = useState(null);
+
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [emissionsPreview, setEmissionsPreview] = useState(null);
@@ -328,6 +343,20 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
         };
       }
 
+      if (useRoadRoute && roadRouteMeta) {
+        activityData.road_route = {
+          origin: roadRouteMeta.origin,
+          destination: roadRouteMeta.destination,
+          driving_distance_km: roadRouteMeta.driving_distance_km,
+          duration_minutes: roadRouteMeta.duration_minutes,
+          distance_km: roadRouteMeta.distance_km,
+          round_trip: roadRouteMeta.round_trip,
+          transport_category: materialRoadFreight ? formData.transport_category : null,
+          factory_endpoint: factoryEndpointRole,
+          method: roadRouteMeta.method
+        };
+      }
+
       const totalEmissions = calculatedAmount * factorData.factor;
       const co2 = calculatedAmount * (factorData.co2 || 0);
       const ch4 = calculatedAmount * (factorData.ch4 || 0);
@@ -352,7 +381,9 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
           ? `${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}${flightRouteMeta.round_trip ? ' (round trip)' : ''}`
           : seaRouteMeta
             ? `${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}${seaRouteMeta.round_trip ? ' (round trip)' : ''}`
-            : ''),
+            : roadRouteMeta
+              ? `${roadRouteMeta.origin.label?.split(',')[0]} → ${roadRouteMeta.destination.label?.split(',')[0]}${roadRouteMeta.round_trip ? ' (round trip)' : ''}`
+              : ''),
         notes: formData.description,
         
         // Activity-specific data
@@ -460,6 +491,16 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
 
   const handleSeaDistanceCalculated = (distanceKm, meta) => {
     setSeaRouteMeta(meta);
+    if (distanceKm != null && distanceKm > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        distance: String(distanceKm)
+      }));
+    }
+  };
+
+  const handleRoadDistanceCalculated = (distanceKm, meta) => {
+    setRoadRouteMeta(meta);
     if (distanceKm != null && distanceKm > 0) {
       setFormData((prev) => ({
         ...prev,
@@ -602,16 +643,29 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Distance travelled"
               />
-              {(useFlightRoute && flightRouteMeta) || (useSeaRoute && seaRouteMeta) ? (
+              {(useFlightRoute && flightRouteMeta) ||
+              (useSeaRoute && seaRouteMeta) ||
+              (useRoadRoute && roadRouteMeta) ? (
                 <p
                   className={`text-xs mt-1 ${
-                    useSeaRoute ? 'text-teal-600 dark:text-teal-400' : 'text-sky-600 dark:text-sky-400'
+                    useRoadRoute
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : useSeaRoute
+                        ? 'text-teal-600 dark:text-teal-400'
+                        : 'text-sky-600 dark:text-sky-400'
                   }`}
                 >
                   {useFlightRoute && flightRouteMeta
                     ? `From airports: ${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}`
-                    : `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`}
-                  {(flightRouteMeta?.round_trip || seaRouteMeta?.round_trip) ? ' (round trip)' : ''}. Editable if needed.
+                    : useSeaRoute && seaRouteMeta
+                      ? `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`
+                      : `From route: ${roadRouteMeta.origin.label?.split(',')[0]} → ${roadRouteMeta.destination.label?.split(',')[0]}`}
+                  {(flightRouteMeta?.round_trip ||
+                    seaRouteMeta?.round_trip ||
+                    roadRouteMeta?.round_trip)
+                    ? ' (round trip)'
+                    : ''}
+                  . Editable if needed.
                 </p>
               ) : null}
               {errors.distance && (
@@ -673,16 +727,29 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 }`}
                 placeholder="Transport distance"
               />
-              {(useFlightRoute && flightRouteMeta) || (useSeaRoute && seaRouteMeta) ? (
+              {(useFlightRoute && flightRouteMeta) ||
+              (useSeaRoute && seaRouteMeta) ||
+              (useRoadRoute && roadRouteMeta) ? (
                 <p
                   className={`text-xs mt-1 ${
-                    useSeaRoute ? 'text-teal-600 dark:text-teal-400' : 'text-sky-600 dark:text-sky-400'
+                    useRoadRoute
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : useSeaRoute
+                        ? 'text-teal-600 dark:text-teal-400'
+                        : 'text-sky-600 dark:text-sky-400'
                   }`}
                 >
                   {useFlightRoute && flightRouteMeta
                     ? `From airports: ${flightRouteMeta.origin.iata} → ${flightRouteMeta.destination.iata}`
-                    : `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`}
-                  {(flightRouteMeta?.round_trip || seaRouteMeta?.round_trip) ? ' (round trip)' : ''}. Editable if needed.
+                    : useSeaRoute && seaRouteMeta
+                      ? `From ports: ${seaRouteMeta.origin.code} → ${seaRouteMeta.destination.code}`
+                      : `From route: ${roadRouteMeta.origin.label?.split(',')[0]} → ${roadRouteMeta.destination.label?.split(',')[0]}`}
+                  {(flightRouteMeta?.round_trip ||
+                    seaRouteMeta?.round_trip ||
+                    roadRouteMeta?.round_trip)
+                    ? ' (round trip)'
+                    : ''}
+                  . Editable if needed.
                 </p>
               ) : null}
               {errors.distance && (
@@ -905,6 +972,26 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
                 errors={{
                   originPort: errors.originPort,
                   destinationPort: errors.destinationPort
+                }}
+              />
+            )}
+
+            {formData.source && useRoadRoute && (
+              <RoadRoutePicker
+                key={materialRoadFreight ? formData.transport_category : 'road'}
+                origin={originPlace}
+                destination={destinationPlace}
+                factoryRole={factoryEndpointRole}
+                materialFreight={materialRoadFreight}
+                roundTrip={roadRoundTrip}
+                onOriginChange={setOriginPlace}
+                onDestinationChange={setDestinationPlace}
+                onRoundTripChange={setRoadRoundTrip}
+                onDistanceCalculated={handleRoadDistanceCalculated}
+                disabled={loading}
+                errors={{
+                  originPlace: errors.originPlace,
+                  destinationPlace: errors.destinationPlace
                 }}
               />
             )}

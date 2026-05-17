@@ -457,6 +457,30 @@ export const employeesAPI = {
     apiClient.get('/employees/commute-total', { params })
 };
 
+// Road routes API — place search, factory site & driving distance
+export const roadAPI = {
+  searchPlaces: (q, limit = 10) =>
+    apiClient.get('/road/places', { params: { q, limit } }),
+  getPlace: (placeId) => apiClient.get(`/road/places/${placeId}`),
+  getFactorySite: () => apiClient.get('/road/factory-site'),
+  saveFactorySite: (payload) => apiClient.put('/road/factory-site', payload),
+  clearFactorySite: () => apiClient.delete('/road/factory-site'),
+  getDistance: ({ origin, destination, roundTrip }) =>
+    apiClient.get('/road/distance', {
+      params: {
+        originLat: origin.lat,
+        originLon: origin.lon,
+        originPlaceId: origin.place_id,
+        originLabel: origin.label,
+        destLat: destination.lat,
+        destLon: destination.lon,
+        destPlaceId: destination.place_id,
+        destLabel: destination.label,
+        roundTrip: roundTrip ? 'true' : undefined
+      }
+    })
+};
+
 // Sea routes API — port search & sea distance
 export const seaAPI = {
   searchPorts: (q, limit = 20) =>
@@ -598,6 +622,7 @@ export default {
   employeesAPI,
   flightsAPI,
   seaAPI,
+  roadAPI,
   generatorsAPI,
   organisationAPI,
   organizationAPI,

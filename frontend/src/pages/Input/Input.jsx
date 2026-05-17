@@ -100,7 +100,12 @@ const Input = () => {
   const getActivityDescription = (categoryName, activityType) => {
     const descriptions = {
       'fuel-based': `Select fuel type and enter quantity consumed`,
-      'distance': `Select vehicle type and enter distance travelled`,
+      'distance': categoryName.includes('Business Travel - Cars') ||
+        categoryName.includes('Business Travel - Taxis') ||
+        categoryName.includes('Business Travel - Motorbikes') ||
+        /^Passenger Vehicles|^Delivery Vehicles/i.test(categoryName)
+        ? `Select origin & destination locations, or enter distance manually`
+        : `Select vehicle type and enter distance travelled`,
       'passenger-distance': categoryName.includes('Business Travel - Air')
         ? `Select origin & destination airports, or enter distance manually`
         : categoryName.includes('Business Travel - Sea')
@@ -110,7 +115,9 @@ const Input = () => {
         ? `Select airports for route distance, or enter distance manually`
         : categoryName.includes('Freighting Goods - Sea')
           ? `Select ports for route distance, or enter distance manually`
-          : `Enter cargo weight and distance transported`,
+          : categoryName.includes('Freighting Goods - Road')
+            ? `Select supplier/customer location; factory site auto-filled from Organisation address`
+            : `Enter cargo weight and distance transported`,
       'refrigerant': `Select refrigerant type and enter amount leaked/used`,
       'accommodation': `Enter number of room nights`,
       'homeworking': `Enter number of employee working hours`,

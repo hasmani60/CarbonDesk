@@ -20,6 +20,7 @@ import { organisationAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate } from '../../utils/formatters';
+import FactorySiteSettings from '../../components/FactorySiteSettings/FactorySiteSettings';
 
 const OrganisationPage = () => {
   const { user } = useAuth();
@@ -522,6 +523,31 @@ const OrganisationPage = () => {
             </div>
           </div>
         </div>
+
+        {user?.role === 'admin' && (
+          <FactorySiteSettings
+            organisation={organisation}
+            onUpdated={(site) => {
+              setOrganisation((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      site_coordinates: site?.is_saved
+                        ? {
+                            lat: site.lat,
+                            lon: site.lon,
+                            label: site.label,
+                            address: site.address,
+                            place_id: site.place_id,
+                            updated_at: site.saved_at
+                          }
+                        : null
+                    }
+                  : prev
+              );
+            }}
+          />
+        )}
 
         {/* Notes Section */}
         {organisation.notes && (

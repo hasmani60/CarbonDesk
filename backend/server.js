@@ -508,6 +508,13 @@ app.use('/api/sea',
   require('./routes/sea')
 );
 
+app.use('/api/road',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/road')
+);
+
 app.use('/api/monitor', 
   authenticateToken, 
   addOrganisationContext, 
