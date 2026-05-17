@@ -750,6 +750,7 @@ const errorHandlerMiddleware = (err, req, res, next) => {
 };
 
 app.use('/api/*', (req, res) => {
+  logger.warn('API route not found', { method: req.method, url: req.originalUrl });
   res.status(404).json({
     success: false,
     message: `API route ${req.originalUrl} not found`

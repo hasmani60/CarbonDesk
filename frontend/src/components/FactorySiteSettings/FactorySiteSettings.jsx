@@ -78,6 +78,8 @@ export default function FactorySiteSettings({ organisation, onUpdated }) {
     try {
       const data = await roadAPI.saveFactorySite({
         place_id: place.place_id,
+        lat: place.lat,
+        lon: place.lon,
         label: `${organisation?.display_name || organisation?.name || 'Factory'} (factory)`,
         address: place.label
       });

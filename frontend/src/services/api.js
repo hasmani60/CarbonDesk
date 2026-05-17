@@ -1,8 +1,26 @@
 // services/api.js - Updated API service with 429 Retry Logic and Advanced Analytics
 import axios from 'axios';
 
-// Base API configuration
+// Base API configuration — must end with /api (e.g. http://localhost:5001/api)
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+
+if (!API_BASE_URL.endsWith('/api')) {
+  console.error(
+    'VITE_API_URL must end with /api (e.g. http://localhost:5001/api). Current value:',
+    API_BASE_URL
+  );
+}
+
+if (
+  import.meta.env.DEV &&
+  typeof window !== 'undefined' &&
+  window.location.hostname === 'localhost' &&
+  /onrender\.com|vercel\.app/i.test(API_BASE_URL)
+) {
+  console.warn(
+    'VITE_API_URL points at production while you are on localhost — API calls will not hit your local backend. Use frontend/.env.local with VITE_API_URL=http://localhost:5001/api'
+  );
+}
 
 // Create axios instance with default configuration
 const apiClient = axios.create({
@@ -137,6 +155,22 @@ apiClient.interceptors.response.use(
       });
     }
     
+    // 404 Not Found — often wrong VITE_API_URL (missing /api) or route not deployed
+    if (error.response?.status === 404) {
+      const base = error.config?.baseURL || API_BASE_URL;
+      const path = error.config?.url || '';
+      const fullUrl = `${base}${path}`;
+      const serverMsg = error.response.data?.message;
+      console.error('API 404:', fullUrl, serverMsg || '');
+      return Promise.reject({
+        message:
+          serverMsg ||
+          `API not found (${fullUrl}). Check VITE_API_URL ends with /api and the backend is running.`,
+        status: 404,
+        url: fullUrl
+      });
+    }
+
     // 408 Request Timeout
     if (error.response?.status === 408 || error.code === 'ECONNABORTED') {
       return Promise.reject({

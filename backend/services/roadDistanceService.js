@@ -7,6 +7,8 @@ const USER_AGENT =
   'CarbonDesk/1.0 (carbon-accounting; support@carbondesk.local)';
 
 const geocodeCache = new Map();
+/** Places from recent search results — avoids flaky Nominatim lookup on save. */
+const searchPlaceById = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — reduce repeat Nominatim calls
 const MIN_SEARCH_LENGTH = 3;
 
@@ -149,6 +151,9 @@ async function searchPlaces(query, limit = 10) {
       .map(normalizePlace);
 
     geocodeCache.set(cacheKey, { ts: Date.now(), data: places });
+    for (const p of places) {
+      if (p.place_id) searchPlaceById.set(String(p.place_id), p);
+    }
     return places;
   });
 }
@@ -159,6 +164,10 @@ async function searchPlaces(query, limit = 10) {
 async function getPlaceById(placeId) {
   const id = String(placeId || '').trim();
   if (!id) return null;
+
+  if (searchPlaceById.has(id)) {
+    return searchPlaceById.get(id);
+  }
 
   const cacheKey = `place:${id}`;
   const cached = geocodeCache.get(cacheKey);
@@ -261,6 +270,10 @@ function siteCoordinatesPayload(site) {
   };
 }
 
+function organisationQuery(organisationId) {
+  return { $or: [{ _id: organisationId }, { id: organisationId }] };
+}
+
 /**
  * Persist factory coordinates on organisation.config.site_coordinates
  */
@@ -268,7 +281,7 @@ async function saveOrganisationSiteCoordinates(organisationId, site) {
   const Organisation = require('../models/Organisation');
   const payload = siteCoordinatesPayload(site);
 
-  await Organisation.findByIdAndUpdate(organisationId, {
+  await Organisation.findOneAndUpdate(organisationQuery(organisationId), {
     $set: { 'config.site_coordinates': payload }
   });
 
@@ -282,7 +295,7 @@ async function saveOrganisationSiteCoordinates(organisationId, site) {
 
 async function clearOrganisationSiteCoordinates(organisationId) {
   const Organisation = require('../models/Organisation');
-  await Organisation.findByIdAndUpdate(organisationId, {
+  await Organisation.findOneAndUpdate(organisationQuery(organisationId), {
     $unset: { 'config.site_coordinates': '' }
   });
 

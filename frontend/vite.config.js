@@ -6,9 +6,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: 'localhost',
-    open: true, // Automatically open browser
-    // Enable client-side routing fallback
-    historyApiFallback: true,
+    open: true,
+    // Optional: use VITE_API_URL=/api in .env.local to proxy to local backend
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5001',
+        changeOrigin: true
+      }
+    }
   },
   build: {
     outDir: 'dist',

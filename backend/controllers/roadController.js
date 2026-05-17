@@ -1,4 +1,17 @@
 const Organisation = require('../models/Organisation');
+
+/** Prefer middleware-loaded org; fall back to id or _id lookup. */
+async function getOrganisationFromRequest(req) {
+  if (req.organisation) {
+    return req.organisation.toObject ? req.organisation.toObject() : req.organisation;
+  }
+  const organisationId = req.organisationId;
+  if (!organisationId) return null;
+  return Organisation.findOne({
+    $or: [{ _id: organisationId }, { id: organisationId }]
+  }).lean();
+}
+
 const {
   searchPlaces,
   getPlaceById,
@@ -67,7 +80,7 @@ const getPlaceHandler = async (req, res) => {
 const getFactorySiteHandler = async (req, res) => {
   try {
     const organisationId = req.organisationId;
-    const organisation = await Organisation.findById(organisationId).lean();
+    const organisation = await getOrganisationFromRequest(req);
 
     if (!organisation) {
       return res.status(404).json({
@@ -161,7 +174,7 @@ const calculateDistanceHandler = async (req, res) => {
 const saveFactorySiteHandler = async (req, res) => {
   try {
     const organisationId = req.organisationId;
-    const organisation = await Organisation.findById(organisationId).lean();
+    const organisation = await getOrganisationFromRequest(req);
 
     if (!organisation) {
       return res.status(404).json({ success: false, message: 'Organisation not found' });
@@ -173,38 +186,45 @@ const saveFactorySiteHandler = async (req, res) => {
     if (body.geocodeFromAddress === true) {
       site = await geocodeOrganisationAddress(organisation);
       if (!site) {
-        return res.status(404).json({
+        return res.status(422).json({
           success: false,
           message:
             'Could not geocode organisation address. Add address, location, or registered address first.'
         });
       }
-    } else if (body.place_id) {
-      site = await getPlaceById(body.place_id);
-      if (!site) {
-        return res.status(404).json({ success: false, message: 'Location not found' });
-      }
-      site = {
-        ...site,
-        label: body.label || `${organisation.display_name || organisation.name} (factory)`,
-        name: organisation.display_name || organisation.name,
-        address: body.address || site.label,
-        is_factory: true,
-        source: 'organisation_config'
-      };
+      site.source = 'organisation_config';
     } else if (
       body.lat != null &&
       body.lon != null &&
       Number.isFinite(parseFloat(body.lat)) &&
       Number.isFinite(parseFloat(body.lon))
     ) {
+      const lat = parseFloat(body.lat);
+      const lon = parseFloat(body.lon);
       site = {
         place_id: body.place_id || 'manual',
         label: body.label || `${organisation.display_name || organisation.name} (factory)`,
         name: organisation.display_name || organisation.name,
-        address: body.address || organisationAddressQuery(organisation),
-        lat: parseFloat(body.lat),
-        lon: parseFloat(body.lon),
+        address: body.address || body.label || organisationAddressQuery(organisation),
+        lat,
+        lon,
+        is_factory: true,
+        source: 'organisation_config'
+      };
+    } else if (body.place_id) {
+      site = await getPlaceById(body.place_id);
+      if (!site) {
+        return res.status(422).json({
+          success: false,
+          message:
+            'Location not found. Search again and select a result, or use “Save from organisation address”.'
+        });
+      }
+      site = {
+        ...site,
+        label: body.label || `${organisation.display_name || organisation.name} (factory)`,
+        name: organisation.display_name || organisation.name,
+        address: body.address || site.label,
         is_factory: true,
         source: 'organisation_config'
       };
@@ -216,7 +236,8 @@ const saveFactorySiteHandler = async (req, res) => {
       });
     }
 
-    const saved = await saveOrganisationSiteCoordinates(organisationId, site);
+    const orgKey = organisation._id || organisation.id || organisationId;
+    const saved = await saveOrganisationSiteCoordinates(orgKey, site);
 
     res.json({
       success: true,
