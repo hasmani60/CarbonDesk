@@ -118,14 +118,14 @@ function App() {
                     } 
                   />
                   
-                  {/* Analytics - Admin, Analyst, Viewer */}
-                  <Route 
-                    path="analytics" 
+                  {/* Analytics - Admin, Analyst, Viewer (sub-routes: overview, scope-1/2/3) */}
+                  <Route
+                    path="analytics/*"
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'viewer']}>
                         <Analytics />
                       </ProtectedRoute>
-                    } 
+                    }
                   />
 
                   {/* AI Reports - Organisation admins only */}
