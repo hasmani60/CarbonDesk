@@ -366,16 +366,33 @@ function organisationQuery(organisationId) {
   return { $or: [{ _id: organisationId }, { id: organisationId }] };
 }
 
+function normaliseOrgConfig(config) {
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    return { ...config };
+  }
+  return {};
+}
+
 /**
- * Persist factory coordinates on organisation.config.site_coordinates
+ * Persist factory coordinates on organisation.config.site_coordinates.
+ * Uses read-modify-write because many orgs have config: null (dot notation fails on null).
  */
 async function saveOrganisationSiteCoordinates(organisationId, site) {
   const Organisation = require('../models/Organisation');
   const payload = siteCoordinatesPayload(site);
 
-  await Organisation.findOneAndUpdate(organisationQuery(organisationId), {
-    $set: { 'config.site_coordinates': payload }
-  });
+  const org = await Organisation.findOne(organisationQuery(organisationId));
+  if (!org) {
+    const err = new Error('Organisation not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const config = normaliseOrgConfig(org.config);
+  config.site_coordinates = payload;
+  org.config = config;
+  org.markModified('config');
+  await org.save();
 
   const cachePrefix = `factory:${organisationId}:`;
   for (const key of geocodeCache.keys()) {
@@ -387,9 +404,14 @@ async function saveOrganisationSiteCoordinates(organisationId, site) {
 
 async function clearOrganisationSiteCoordinates(organisationId) {
   const Organisation = require('../models/Organisation');
-  await Organisation.findOneAndUpdate(organisationQuery(organisationId), {
-    $unset: { 'config.site_coordinates': '' }
-  });
+  const org = await Organisation.findOne(organisationQuery(organisationId));
+  if (!org) return;
+
+  const config = normaliseOrgConfig(org.config);
+  delete config.site_coordinates;
+  org.config = Object.keys(config).length > 0 ? config : {};
+  org.markModified('config');
+  await org.save();
 
   const cachePrefix = `factory:${organisationId}:`;
   for (const key of geocodeCache.keys()) {
