@@ -5,8 +5,14 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth'); // Your auth middleware
 const Emission = require('../models/Emission'); // Your Emission model
 const MACCOpportunity = require('../models/MACCOpportunity'); // Create this model
-const { buildEmissionMatch } = require('../utils/emissionQueryUtils');
+const { buildEmissionMatch, resolveDateRange } = require('../utils/emissionQueryUtils');
 const { materialTransportMatchFilter } = require('../utils/transportEmissionUtils');
+const {
+  aggregateCommuteEmissions,
+  aggregateCommuteEmissionsByMonth
+} = require('../services/commuteAnalyticsService');
+
+const COMMUTE_PARETO_LABEL = 'Employee Commuting (Category 7)';
 
 /**
  * Build $match from query string (supports JSON `filters` or individual fields).
@@ -61,6 +67,49 @@ function emissionMatchFromRequest(req) {
   }
 
   return buildEmissionMatch(filters);
+}
+
+function analyticsFiltersFromRequest(req) {
+  const organisationId = req.user.organisation_id;
+  let filters = { organisationId, excludeRejected: true };
+
+  if (req.query.filters) {
+    try {
+      const parsed =
+        typeof req.query.filters === 'string'
+          ? JSON.parse(req.query.filters)
+          : req.query.filters;
+      if (parsed && typeof parsed === 'object') {
+        filters = { ...filters, ...parsed, organisationId };
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+
+  const q = req.query;
+  if (q.startDate) filters.startDate = q.startDate;
+  if (q.endDate) filters.endDate = q.endDate;
+  if (q.reportingMonth != null) filters.reportingMonth = q.reportingMonth;
+  if (q.reportingYear != null) filters.reportingYear = q.reportingYear;
+  if (q.selectedScopes != null) {
+    filters.selectedScopes = Array.isArray(q.selectedScopes)
+      ? q.selectedScopes
+      : String(q.selectedScopes).split(',').map((s) => s.trim());
+  }
+
+  return filters;
+}
+
+function includesScope3(filters) {
+  const raw =
+    filters.selectedScopes ||
+    filters.scopes ||
+    (filters.scope != null ? [filters.scope] : null);
+  if (raw == null) return true;
+  const arr = Array.isArray(raw) ? raw : String(raw).split(',').map((s) => s.trim());
+  const scopes = [...new Set(arr.map((s) => parseInt(s, 10)).filter((n) => n >= 1 && n <= 3))];
+  return scopes.length === 0 || scopes.includes(3);
 }
 
 /** Normalise emission date so $year/$month work (handles Date + ISO strings); drops invalid/null dates. */
@@ -142,6 +191,26 @@ router.get('/overview', authenticateToken, async (req, res) => {
       result.totalEntries += stat.count;
     });
 
+    result.scope3_activity_co2e = result.scope3;
+    result.scope3_commute_co2e = 0;
+    result.scope3_commute_present_days = 0;
+
+    const filters = analyticsFiltersFromRequest(req);
+    if (includesScope3(filters)) {
+      const { startDate, endDate } = resolveDateRange(filters);
+      const commute = await aggregateCommuteEmissions(
+        filters.organisationId,
+        startDate,
+        endDate
+      );
+      result.scope3_commute_co2e = commute.total_co2e_kg;
+      result.scope3_commute_present_days = commute.present_days;
+      result.scope3 += commute.total_co2e_kg;
+      result.totalEmissions += commute.total_co2e_kg;
+      result.scope3Count += commute.present_days;
+      result.totalEntries += commute.present_days;
+    }
+
     res.json({
       success: true,
       data: result
@@ -205,6 +274,33 @@ router.get('/scope-migration', authenticateToken, async (req, res) => {
       periods[period][countKey] = item.count;
       periods[period].total += item.emissions;
     });
+
+    const filters = analyticsFiltersFromRequest(req);
+    if (includesScope3(filters)) {
+      const { startDate, endDate } = resolveDateRange(filters);
+      const commuteByMonth = await aggregateCommuteEmissionsByMonth(
+        filters.organisationId,
+        startDate,
+        endDate
+      );
+
+      commuteByMonth.forEach((co2e, period) => {
+        if (!periods[period]) {
+          periods[period] = {
+            period,
+            scope1: 0,
+            scope2: 0,
+            scope3: 0,
+            count1: 0,
+            count2: 0,
+            count3: 0,
+            total: 0
+          };
+        }
+        periods[period].scope3 += co2e;
+        periods[period].total += co2e;
+      });
+    }
 
     res.json({
       success: true,
@@ -328,29 +424,55 @@ router.get('/pareto', authenticateToken, async (req, res) => {
       { $sort: { value: -1 } }
     ]);
 
-    // Calculate percentages and cumulative
-    const total = categoryData.reduce((sum, item) => sum + (item.value || 0), 0);
+    let paretoRows = categoryData.map((item) => ({
+      name: item._id || 'Unknown',
+      value: item.value,
+      count: item.count,
+      scope: item.scope
+    }));
+
+    const filters = analyticsFiltersFromRequest(req);
+    if (includesScope3(filters)) {
+      const { startDate, endDate } = resolveDateRange(filters);
+      const commute = await aggregateCommuteEmissions(
+        filters.organisationId,
+        startDate,
+        endDate
+      );
+      if (commute.total_co2e_kg > 0) {
+        paretoRows.push({
+          name: COMMUTE_PARETO_LABEL,
+          value: commute.total_co2e_kg,
+          count: commute.present_days,
+          scope: 3
+        });
+      }
+    }
+
+    const paretoTotal = paretoRows.reduce((sum, item) => sum + (item.value || 0), 0);
     let cumulative = 0;
 
-    if (total <= 0) {
+    if (paretoTotal <= 0) {
       return res.json({
         success: true,
         data: { paretoData: [] }
       });
     }
 
-    const paretoData = categoryData.map(item => {
-      const percentage = (item.value / total) * 100;
+    paretoRows.sort((a, b) => b.value - a.value);
+
+    const paretoData = paretoRows.map((item) => {
+      const percentage = (item.value / paretoTotal) * 100;
       cumulative += percentage;
-      
+
       return {
-        name: item._id || 'Unknown',
+        name: item.name,
         value: item.value,
         count: item.count,
         scope: item.scope,
         percentage: parseFloat(percentage.toFixed(2)),
         cumulativePercentage: parseFloat(cumulative.toFixed(2)),
-        canDrill: true
+        canDrill: item.name !== COMMUTE_PARETO_LABEL
       };
     });
 

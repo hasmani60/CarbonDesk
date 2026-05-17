@@ -24,7 +24,7 @@ import {
 import { useTheme } from '../../context/ThemeContext';
 import { getChartTooltipProps } from '../../utils/chartTheme';
 
-const EmployeeCommuteEmissionsSummary = () => {
+const EmployeeCommuteEmissionsSummary = ({ embedded = false }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -63,13 +63,22 @@ const EmployeeCommuteEmissionsSummary = () => {
       summary.working_days_recorded > 0 ||
       (summary.total_co2e_kg ?? 0) > 0);
 
+  const Wrapper = embedded ? 'div' : 'section';
+  const wrapperClass = embedded ? 'mt-8' : 'mb-8';
+
   return (
-    <section className="mb-8">
+    <Wrapper className={wrapperClass}>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        <h2 className="analytics-section-title mb-0">
-          <Car className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          Employee Commuting (Scope 3 — Category 7)
-        </h2>
+        <h3
+          className={
+            embedded
+              ? 'text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2'
+              : 'analytics-section-title mb-0'
+          }
+        >
+          <Car className="w-5 h-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          {embedded ? 'Employee commuting detail (monthly)' : 'Employee Commuting (Scope 3 — Category 7)'}
+        </h3>
         <div className="flex items-center gap-3">
           <label className="text-sm flex items-center gap-2">
             <span className="text-gray-600 dark:text-gray-400">Month</span>
@@ -236,7 +245,7 @@ const EmployeeCommuteEmissionsSummary = () => {
           </div>
         </>
       )}
-    </section>
+    </Wrapper>
   );
 };
 

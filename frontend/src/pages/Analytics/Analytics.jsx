@@ -164,7 +164,10 @@ const Analytics = () => {
         scope3,
         scope1Count,
         scope2Count,
-        scope3Count
+        scope3Count,
+        scope3_activity_co2e: data.scope3_activity_co2e ?? scope3 - (data.scope3_commute_co2e ?? 0),
+        scope3_commute_co2e: data.scope3_commute_co2e ?? 0,
+        scope3_commute_present_days: data.scope3_commute_present_days ?? 0
       });
     } catch (error) {
       console.error('Error loading overview stats:', error);
@@ -657,7 +660,15 @@ const Analytics = () => {
                   <p className="text-3xl font-bold text-red-900">
                     {formatLargeNumber(overviewStats.scope3)}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{overviewStats.scope3Count} entries</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    {overviewStats.scope3Count} entries
+                    {(overviewStats.scope3_commute_co2e ?? 0) > 0 && (
+                      <span className="block mt-1 text-emerald-700 dark:text-emerald-400">
+                        Includes {formatLargeNumber(overviewStats.scope3_commute_co2e)} employee
+                        commuting
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <div className="w-12 h-12 bg-red-100 dark:bg-red-950/40 rounded-full flex items-center justify-center">
                   <span className="text-2xl font-bold text-red-600">3</span>
@@ -665,9 +676,34 @@ const Analytics = () => {
               </div>
             </div>
           </div>
-        </section>
 
-        <EmployeeCommuteEmissionsSummary />
+          {(overviewStats.scope3_commute_co2e > 0 || overviewStats.scope3_activity_co2e > 0) && (
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="app-card p-4 border-l-4 border-red-800/60">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Scope 3 — Activity emissions
+                </p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">
+                  {formatLargeNumber(overviewStats.scope3_activity_co2e ?? 0)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">From logged emission entries</p>
+              </div>
+              <div className="app-card p-4 border-l-4 border-emerald-600">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Scope 3 — Employee commuting (Cat. 7)
+                </p>
+                <p className="text-xl font-bold text-emerald-800 dark:text-emerald-300 mt-1">
+                  {formatLargeNumber(overviewStats.scope3_commute_co2e ?? 0)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {overviewStats.scope3_commute_present_days ?? 0} present day(s) recorded
+                </p>
+              </div>
+            </div>
+          )}
+
+          <EmployeeCommuteEmissionsSummary embedded />
+        </section>
 
         <Scope3TransportSummary />
 
