@@ -1,0 +1,100 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.production.local
+backend/.env
+backend/.env.production
+backend/.env.production.local
+frontend/.env
+frontend/.env.production
+frontend/.env.production.local
+
+# Database
+backend/database/*.db
+backend/database/*.db-journal
+backend/database/*.db.backup*
+
+# Logs
+logs/
+*.log
+backend/logs/
+frontend/logs/
+pm2-logs/
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+frontend/build/
+*.tsbuildinfo
+
+# PM2
+.pm2/
+ecosystem.config.js.backup
+
+# Uploads and temporary files
+backend/uploads/*
+!backend/uploads/.gitkeep
+temp/
+tmp/
+*.tmp
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Cache
+.cache/
+.npm/
+.eslintcache
+.parcel-cache/
+
+# Docker
+docker-compose.override.yml
+
+# SSL Certificates
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+
+# Backups
+backups/
+*.backup
+*.bak
+
+# Misc
+.serverless/
+.webpack/
+.dynamodb/
+.fusebox/
+.tern-port

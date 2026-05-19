@@ -1,0 +1,90 @@
+================================================================================
+CARBON ACCOUNTING — EMAIL VERIFICATION & NOTIFICATIONS (DO THIS ON YOUR PC)
+================================================================================
+Only YOU can add your real email password — this file automates the rest in the
+project folder.
+
+STEP 1 — OPEN A TERMINAL IN THE PROJECT
+--------------------------------------------------------------------------------
+- On Mac: open Terminal, type  cd   then drag the project folder onto the
+  window (path appears), press Enter.
+- Or in Cursor/VS Code: Terminal → New Terminal.
+
+STEP 2 — CREATE YOUR CONFIG FILE (ONE TIME)
+--------------------------------------------------------------------------------
+In the terminal:
+
+  cd backend
+  npm run init-env
+
+This creates  backend/.env  from the template IF it did not exist yet.
+If you already have backend/.env, it will NOT overwrite it.
+
+STEP 3 — EDIT backend/.env IN ANY TEXT EDITOR
+--------------------------------------------------------------------------------
+Find these lines and replace the fake values with yours:
+
+  SMTP_USER=       → your real sender email (e.g. Gmail address)
+  SMTP_PASS=       → your SMTP password or “App Password” (not always your normal login)
+  FROM_EMAIL=      → often same as SMTP_USER (some providers require this)
+  CLIENT_URL=      → your app in the browser, e.g. http://localhost:5173 while testing
+                     or https://your-real-website.com in production
+
+For Gmail personal accounts you usually must:
+  - Turn on 2-Step Verification in Google Account
+  - Create an “App password” and paste THAT into SMTP_PASS
+
+STEP 4 — TURN FEATURES ON OR OFF (STILL IN backend/.env)
+--------------------------------------------------------------------------------
+Leave as false until mail works, then set to true as needed:
+
+  ENABLE_EMAIL_NOTIFICATIONS=false
+    → set true if developers wired “email copy” for notifications
+
+  EMAIL_VERIFICATION_ON_REGISTER=false
+    → set true to send a verify link when someone uses /api/auth/register
+
+  REQUIRE_EMAIL_VERIFICATION=false
+    → set true to block login until the user clicks the link in email
+
+STEP 5 — CHECK THAT VALUES ARE FILLED (SCRIPT)
+--------------------------------------------------------------------------------
+Still inside the backend folder:
+
+  npm run check-email
+
+It will tell you if something is still a placeholder or missing.
+
+STEP 6 — RESTART THE BACKEND
+--------------------------------------------------------------------------------
+Stop the server (Ctrl+C) and start again:
+
+  npm start
+
+(or npm run dev )
+
+STEP 7 — TEST
+--------------------------------------------------------------------------------
+A) Quick SMTP test (recommended first)
+   In terminal, from the backend folder:
+     npm run check-email
+     npm run test-email
+   You should get one email at SMTP_USER (or set TEST_EMAIL_TO=other@mail.com
+   in .env to send somewhere else). Check Spam.
+
+B) Test verification flow (only if flags are true in .env)
+   Set EMAIL_VERIFICATION_ON_REGISTER=true (and optionally REQUIRE_EMAIL_VERIFICATION=true).
+   Restart backend. Register a new user (or use your app’s registration). Click the
+   link in the email → opens /verify-email → then try login.
+
+C) From the login page
+   If login says email not verified, use “Resend verification email”.
+
+================================================================================
+WHAT WAS DONE “FOR YOU” IN THE PROJECT
+================================================================================
+- backend/scripts/init-env-if-missing.js  → creates .env from template
+- backend/scripts/check-email-setup.js    → npm run check-email
+- backend/scripts/send-test-email.js      → npm run test-email (sends real test mail)
+- backend/.env.example                    → all flags documented
+================================================================================

@@ -1,0 +1,552 @@
+/* index.css - Carbon Accounting Professional Theme - FIXED INPUT BLOCKING */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer components {
+  /* Shared surface: aligns Analytics with glass-style pages (Dashboard, Monitor) */
+  .app-card {
+    @apply bg-white/95 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl border border-gray-200/90 dark:border-slate-700/90 shadow-sm dark:shadow-none;
+  }
+
+  .app-card-interactive {
+    @apply motion-safe:hover:shadow-md motion-safe:transition-[box-shadow,transform] motion-safe:duration-300 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:transform-none;
+  }
+
+  .analytics-section-title {
+    @apply text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2;
+  }
+
+  .analytics-tab-panel {
+    @apply space-y-2 min-h-[40vh];
+  }
+
+  .analytics-tab-section {
+    @apply mb-10 last:mb-4;
+  }
+
+  .analytics-tab-section .analytics-section-title {
+    @apply mb-4;
+  }
+
+  .input-section-panel {
+    @apply rounded-2xl border border-gray-200/90 dark:border-slate-700/90 overflow-hidden;
+  }
+
+  /* Form density: stacked auth / admin forms */
+  .form-stack {
+    @apply space-y-5;
+  }
+}
+
+:root {
+  /* Professional Green Conservation Theme */
+  --background: 142 20% 97%;              /* Soft sage white */
+  --foreground: 150 30% 15%;              /* Deep forest green text */
+  --card: 0 0% 100%;                      /* Pure white cards */
+  --card-foreground: 150 25% 20%;         /* Dark green card text */
+  --popover: 0 0% 100%;
+  --popover-foreground: 150 25% 20%;
+  
+  /* Primary: Professional Forest Green */
+  --primary: 152 55% 35%;                 /* Forest green */
+  --primary-foreground: 0 0% 100%;        /* White text on primary */
+  
+  /* Secondary: Earthy Sage */
+  --secondary: 142 25% 88%;               /* Light sage */
+  --secondary-foreground: 150 30% 25%;    /* Dark green text */
+  
+  /* Muted: Soft natural tones */
+  --muted: 142 20% 92%;                   /* Very light sage */
+  --muted-foreground: 150 15% 45%;        /* Medium green-gray */
+  
+  /* Accent: Vibrant eco-green */
+  --accent: 142 65% 45%;                  /* Bright conservation green */
+  --accent-foreground: 0 0% 100%;
+  
+  /* Destructive: Natural warning red */
+  --destructive: 0 65% 50%;
+  --destructive-foreground: 0 0% 100%;
+  
+  /* Borders & Inputs */
+  --border: 142 20% 88%;                  /* Soft sage border */
+  --input: 142 20% 95%;                   /* Light input bg */
+  --ring: 152 55% 35%;                    /* Focus ring matches primary */
+  --radius: 0.5rem;
+  
+  /* Custom conservation colors */
+  --eco-primary: 152 55% 35%;             /* Primary forest green */
+  --eco-light: 142 40% 92%;               /* Light sage background */
+  --eco-accent: 142 70% 50%;              /* Bright green accent */
+  --eco-dark: 150 45% 25%;                /* Deep forest */
+  --eco-muted: 142 15% 65%;               /* Muted green-gray */
+  
+  /* Chart colors - Professional green palette */
+  --chart-1: 152 55% 35%;                 /* Forest green */
+  --chart-2: 142 65% 45%;                 /* Bright eco green */
+  --chart-3: 168 60% 42%;                 /* Teal green */
+  --chart-4: 142 40% 60%;                 /* Sage green */
+  --chart-5: 150 35% 50%;                 /* Deep sea green */
+  --chart-6: 142 25% 70%;                 /* Light sage */
+}
+
+.dark {
+  /* Dark mode: Premium deep slate theme */
+  --background: 222 47% 11%;              /* Slate 900: #0f172a */
+  --foreground: 210 40% 98%;              /* Slate 50: #f8fafc */
+  --card: 222 47% 11%;                    /* Slate 900 */
+  --card-foreground: 210 40% 98%;
+  --popover: 222 47% 11%;
+  --popover-foreground: 210 40% 98%;
+  
+  --primary: 142 60% 55%;                 /* Brighter green for dark mode */
+  --primary-foreground: 150 30% 10%;
+  
+  --secondary: 150 15% 20%;               /* Dark sage */
+  --secondary-foreground: 142 20% 85%;
+  
+  --muted: 150 15% 20%;
+  --muted-foreground: 142 15% 65%;
+  
+  --accent: 142 70% 50%;
+  --accent-foreground: 222 47% 11%;
+  
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  
+  --border: 217 33% 17%;                  /* Slate 800: #1e293b */
+  --input: 217 33% 17%;
+  --ring: 142 70% 50%;
+  
+  /* Dark mode chart colors */
+  --chart-1: 142 60% 55%;
+  --chart-2: 142 70% 60%;
+  --chart-3: 168 65% 52%;
+  --chart-4: 142 45% 65%;
+  --chart-5: 150 40% 55%;
+  --chart-6: 142 30% 75%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar - Green theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--eco-muted));
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-slideDown {
+  animation: slideDown 0.3s ease-out;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* ============================================ */
+/* CRITICAL FIX: INPUT INTERACTION RULES */
+/* ============================================ */
+
+/* FIXED: Allow all inputs to be interactive by default */
+input, select, textarea {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  position: relative;
+}
+
+/* Form input improvements - Green theme */
+input, select, textarea {
+  line-height: 1.5 !important;
+  min-height: 44px;
+  padding: 10px 14px !important;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--input));
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+}
+
+/* Custom focus styles - Green theme */
+.focus-green:focus {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  transition: all 0.2s ease;
+}
+
+/* Fix for inputs with left icons */
+input[type="date"],
+input[type="email"],
+input[type="password"],
+input[type="text"].pl-10,
+input.pl-10 {
+  padding-left: 2.75rem !important;
+  padding-right: 1rem !important;
+}
+
+/* Fix for inputs with right icons (like password toggle) */
+input.pr-10,
+input.pr-12 {
+  padding-right: 2.75rem !important;
+}
+
+/* Fix for inputs with both left and right icons */
+input.pl-10.pr-10,
+input.pl-10.pr-12 {
+  padding-left: 2.75rem !important;
+  padding-right: 2.75rem !important;
+}
+
+/* FIXED: Date inputs - fully interactive */
+input[type="date"] {
+  padding-left: 2.75rem !important;
+  padding-right: 2.75rem !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure date picker calendar icon is clickable */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 0.75rem;
+  cursor: pointer;
+  opacity: 0.6;
+  width: 20px;
+  height: 20px;
+  pointer-events: auto !important;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+/* Firefox date picker */
+input[type="date"]::-moz-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+  pointer-events: auto !important;
+}
+
+input[type="date"]::-moz-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+input::placeholder, select::placeholder, textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* FIXED: Icon positioning - icons are visible but non-interactive */
+.relative > svg {
+  position: absolute;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* FIXED: Ensure lucide icons (decorative) don't block inputs */
+.relative > svg.lucide,
+.relative > svg.lucide-calendar,
+.relative > svg.lucide-gauge,
+.relative > svg.lucide-users,
+.relative > svg.lucide-truck {
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* FIXED: Buttons inside input containers should work */
+.relative > button {
+  z-index: 15;
+  pointer-events: auto;
+}
+
+/* FIXED: Number input arrows */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ============================================ */
+/* END CRITICAL FIX */
+/* ============================================ */
+
+/* Better button spacing */
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.button-group button {
+  flex-shrink: 0;
+  min-width: max-content;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+/* Sidebar specific animations */
+@keyframes sidebarSlideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.sidebar-enter {
+  animation: sidebarSlideIn 0.3s ease-out;
+}
+
+/* Header alignment fixes */
+header {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+}
+
+header > div {
+  display: flex;
+  align-items: center;
+  width: 100%;;
+}
+
+/* Notification badge positioning */
+.notification-badge,
+header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
+  position: absolute;
+  top: 0 !important;
+  right: 0 !important;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: white;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  border-radius: 9999px;
+  border: 1px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 20;
+  transform: translate(25%, -25%) !important;
+  transform-origin: center;
+}
+
+/* Button styles - Green theme */
+.btn-primary {
+  background: linear-gradient(135deg, 
+    hsl(var(--primary)), 
+    hsl(152 60% 40%));
+  color: hsl(var(--primary-foreground));
+  border: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.2);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, 
+    hsl(152 60% 30%), 
+    hsl(152 65% 35%));
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+  border: 1px solid hsl(var(--border));
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--primary));
+}
+
+/* Card styles - Professional design */
+.professional-card {
+  background: hsl(var(--card));
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
+  transition: all 0.3s ease;
+}
+
+.professional-card:hover {
+  box-shadow: 0 8px 16px hsl(var(--primary) / 0.1);
+}
+
+/* Loading spinner - Green theme */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid hsl(var(--muted));
+  border-top: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid hsl(var(--border));
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px hsl(var(--primary) / 0.15),
+              0 4px 8px -4px hsl(var(--primary) / 0.1);
+  border-color: hsl(var(--primary) / 0.3);
+}
+
+/* Better mobile responsiveness */
+@media (max-width: 640px) {
+  .mobile-stack {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+  
+  .mobile-full {
+    width: 100% !important;
+  }
+  
+  .mobile-hide {
+    display: none !important;
+  }
+  
+  input, select, textarea {
+    min-height: 42px;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+/* Accessibility improvements */
+.focus-visible:focus-visible {
+  outline: 3px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Custom selection color - Green theme */
+::selection {
+  background: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
+}
+
+::-moz-selection {
+  background: hsl(var(--primary) / 0.3);
+  color: hsl(var(--foreground));
+}

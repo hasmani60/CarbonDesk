@@ -1,0 +1,935 @@
+// backend/server.js - MongoDB Compliant Server
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
+const path = require('path');
+require('dotenv').config();
+
+const logger = require('./utils/logger');
+const { effectiveAllowedScopesForContributor } = require('./utils/contributorEmissionAccess');
+
+const errorHandler = require('./middleware/errorHandler');
+const { 
+  authenticateToken, 
+  requireAdmin, 
+  checkScopeAccess, 
+  checkActivityAccess, 
+  checkPageAccess,
+  enforceRouteAccess,
+  authorizeRoles
+} = require('./middleware/auth');
+
+const { 
+  addOrganisationContext, 
+  requireOrganisation 
+} = require('./middleware/organisationScope');
+
+const {
+  authenticateCompanyOperator,
+  canCreateOrganisations,
+  canManageOrganisations,
+  requireSuperOperator,
+  logCompanyActivity
+} = require('./middleware/companyAuth');
+
+const organisationRoutes = require('./routes/organisation');
+
+const app = express();
+
+app.set('trust proxy', 1);
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDevelopment ? 10000 : 1000,
+  skip: () => isDevelopment,
+  message: { error: 'Too many requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+});
+
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDevelopment ? 10000 : 500,
+  skip: () => isDevelopment,
+  message: { error: 'Too many admin requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const companyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDevelopment ? 10000 : 200,
+  skip: () => isDevelopment,
+  message: { error: 'Too many company operations requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ============================================
+// MIDDLEWARE
+// ============================================
+
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false
+}));
+app.use(compression());
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('combined'));
+} else {
+  app.use(morgan('combined'));
+}
+
+const normalizeCorsOrigin = (o) => {
+  if (!o || typeof o !== 'string') return '';
+  return o.trim().replace(/\/$/, '');
+};
+
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'https://carbon-desk.vercel.app',
+  normalizeCorsOrigin(process.env.CLIENT_URL)
+].filter(Boolean);
+
+const explicitCorsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(normalizeCorsOrigin).filter(Boolean)
+  : defaultCorsOrigins;
+
+// Always allow CLIENT_URL when set (avoids duplicate env mistakes on Render).
+const clientUrlNorm = normalizeCorsOrigin(process.env.CLIENT_URL);
+const corsOrigins = [
+  ...new Set(
+    [...explicitCorsOrigins, ...(clientUrlNorm ? [clientUrlNorm] : [])].filter(
+      Boolean
+    )
+  )
+];
+
+const isAllowedCorsOrigin = (originNorm) => {
+  if (!originNorm) return false;
+  if (corsOrigins.includes(originNorm)) return true;
+  if (
+    process.env.CORS_ALLOW_VERCEL !== 'false' &&
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(originNorm)
+  ) {
+    return true;
+  }
+  return false;
+};
+
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+
+    const originNorm = normalizeCorsOrigin(origin);
+    if (isAllowedCorsOrigin(originNorm)) {
+      callback(null, true);
+    } else {
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn('CORS blocked origin', { origin, allowed: corsOrigins });
+        callback(new Error('Not allowed by CORS'));
+      } else {
+        logger.debug('CORS origin not in whitelist (allowed in dev)', { origin });
+        callback(null, true);
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
+}));
+
+app.use(limiter);
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ============================================
+// HEALTH CHECK ENDPOINT
+// ============================================
+
+app.get('/health', (req, res) => {
+  const healthData = {
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '2.0.1',
+    database: mongoose.connection.readyState === 1 ? 'MongoDB Atlas (Connected)' : 'MongoDB (Disconnected)',
+    port: process.env.PORT || 5001,
+    rateLimits: {
+      general: '1000 requests per 15 minutes',
+      admin: '500 requests per 15 minutes',
+      company: '200 requests per 15 minutes'
+    },
+    features: {
+      multiUser: true,
+      adminMonitoring: true,
+      auditLogging: true,
+      roleBasedAccess: true,
+      rbacSupport: true,
+      strictRBAC: true,
+      multiTenant: true,
+      companyOperations: true,
+      taskManagement: true,
+      taskAssignment: true,
+      workflowTracking: true,
+      increasedRateLimits: true
+    }
+  };
+
+  res.status(200).json(healthData);
+});
+
+/**
+ * SMTP / forgot-password troubleshooting without Render Shell.
+ * Set RENDER_EMAIL_DIAGNOSTIC_SECRET in Render env (long random string), then POST from your PC:
+ *
+ * curl -X POST "$RENDER_URL/health/email-diagnostic" -H "Content-Type: application/json" \
+ *   -d "{\"secret\":\"$SECRET\",\"email\":\"you@gmail.com\"}"
+ *
+ * Omit "email" to skip DB lookup. Returns 404 if secret missing or wrong.
+ */
+app.post('/health/email-diagnostic', async (req, res) => {
+  try {
+    const expected = process.env.RENDER_EMAIL_DIAGNOSTIC_SECRET;
+    if (
+      !expected ||
+      typeof req.body?.secret !== 'string' ||
+      req.body.secret !== expected
+    ) {
+      return res.status(404).json({ message: 'Not found' });
+    }
+
+    const emailService = require('./utils/emailService');
+    const { User } = require('./models');
+
+    const payload = {
+      smtpConfigured: emailService.isConfigured(),
+      resendConfigured: !!process.env.RESEND_API_KEY,
+      smtpOnlyConfigured: emailService.isSmtpConfigured(),
+      clientUrl: process.env.CLIENT_URL || null,
+      smtpVerifyOk: null,
+      smtpVerifyError: null,
+      user: null
+    };
+
+    if (process.env.RESEND_API_KEY) {
+      payload.smtpVerifyNote =
+        'Using Resend API over HTTPS (no SMTP verify on this path).';
+      payload.smtpVerifyOk = true;
+    } else if (emailService.isSmtpConfigured()) {
+      try {
+        const tx = emailService.getTransporter();
+        if (tx) {
+          await tx.verify();
+          payload.smtpVerifyOk = true;
+        }
+      } catch (e) {
+        payload.smtpVerifyOk = false;
+        payload.smtpVerifyError =
+          e && e.message ? String(e.message) : 'SMTP verify failed';
+      }
+    }
+
+    const em =
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
+    if (em) {
+      try {
+        if (mongoose.connection.readyState !== 1) {
+          payload.user = { error: 'MongoDB not connected on this instance' };
+        } else {
+          const u = await User.findOne({ email: em })
+            .select('email status')
+            .lean();
+          if (!u) {
+            payload.user = { found: false };
+          } else {
+            payload.user = {
+              found: true,
+              status: u.status,
+              receivesForgotEmail: u.status === 'active'
+            };
+          }
+        }
+      } catch (e) {
+        payload.user = {
+          lookupError:
+            e && e.message ? String(e.message) : 'User lookup failed'
+        };
+      }
+    }
+
+    return res.json({ success: true, data: payload });
+  } catch (e) {
+    logger.error('/health/email-diagnostic', e);
+    return res.status(500).json({ success: false, message: 'Diagnostic failed' });
+  }
+});
+
+// ============================================
+// IMPORT CONTROLLERS
+// ============================================
+
+const authController = require('./controllers/authController');
+const userController = require('./controllers/userController');
+const adminController = require('./controllers/adminController');
+const dashboardController = require('./controllers/dashboardController');
+const emissionController = require('./controllers/emissionController');
+const companyController = require('./controllers/companyController');
+const { ActivityLog } = require('./models');
+
+// ============================================
+// COMPANY OPERATIONS ROUTES
+// ============================================
+
+const companyAuthRouter = express.Router();
+companyAuthRouter.post('/login', companyController.companyLogin);
+companyAuthRouter.get('/profile', authenticateCompanyOperator, companyController.getCompanyProfile);
+
+app.use('/api/company/auth', companyLimiter, companyAuthRouter);
+
+const companyDashboardRouter = express.Router();
+companyDashboardRouter.get('/', companyController.getCompanyDashboard);
+
+app.use('/api/company/dashboard',
+  companyLimiter,
+  authenticateCompanyOperator,
+  companyDashboardRouter
+);
+
+const companyOrgRouter = express.Router();
+
+companyOrgRouter.post('/', 
+  canCreateOrganisations, 
+  logCompanyActivity('org_create', 'Creating new organisation'), 
+  companyController.createOrganisation
+);
+
+companyOrgRouter.get('/', 
+  companyController.getAllOrganisations
+);
+
+companyOrgRouter.patch('/:id/super-admin-password',
+  canManageOrganisations,
+  logCompanyActivity('org_super_admin_password', 'Reset organisation super admin password'),
+  companyController.resetSuperAdminPassword
+);
+
+companyOrgRouter.get('/:id/users',
+  canManageOrganisations,
+  companyController.listOrganisationUsers
+);
+
+companyOrgRouter.patch('/:id/users/:userId',
+  canManageOrganisations,
+  logCompanyActivity('org_user_update', 'Update organisation user'),
+  companyController.updateOrganisationUser
+);
+
+companyOrgRouter.delete('/:id/users/:userId',
+  canManageOrganisations,
+  logCompanyActivity('org_user_delete', 'Delete organisation user'),
+  companyController.deleteOrganisationUser
+);
+
+companyOrgRouter.patch('/:id/users/:userId/password',
+  canManageOrganisations,
+  logCompanyActivity('org_user_password', 'Set organisation user password'),
+  companyController.setOrganisationUserPassword
+);
+
+companyOrgRouter.get('/:id/stats',
+  companyController.getOrganisationStats
+);
+
+companyOrgRouter.get('/:id', 
+  companyController.getOrganisationById
+);
+
+companyOrgRouter.patch('/:id', 
+  canManageOrganisations, 
+  logCompanyActivity('org_update', 'Updating organisation'), 
+  companyController.updateOrganisation
+);
+
+companyOrgRouter.delete('/:id', 
+  canManageOrganisations, 
+  logCompanyActivity('org_deactivate', 'Deactivating organisation'), 
+  companyController.deactivateOrganisation
+);
+
+app.use('/api/company/organisations',
+  companyLimiter,
+  authenticateCompanyOperator,
+  companyOrgRouter
+);
+
+app.get('/api/company/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Company operations endpoint is accessible',
+    timestamp: new Date().toISOString(),
+    availableRoutes: [
+      'POST /api/company/auth/login',
+      'GET /api/company/auth/profile',
+      'GET /api/company/dashboard',
+      'POST /api/company/organisations',
+      'GET /api/company/organisations',
+      'GET /api/company/organisations/:id',
+      'PATCH /api/company/organisations/:id/super-admin-password',
+      'GET /api/company/organisations/:id/users',
+      'PATCH /api/company/organisations/:id/users/:userId',
+      'DELETE /api/company/organisations/:id/users/:userId',
+      'PATCH /api/company/organisations/:id/users/:userId/password'
+    ]
+  });
+});
+
+
+// ============================================
+// ORGANISATION ROUTES
+// ============================================
+
+app.use('/api/organisations', 
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  organisationRoutes
+);
+
+// ============================================
+// AUTH ROUTES
+// ============================================
+
+app.use('/api/auth', require('./routes/auth'));
+
+// ============================================
+// USER ROUTES
+// ============================================
+
+app.use('/api/users', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/users')
+);
+
+// ============================================
+// ACTIVITY LOG ROUTES
+// ============================================
+
+app.use('/api/activities', 
+  authenticateToken, 
+  addOrganisationContext,
+  require('./routes/activity')
+);
+
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
+app.use('/api/admin', 
+  authenticateToken,
+  addOrganisationContext,
+  requireAdmin,
+  adminLimiter,
+  require('./routes/admin')
+);
+
+// ============================================
+// DASHBOARD ROUTES
+// ============================================
+
+app.use('/api/dashboard',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/dashboard')
+);
+
+// ============================================
+// EMISSION ROUTES
+// ============================================
+
+app.use('/api/emissions',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/emissions')
+);
+
+// ============================================
+// ADDITIONAL ROUTES
+// ============================================
+
+app.use('/api/export', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/export')
+);
+app.use('/api/vehicles', 
+  authenticateToken, 
+  addOrganisationContext, 
+  requireOrganisation,
+  require('./routes/vehicles')
+);
+app.use('/api/generators', 
+  authenticateToken, 
+  addOrganisationContext, 
+  requireOrganisation,
+  require('./routes/generators')
+);
+app.use('/api/employees',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/employees')
+);
+
+app.use('/api/production',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/production')
+);
+
+app.use('/api/offsets',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/offsets')
+);
+
+app.use('/api/flights',
+  authenticateToken,
+  addOrganisationContext,
+  require('./routes/flights')
+);
+
+app.use('/api/sea',
+  authenticateToken,
+  addOrganisationContext,
+  require('./routes/sea')
+);
+
+app.use('/api/road',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  require('./routes/road')
+);
+
+app.use('/api/monitor', 
+  authenticateToken, 
+  addOrganisationContext, 
+  require('./routes/monitor')
+);
+
+// ============================================
+// ANALYTICS ROUTES
+// ============================================
+
+const analyticsRoutes = require('./routes/analytics');
+
+app.use('/api/analytics',
+  authenticateToken,
+  addOrganisationContext,
+  requireOrganisation,
+  analyticsRoutes
+);
+
+// ============================================
+// AI REPORT ROUTES (per-route auth in routes/reports.js)
+// ============================================
+app.use('/api/reports', require('./routes/reports'));
+// ============================================
+// TASK ROUTES
+// ============================================
+
+const taskRouter = express.Router();
+const taskController = require('./controllers/taskController');
+
+taskRouter.get('/', addOrganisationContext, requireOrganisation, taskController.getTasks);
+taskRouter.post('/', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.createTask);
+taskRouter.get('/stats', addOrganisationContext, requireOrganisation, taskController.getTaskStats);
+taskRouter.get('/assignable-users', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.getAssignableUsers);
+taskRouter.get('/due-soon', addOrganisationContext, requireOrganisation, taskController.getTasksDueSoon);
+taskRouter.get('/:id', addOrganisationContext, requireOrganisation, taskController.getTaskById);
+taskRouter.patch('/:id', addOrganisationContext, requireOrganisation, taskController.updateTask);
+taskRouter.delete('/:id', addOrganisationContext, requireOrganisation, authorizeRoles(['admin']), taskController.deleteTask);
+
+app.use('/api/tasks',
+  authenticateToken,
+  taskRouter
+);
+
+// ============================================
+// NOTIFICATION ROUTES
+// ============================================
+
+const notificationRouter = express.Router();
+const notificationController = require('./controllers/notificationController');
+
+notificationRouter.get('/unread-count', addOrganisationContext, notificationController.getUnreadCount);
+notificationRouter.get('/', addOrganisationContext, notificationController.getNotifications);
+notificationRouter.patch('/read-all', addOrganisationContext, notificationController.markAllAsRead);
+notificationRouter.patch('/:id/read', addOrganisationContext, notificationController.markAsRead);
+notificationRouter.delete('/:id', addOrganisationContext, notificationController.deleteNotification);
+
+app.use('/api/notifications',
+  authenticateToken,
+  notificationRouter
+);
+
+// ============================================
+// DEBUG ROUTES
+// ============================================
+
+app.get('/api/debug/organisation', authenticateToken, addOrganisationContext, (req, res) => {
+  if (!req.organisationId) {
+    return res.json({
+      success: true,
+      data: {
+        hasOrganisation: false,
+        message: 'User not assigned to any organisation'
+      }
+    });
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      hasOrganisation: true,
+      organisation: {
+        id: req.organisation.id,
+        name: req.organisation.name,
+        display_name: req.organisation.display_name,
+        industry_type: req.organisation.industry_type,
+        subscription_tier: req.organisation.subscription_tier
+      },
+      settings: req.organisationSettings ? {
+        currency: req.organisationSettings.currency,
+        timezone: req.organisationSettings.timezone
+      } : null
+    }
+  });
+});
+
+app.get('/api/debug/context', authenticateToken, addOrganisationContext, (req, res) => {
+  res.json({
+    success: true,
+    debug: {
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+        organisation_id: req.user.organisation_id
+      },
+      context: {
+        organisationId: req.organisationId,
+        hasOrganisation: !!req.organisation,
+        organisationName: req.organisation?.name || null
+      }
+    }
+  });
+});
+
+app.get('/api/access/scope/:scope', authenticateToken, (req, res) => {
+  const scope = req.params.scope;
+  try {
+    checkScopeAccess(scope)(req, res, () => {
+      res.json({
+        success: true,
+        hasAccess: true,
+        scope: scope,
+        userRole: req.user.role,
+        restrictions: req.user.restrictions
+      });
+    });
+  } catch (error) {
+    res.status(403).json({
+      success: false,
+      hasAccess: false,
+      scope: scope,
+      userRole: req.user.role,
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/access/page/:page', authenticateToken, (req, res) => {
+  const page = `/${req.params.page}`;
+  try {
+    checkPageAccess(page)(req, res, () => {
+      res.json({
+        success: true,
+        hasAccess: true,
+        page: page,
+        userRole: req.user.role,
+        restrictions: req.user.restrictions
+      });
+    });
+  } catch (error) {
+    res.status(403).json({
+      success: false,
+      hasAccess: false,
+      page: page,
+      userRole: req.user.role,
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/rbac/info', authenticateToken, addOrganisationContext, (req, res) => {
+  const { role } = req.user;
+  
+  const rolePermissions = {
+    admin: {
+      pages: ['dashboard', 'input', 'monitor', 'analytics', 'settings', 'admin'],
+      actions: ['create', 'read', 'update', 'delete', 'verify', 'manage_users'],
+      scopes: [1, 2, 3],
+      description: 'Full system access'
+    },
+    analyst: {
+      pages: ['analytics', 'settings'],
+      actions: ['read', 'verify'],
+      scopes: [1, 2, 3],
+      description: 'Analytics and verification access only'
+    },
+    contributor: {
+      pages: ['input', 'settings'],
+      actions: ['create', 'read', 'update', 'delete'],
+      scopes: req.user.restrictions
+        ? effectiveAllowedScopesForContributor(req.user.restrictions)
+        : [1, 2, 3],
+      description: 'Data entry and management only'
+    },
+    viewer: {
+      pages: ['dashboard', 'monitor', 'analytics', 'settings'],
+      actions: ['read'],
+      scopes: [1, 2, 3],
+      description: 'Read-only access to data and analytics'
+    }
+  };
+
+  res.json({
+    success: true,
+    data: {
+      userRole: role,
+      permissions: rolePermissions[role] || rolePermissions.viewer,
+      restrictions: req.user.restrictions || null,
+      organisation_id: req.organisationId || null,
+      organisation_name: req.organisation?.name || null
+    }
+  });
+});
+
+
+// ============================================
+// ERROR HANDLING MIDDLEWARE
+// ============================================
+
+const errorHandlerMiddleware = (err, req, res, next) => {
+  logger.error('Request error', err);
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      errors: Object.values(err.errors).map(e => e.message)
+    });
+  }
+
+  if (err.code === 11000) {
+    return res.status(400).json({
+      success: false,
+      message: 'Duplicate key error'
+    });
+  }
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error'
+  });
+};
+
+app.use('/api/*', (req, res) => {
+  logger.warn('API route not found', { method: req.method, url: req.originalUrl });
+  res.status(404).json({
+    success: false,
+    message: `API route ${req.originalUrl} not found`
+  });
+});
+
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`
+  });
+});
+
+app.use(errorHandlerMiddleware);
+
+// ============================================
+// DATABASE CONNECTION & STARTUP
+// ============================================
+
+const connectDB = async () => {
+  try {
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI not found in environment variables');
+    }
+
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    
+    logger.info('MongoDB Connected', { 
+      host: conn.connection.host, 
+      database: conn.connection.name 
+    });
+
+    try {
+      const { ensureScope3CommuteFactors } = require('./services/scope3CommuteFactorSeed');
+      const count = await ensureScope3CommuteFactors();
+      logger.info('Scope 3 commute emission factors ready', { count });
+    } catch (seedErr) {
+      logger.warn('Could not ensure scope3_commute factors', { error: seedErr.message });
+    }
+
+    return true;
+  } catch (error) {
+    logger.error('MongoDB connection failed', error);
+    const uri = process.env.MONGODB_URI || '';
+    const isLocal =
+      /localhost|127\.0\.0\.1|^\s*mongodb:\/\/(localhost|127\.0\.0\.1)/i.test(
+        uri
+      );
+    const refused =
+      String(error?.message || '').includes('ECONNREFUSED') ||
+      String(error?.cause?.message || '').includes('ECONNREFUSED');
+    if (isLocal && refused) {
+      logger.error(
+        'Nothing is listening on local MongoDB (port 27017). Fix one of: ' +
+          '(1) Start MongoDB locally (e.g. brew services start mongodb-community, or Docker), ' +
+          'or (2) Set MONGODB_URI in backend/.env to your MongoDB Atlas connection string ' +
+          '(Network Access must allow your IP: 0.0.0.0/0 for quick tests).'
+      );
+    }
+    throw error;
+  }
+};
+
+const gracefulShutdown = async (signal) => {
+  logger.info(`${signal} received, shutting down gracefully`);
+
+  try {
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      await mongoose.connection.close();
+      logger.info('MongoDB connection closed');
+    }
+  } catch (error) {
+    logger.error('Error during shutdown', error);
+  }
+
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+const PORT = process.env.PORT || 5001;
+
+const startServer = async () => {
+  try {
+    await connectDB();
+
+    if (process.env.NODE_ENV === 'production') {
+      const j = process.env.JWT_SECRET;
+      if (!j || j.length < 24 || j === 'your-development-jwt-secret-change-in-production') {
+        logger.error(
+          'Set a strong JWT_SECRET in production (min ~24 chars, not the example placeholder).'
+        );
+        process.exit(1);
+      }
+    }
+
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info('Server started successfully', {
+        version: '2.0.1',
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development',
+        apiBase: `http://localhost:${PORT}/api`,
+        healthCheck: `http://localhost:${PORT}/health`,
+        rateLimits: {
+          general: '1000 req/15min',
+          admin: '500 req/15min',
+          company: '200 req/15min'
+        },
+        features: {
+          multiUser: true,
+          multiTenant: true,
+          strictRBAC: true,
+          adminMonitoring: true,
+          activityLogging: true,
+          taskManagement: true,
+          database: 'MongoDB Atlas'
+        }
+      });
+    });
+
+    const { sendSubscriptionRenewalReminders } = require('./utils/subscriptionRenewalReminders');
+    const reminderIntervalMs = parseInt(
+      process.env.SUBSCRIPTION_REMINDER_JOB_INTERVAL_MS || '21600000',
+      10
+    );
+    const runReminders = () => {
+      sendSubscriptionRenewalReminders().catch((err) =>
+        logger.error('Subscription renewal reminder job', err)
+      );
+    };
+    setInterval(runReminders, reminderIntervalMs);
+    setTimeout(runReminders, 25000);
+
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`Port ${PORT} is already in use`);
+        process.exit(1);
+      } else {
+        logger.error('Server error', error);
+        process.exit(1);
+      }
+    });
+
+  } catch (error) {
+    logger.error('Failed to start server', error);
+    process.exit(1);
+  }
+};
+
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+module.exports = app;
