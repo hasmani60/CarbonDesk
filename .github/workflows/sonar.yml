@@ -11,10 +11,37 @@ jobs:
   sonarqube:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@master
+
+      - name: Verify Sonar token
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::Add repository secret SONAR_TOKEN (SonarCloud: My Account → Security, or SonarQube user token)."
+            exit 1
+          fi
+
+      # Optional: override SonarCloud org/project without editing sonar-project.properties.
+      # Repo → Settings → Secrets and variables → Actions → Variables:
+      #   SONAR_ORGANIZATION, SONAR_PROJECT_KEY
+      - name: Apply SonarCloud project overrides (optional)
+        if: ${{ vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != '' }}
+        run: |
+          ORG="${{ vars.SONAR_ORGANIZATION }}"
+          KEY="${{ vars.SONAR_PROJECT_KEY }}"
+          grep -v '^sonar.organization=' sonar-project.properties | grep -v '^sonar.projectKey=' > sonar-project.tmp
+          mv sonar-project.tmp sonar-project.properties
+          printf '\nsonar.organization=%s\nsonar.projectKey=%s\n' "$ORG" "$KEY" >> sonar-project.properties
+          echo "Using SonarCloud org/project from repository variables."
+
+      # SonarCloud: leave SONAR_HOST_URL empty (use repository variable only for self-hosted).
+      # Example self-hosted variable: SONAR_HOST_URL = https://sonar.company.com
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v8.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
