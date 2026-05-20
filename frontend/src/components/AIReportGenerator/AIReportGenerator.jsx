@@ -579,7 +579,7 @@ export default function AIReportGenerator() {
     <section className="space-y-5 relative">
       <div
         className="fixed left-0 top-0 -z-10 pointer-events-none overflow-hidden"
-        style={{ visibility: 'hidden', width: 720 }}
+        style={{ opacity: 0.02, width: 720 }}
         aria-hidden
       >
         {activeReport?.filters && (
