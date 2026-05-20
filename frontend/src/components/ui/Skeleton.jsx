@@ -78,7 +78,7 @@ export function SkeletonTable({ rows = 6, cols = 5, className = '' }) {
 
 export function SkeletonDashboard() {
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300" aria-busy="true" aria-label="Loading dashboard">
+    <div className="space-y-6 max-w-7xl mx-auto page-enter" aria-busy="true" aria-label="Loading dashboard">
       <Skeleton className="h-36 w-full rounded-3xl" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -96,7 +96,7 @@ export function SkeletonDashboard() {
 
 export function SkeletonAnalytics() {
   return (
-    <div className="max-w-7xl mx-auto pb-12 space-y-6 animate-in fade-in duration-300" aria-busy="true" aria-label="Loading analytics">
+    <div className="max-w-7xl mx-auto pb-12 space-y-6 page-enter" aria-busy="true" aria-label="Loading analytics">
       <div className="space-y-3">
         <Skeleton className="h-8 w-48" rounded="rounded-md" />
         <Skeleton className="h-4 w-64" rounded="rounded-md" />
@@ -122,7 +122,7 @@ export function SkeletonAnalytics() {
 
 export function SkeletonInputPage() {
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300" aria-busy="true">
+    <div className="space-y-6 max-w-7xl mx-auto page-enter" aria-busy="true">
       <Skeleton className="h-10 w-56" rounded="rounded-md" />
       <Skeleton className="h-4 w-96 max-w-full" rounded="rounded-md" />
       <div className="flex gap-2">
@@ -137,7 +137,7 @@ export function SkeletonInputPage() {
 
 export function SkeletonOrganisation() {
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300" aria-busy="true">
+    <div className="space-y-6 max-w-5xl mx-auto page-enter" aria-busy="true">
       <Skeleton className="h-10 w-48" rounded="rounded-md" />
       <div className="app-card p-6 space-y-4">
         <Skeleton className="h-6 w-40" rounded="rounded-md" />
@@ -157,7 +157,7 @@ export function SkeletonOrganisation() {
 
 export function SkeletonOffsetList() {
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300" aria-busy="true">
+    <div className="space-y-6 max-w-7xl mx-auto page-enter" aria-busy="true">
       <Skeleton className="h-10 w-64" rounded="rounded-md" />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (

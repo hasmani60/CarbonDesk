@@ -33,7 +33,7 @@ export default function ReportGenerationProgress({
 
   return (
     <div
-      className="app-card p-8 min-h-[320px] flex flex-col justify-center animate-in fade-in duration-500"
+      className="app-card p-8 min-h-[320px] flex flex-col justify-center page-enter"
       role="status"
       aria-live="polite"
       aria-busy="true"
