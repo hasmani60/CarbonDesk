@@ -79,14 +79,6 @@ coverage/
 .eslintcache
 .parcel-cache/
 
-# Docker
-docker-compose.override.yml
-
-# SSL Certificates
-nginx/ssl/*.pem
-nginx/ssl/*.key
-nginx/ssl/*.crt
-
 # Backups
 backups/
 *.backup
