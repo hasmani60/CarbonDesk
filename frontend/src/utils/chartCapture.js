@@ -1,7 +1,10 @@
 /**
  * Export a Recharts (SVG) container to a PNG data URL for report embedding.
  */
-export async function captureElementAsPng(element, { width = 720, height = 360, background = '#ffffff' } = {}) {
+export async function captureElementAsPng(
+  element,
+  { width = 720, height = 360, background = '#ffffff', quality = 0.85 } = {}
+) {
   if (!element) throw new Error('Chart element not found');
 
   const svg = element.querySelector('svg');
@@ -35,7 +38,7 @@ export async function captureElementAsPng(element, { width = 720, height = 360, 
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/png', 0.92));
+        resolve(canvas.toDataURL('image/png', quality));
       };
       img.onerror = () => reject(new Error('Failed to render chart image'));
       img.src = url;

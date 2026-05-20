@@ -365,33 +365,60 @@ const saveChartImages = async (req, res) => {
       return res.status(400).json({ success: false, message: 'chartImages must be an array' });
     }
 
-    if (chartImages.length > 6) {
-      return res.status(400).json({ success: false, message: 'Maximum 6 chart images allowed' });
+    const MAX_CHART_IMAGES = 12;
+    if (chartImages.length > MAX_CHART_IMAGES) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum ${MAX_CHART_IMAGES} chart images allowed`
+      });
     }
 
-    const sanitized = chartImages
-      .filter((img) => img?.id && img?.dataUrl && String(img.dataUrl).startsWith('data:image/'))
-      .map((img) => ({
+    const sanitizeOne = (img) => {
+      const base = {
         id: String(img.id).slice(0, 64),
         title: String(img.title || 'Chart').slice(0, 120),
         dataUrl: String(img.dataUrl)
-      }));
+      };
+      if (img.section) base.section = String(img.section).slice(0, 32);
+      if (img.sectionTitle) base.sectionTitle = String(img.sectionTitle).slice(0, 120);
+      if (Number.isFinite(img.order)) base.order = img.order;
+      return base;
+    };
+
+    const sanitized = chartImages
+      .filter((img) => img?.id && img?.dataUrl && String(img.dataUrl).startsWith('data:image/'))
+      .map(sanitizeOne);
+
+    const merge = req.body.merge === true;
 
     const report = await AIReport.findOne({ _id: id, organisation_id: req.organisationId });
     if (!report) {
       return res.status(404).json({ success: false, message: 'Report not found' });
     }
 
+    let merged = sanitized;
+    if (merge && Array.isArray(report.metadata?.chartImages)) {
+      const byId = new Map(
+        report.metadata.chartImages
+          .filter((img) => img?.id && img?.dataUrl)
+          .map((img) => [img.id, sanitizeOne(img)])
+      );
+      sanitized.forEach((img) => byId.set(img.id, img));
+      merged = Array.from(byId.values())
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .slice(0, MAX_CHART_IMAGES);
+    }
+
     report.metadata = {
       ...(report.metadata || {}),
-      chartImages: sanitized,
+      chartImages: merged,
       chartImagesCapturedAt: new Date().toISOString()
     };
     await report.save();
 
     res.json({
       success: true,
-      data: { chartImages: sanitized }
+      data: { chartImages: merged }
     });
   } catch (error) {
     logger.error('saveChartImages error', error);

@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { reportsAPI } from '../../services/api';
 import AIReportViewer from './AIReportViewer';
 import ReportChartSnapshots from './ReportChartSnapshots';
+import { wait } from '../../utils/chartCapture';
 import { formatPeriodRange, toDateInputValue } from '../../utils/formatters';
 import ReportGenerationProgress from '../ui/ReportGenerationProgress';
 import { SkeletonReportFilters, SkeletonChart } from '../ui/Skeleton';
@@ -271,6 +272,54 @@ export default function AIReportGenerator() {
     return data;
   }, []);
 
+  const captureAndSaveCharts = useCallback(
+    async (reportId, { force = false } = {}) => {
+      if (!reportId) return false;
+      if (!force && chartCaptureStartedRef.current === reportId) return false;
+
+      setCapturingCharts(true);
+      try {
+        for (let i = 0; i < 40; i += 1) {
+          if (chartCaptureRef.current?.isReady?.()) break;
+          await wait(500);
+        }
+        await wait(600);
+
+        if (!chartCaptureRef.current?.captureAll) {
+          toast.error('Chart engine not ready — refresh and try again');
+          return false;
+        }
+
+        const images = await chartCaptureRef.current.captureAll();
+        if (!images?.length) {
+          toast.error('No charts captured for this period — add emissions data or widen filters');
+          return false;
+        }
+
+        const BATCH = 3;
+        for (let i = 0; i < images.length; i += BATCH) {
+          const batch = images.slice(i, i + BATCH);
+          await reportsAPI.saveChartImages(reportId, batch, { merge: i > 0 });
+        }
+
+        chartCaptureStartedRef.current = reportId;
+        await fetchReport(reportId);
+        toast.success(`${images.length} analytics charts attached`);
+        return true;
+      } catch (err) {
+        chartCaptureStartedRef.current = null;
+        console.error('Chart capture failed', err);
+        const msg =
+          err.response?.data?.message || err.message || 'Failed to save report charts';
+        toast.error(msg);
+        return false;
+      } finally {
+        setCapturingCharts(false);
+      }
+    },
+    [fetchReport]
+  );
+
   useEffect(() => {
     if (!canGenerate) return undefined;
 
@@ -378,43 +427,22 @@ export default function AIReportGenerator() {
     if (reportChartImages.length > 0) return undefined;
     if (chartCaptureStartedRef.current === activeReport.id) return undefined;
 
-    chartCaptureStartedRef.current = activeReport.id;
     let cancelled = false;
-
     (async () => {
-      try {
-        setCapturingCharts(true);
-        for (let i = 0; i < 24 && !cancelled; i += 1) {
-          if (chartCaptureRef.current?.isReady?.()) break;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-        await new Promise((r) => setTimeout(r, 400));
-        if (cancelled || !chartCaptureRef.current?.captureAll) return;
-
-        const images = await chartCaptureRef.current.captureAll();
-        if (cancelled || !images?.length) return;
-
-        await reportsAPI.saveChartImages(activeReport.id, images);
-        setActiveReport((prev) =>
-          prev
-            ? {
-                ...prev,
-                chartImages: images,
-                metadata: { ...(prev.metadata || {}), chartImages: images }
-              }
-            : prev
-        );
-      } catch (err) {
-        console.error('Chart capture failed', err);
-      } finally {
-        if (!cancelled) setCapturingCharts(false);
-      }
+      if (cancelled) return;
+      await captureAndSaveCharts(activeReport.id);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeReport?.id, activeReport?.status, activeReport?.reportContent, reportChartImages.length]);
+  }, [
+    activeReport?.id,
+    activeReport?.status,
+    activeReport?.reportContent,
+    reportChartImages.length,
+    captureAndSaveCharts
+  ]);
 
   const triggerN8nWebhook = async (reportId, filters) => {
     if (!N8N_WEBHOOK_URL) {
@@ -550,10 +578,13 @@ export default function AIReportGenerator() {
   return (
     <section className="space-y-5 relative">
       <div
-        className="fixed -left-[9999px] top-0 opacity-0 pointer-events-none overflow-hidden"
+        className="fixed left-0 top-0 -z-10 pointer-events-none overflow-hidden"
+        style={{ visibility: 'hidden', width: 720 }}
         aria-hidden
       >
-        <ReportChartSnapshots ref={chartCaptureRef} filters={activeReport?.filters} />
+        {activeReport?.filters && (
+          <ReportChartSnapshots ref={chartCaptureRef} filters={activeReport.filters} />
+        )}
       </div>
       <div className="flex flex-wrap items-stretch gap-4">
         <div className="flex-1 min-w-[min(100%,260px)]">
@@ -798,11 +829,20 @@ export default function AIReportGenerator() {
                     markdown={activeReport.reportContent}
                     chartImages={reportChartImages}
                   />
-                  <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700/80 bg-gray-50/50 dark:bg-slate-800/30">
+                  <div className="px-4 py-2 border-t border-gray-100 dark:border-slate-700/80 bg-gray-50/50 dark:bg-slate-800/30 flex flex-wrap items-center justify-between gap-2">
+                    {reportChartImages.length === 0 && !capturingCharts && (
+                      <button
+                        type="button"
+                        onClick={() => captureAndSaveCharts(activeReport.id, { force: true })}
+                        className="text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
+                      >
+                        Attach analytics charts
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowReportViewer(false)}
-                      className="text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-400 inline-flex items-center gap-1"
+                      className="text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-400 inline-flex items-center gap-1 ml-auto"
                     >
                       <ChevronUp className="w-3.5 h-3.5" />
                       Collapse preview

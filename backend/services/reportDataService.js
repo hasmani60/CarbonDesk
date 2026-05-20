@@ -82,9 +82,18 @@ function buildAiReportContext(prepared) {
     emissionsVelocity: velocityBrief,
     reductionTrajectory: reductions?.trajectoryMetrics || null,
     dataQualitySummary: (dataQuality?.byStatus || []).slice(0, 6),
+    writingRequirements:
+      'Write a COMPLETE markdown report. Do not stop early. Required ## sections: Overview; Scope 1 — Direct emissions; Scope 2 — Energy indirect; Scope 3 — Value chain; Data quality; Reduction opportunities and recommendations. Use scopeBreakdown totals and topHotspots in each scope section. Target at least 1200 words.',
     reportStructure: {
-      sections: ['Overview', 'Scope 1', 'Scope 2', 'Scope 3', 'Recommendations'],
-      note: 'Scope charts are attached in the report UI; write one subsection per scope using scopeBreakdown figures.'
+      sections: [
+        'Overview',
+        'Scope 1 — Direct emissions',
+        'Scope 2 — Energy indirect',
+        'Scope 3 — Value chain',
+        'Data quality',
+        'Reduction opportunities and recommendations'
+      ],
+      note: 'Charts are appended in the app UI; your text must still cover every section above.'
     }
   };
 }
