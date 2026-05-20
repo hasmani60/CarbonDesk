@@ -26,3 +26,22 @@ export function reportFiltersToAnalyticsParams(reportFilters) {
 
   return { filters: JSON.stringify(cleaned) };
 }
+
+/** Analytics API params scoped to a single GHG scope (1, 2, or 3). */
+export function reportFiltersToScopeParams(reportFilters, scope) {
+  const base = reportFiltersToAnalyticsParams(reportFilters);
+  if (!base.filters) {
+    return { filters: JSON.stringify({ selectedScopes: [scope] }) };
+  }
+  try {
+    const parsed = JSON.parse(base.filters);
+    return {
+      filters: JSON.stringify({
+        ...parsed,
+        selectedScopes: [scope]
+      })
+    };
+  } catch {
+    return { filters: JSON.stringify({ selectedScopes: [scope] }) };
+  }
+}

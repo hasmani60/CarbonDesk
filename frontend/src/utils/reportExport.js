@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { groupChartsBySection } from './reportChartSections';
 
 const REPORT_DOCUMENT_STYLES = `
   * { box-sizing: border-box; }
@@ -101,6 +102,17 @@ const REPORT_DOCUMENT_STYLES = `
     border-left: 4px solid #10b981;
   }
   .report-charts .intro { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }
+  .report-chart-section { margin-bottom: 2.5rem; }
+  .report-chart-section h3 {
+    font-size: 1.05rem;
+    color: #111827;
+    margin: 0 0 0.35rem;
+  }
+  .report-chart-section .section-intro {
+    color: #6b7280;
+    font-size: 0.8125rem;
+    margin: 0 0 1.25rem;
+  }
   .report-chart-block { margin-bottom: 2rem; break-inside: avoid; }
   .report-chart-block figcaption {
     font-size: 0.875rem;
@@ -126,21 +138,34 @@ const REPORT_DOCUMENT_STYLES = `
 `;
 
 function buildChartsHtml(chartImages = []) {
-  if (!chartImages?.length) return '';
-  const figures = chartImages
-    .map(
-      (chart) => `
+  const sections = groupChartsBySection(chartImages);
+  if (!sections.length) return '';
+
+  const sectionHtml = sections
+    .map((section) => {
+      const figures = section.charts
+        .map(
+          (chart) => `
     <figure class="report-chart-block">
       <figcaption>${String(chart.title || 'Chart').replace(/</g, '&lt;')}</figcaption>
       <img src="${chart.dataUrl}" alt="${String(chart.title || 'Chart').replace(/"/g, '&quot;')}" />
     </figure>`
-    )
+        )
+        .join('');
+      return `
+    <div class="report-chart-section">
+      <h3>${String(section.title).replace(/</g, '&lt;')}</h3>
+      <p class="section-intro">${String(section.description).replace(/</g, '&lt;')}</p>
+      ${figures}
+    </div>`;
+    })
     .join('');
+
   return `
   <section class="report-charts">
     <h2>Analytics charts</h2>
-    <p class="intro">Visual summary from your organisation analytics.</p>
-    ${figures}
+    <p class="intro">Overview and scope-specific visual summary from your organisation analytics.</p>
+    ${sectionHtml}
   </section>`;
 }
 

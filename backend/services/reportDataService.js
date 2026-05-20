@@ -259,6 +259,26 @@ class ReportDataService {
       cumulativePercent: h.cumulativePercent
     })) || [];
 
+    const migrationTimeSeries = scopeMigrationResult?.data?.timeSeries || [];
+    const buildScopeSection = (scopeNum) => ({
+      scope: scopeNum,
+      totalCo2eKg: byScope[`scope${scopeNum}`],
+      entryCount: byScope[`scope${scopeNum}Count`],
+      sharePercent:
+        totalCo2e > 0 ? round2((byScope[`scope${scopeNum}`] / totalCo2e) * 100) : 0,
+      monthly: migrationTimeSeries.map((row) => ({
+        period: row.period,
+        co2eKg: round2(row[`scope${scopeNum}`] || 0)
+      })),
+      topHotspots: paretoHotspots.filter((h) => h.scope === scopeNum).slice(0, 8)
+    });
+
+    const scopeSections = {
+      scope1: buildScopeSection(1),
+      scope2: buildScopeSection(2),
+      scope3: buildScopeSection(3)
+    };
+
     return {
       organisation: {
         id: organisationId,
@@ -291,6 +311,12 @@ class ReportDataService {
         categories: topCategories,
         locations: topLocations,
         paretoHotspots
+      },
+      scopeSections,
+      chartAppendix: {
+        sections: ['overview', 'scope1', 'scope2', 'scope3'],
+        note:
+          'Include narrative subsections for Overview, Scope 1, Scope 2, and Scope 3. Chart images are appended per section.'
       },
       reductions: {
         trajectoryMetrics: trajectory?.metrics || null,

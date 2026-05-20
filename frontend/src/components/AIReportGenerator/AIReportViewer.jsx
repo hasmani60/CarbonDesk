@@ -8,6 +8,7 @@ import {
   openReportHtmlPreview
 } from '../../utils/reportExport';
 import { formatDateTime } from '../../utils/formatters';
+import { groupChartsBySection } from '../../utils/reportChartSections';
 
 const markdownComponents = {
   h1: ({ children }) => (
@@ -134,6 +135,8 @@ export default function AIReportViewer({
 
   if (!markdown) return null;
 
+  const chartSections = groupChartsBySection(chartImages);
+
   const metaLine = [periodLabel, generatedAt && `Generated ${formatDateTime(generatedAt)}`]
     .filter(Boolean)
     .join(' · ');
@@ -192,27 +195,39 @@ export default function AIReportViewer({
             {content}
           </ReactMarkdown>
 
-          {chartImages.length > 0 && (
+          {chartSections.length > 0 && (
             <section className="mt-12 pt-8 border-t border-gray-200 dark:border-slate-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 pl-3 border-l-4 border-emerald-500">
                 Analytics charts
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                Charts use the same reporting period
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
+                Overview and scope-specific charts use the same reporting period
                 {periodLabel ? ` (${periodLabel})` : ''} and filters as this report.
               </p>
-              <div className="space-y-8">
-                {chartImages.map((chart) => (
-                  <figure key={chart.id} className="report-chart-figure">
-                    <figcaption className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">
-                      {chart.title}
-                    </figcaption>
-                    <img
-                      src={chart.dataUrl}
-                      alt={chart.title}
-                      className="w-full rounded-lg border border-gray-200 dark:border-slate-600 bg-white"
-                    />
-                  </figure>
+              <div className="space-y-12">
+                {chartSections.map((section) => (
+                  <div key={section.key}>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                      {section.title}
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                      {section.description}
+                    </p>
+                    <div className="space-y-8">
+                      {section.charts.map((chart) => (
+                        <figure key={chart.id} className="report-chart-figure">
+                          <figcaption className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">
+                            {chart.title}
+                          </figcaption>
+                          <img
+                            src={chart.dataUrl}
+                            alt={chart.title}
+                            className="w-full rounded-lg border border-gray-200 dark:border-slate-600 bg-white"
+                          />
+                        </figure>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </section>
