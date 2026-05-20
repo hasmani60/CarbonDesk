@@ -10,7 +10,7 @@ const {
   runWithCommuteFactorCache
 } = require('./commuteAnalyticsService');
 
-const sumCo2 = { $sum: { $ifNull: ['$co2e', 0] } } };
+const sumCo2 = { $sum: { $ifNull: ['$co2e', 0] } };
 
 const stagesValidEmissionDate = [
   {
