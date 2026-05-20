@@ -19,6 +19,76 @@ function round2(n) {
   return parseFloat((n || 0).toFixed(2));
 }
 
+const AI_MONTHLY_CAP = 6;
+const AI_LIST_CAP = 8;
+
+/**
+ * Compact payload for LLM prompts — avoids OpenRouter 429s from oversized JSON.stringify.
+ * Charts are rendered client-side; the model only needs summaries per scope.
+ */
+function buildAiReportContext(prepared) {
+  if (!prepared) return null;
+
+  const { organisation, filters, summary, scopeSections, topSources, trends, reductions, dataQuality } =
+    prepared;
+
+  const scopeBreakdown = [1, 2, 3].map((n) => {
+    const s = scopeSections?.[`scope${n}`] || {};
+    return {
+      scope: n,
+      totalCo2eKg: s.totalCo2eKg ?? summary?.[`scope${n}`],
+      entryCount: s.entryCount ?? summary?.[`scope${n}Count`],
+      sharePercent: s.sharePercent,
+      topHotspots: (s.topHotspots || []).slice(0, 5)
+    };
+  });
+
+  const monthly = Array.isArray(trends?.monthly) ? trends.monthly : [];
+  const recentMonthly = monthly.slice(-AI_MONTHLY_CAP).map((row) => ({
+    period: row.date ?? row.period ?? row.yearMonth,
+    co2eKg: round2(row.emissions ?? row.co2e ?? row.total_co2e ?? row.total)
+  }));
+
+  const velocity = trends?.velocity;
+  const velocityBrief =
+    velocity && typeof velocity === 'object'
+      ? {
+          mom: velocity.mom ?? velocity.monthOverMonth,
+          yoy: velocity.yoy ?? velocity.yearOverYear,
+          trend: velocity.trend ?? velocity.direction
+        }
+      : null;
+
+  return {
+    organisation,
+    reportingPeriod: {
+      startDate: filters?.resolvedStartDate,
+      endDate: filters?.resolvedEndDate,
+      selectedScopes: filters?.selectedScopes
+    },
+    summary: {
+      totalCo2eKg: summary?.totalCo2eKg,
+      entryCount: summary?.entryCount,
+      verifiedPercent: summary?.verifiedPercent,
+      scope1: summary?.scope1,
+      scope2: summary?.scope2,
+      scope3: summary?.scope3
+    },
+    scopeBreakdown,
+    recentMonthlyEmissions: recentMonthly,
+    topCategories: (topSources?.categories || []).slice(0, AI_LIST_CAP),
+    topLocations: (topSources?.locations || []).slice(0, 5),
+    paretoHotspots: (topSources?.paretoHotspots || []).slice(0, AI_LIST_CAP),
+    emissionsVelocity: velocityBrief,
+    reductionTrajectory: reductions?.trajectoryMetrics || null,
+    dataQualitySummary: (dataQuality?.byStatus || []).slice(0, 6),
+    reportStructure: {
+      sections: ['Overview', 'Scope 1', 'Scope 2', 'Scope 3', 'Recommendations'],
+      note: 'Scope charts are attached in the report UI; write one subsection per scope using scopeBreakdown figures.'
+    }
+  };
+}
+
 /**
  * Normalize API request body into filter object for buildEmissionMatch.
  */
@@ -259,18 +329,13 @@ class ReportDataService {
       cumulativePercent: h.cumulativePercent
     })) || [];
 
-    const migrationTimeSeries = scopeMigrationResult?.data?.timeSeries || [];
     const buildScopeSection = (scopeNum) => ({
       scope: scopeNum,
       totalCo2eKg: byScope[`scope${scopeNum}`],
       entryCount: byScope[`scope${scopeNum}Count`],
       sharePercent:
         totalCo2e > 0 ? round2((byScope[`scope${scopeNum}`] / totalCo2e) * 100) : 0,
-      monthly: migrationTimeSeries.map((row) => ({
-        period: row.period,
-        co2eKg: round2(row[`scope${scopeNum}`] || 0)
-      })),
-      topHotspots: paretoHotspots.filter((h) => h.scope === scopeNum).slice(0, 8)
+      topHotspots: paretoHotspots.filter((h) => h.scope === scopeNum).slice(0, 5)
     });
 
     const scopeSections = {
@@ -313,11 +378,6 @@ class ReportDataService {
         paretoHotspots
       },
       scopeSections,
-      chartAppendix: {
-        sections: ['overview', 'scope1', 'scope2', 'scope3'],
-        note:
-          'Include narrative subsections for Overview, Scope 1, Scope 2, and Scope 3. Chart images are appended per section.'
-      },
       reductions: {
         trajectoryMetrics: trajectory?.metrics || null,
         trajectoryBaseline: trajectory?.baseline || null
@@ -336,3 +396,4 @@ class ReportDataService {
 }
 
 module.exports = new ReportDataService();
+module.exports.buildAiReportContext = buildAiReportContext;

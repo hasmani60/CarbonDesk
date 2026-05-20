@@ -138,11 +138,14 @@ const prepareReportData = async (req, res) => {
       default_reporting_period: req.organisationSettings?.default_reporting_period
     });
 
-    // company_data: alias for n8n OpenRouter prompts (same object as data)
+    const aiContext = reportDataService.buildAiReportContext(prepared);
+
+    // company_data: compact context for OpenRouter (full aggregates stay in data)
     res.json({
       success: true,
       data: prepared,
-      company_data: prepared,
+      aiContext,
+      company_data: aiContext,
       reportId: reportId || null
     });
   } catch (error) {
