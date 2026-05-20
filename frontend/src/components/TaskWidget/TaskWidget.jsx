@@ -190,10 +190,18 @@ const TaskWidget = ({
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-lg shadow-sm border p-4 ${className}`}>
-        <div className="flex items-center justify-center py-4">
-          <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
-          <span className="ml-2 text-sm text-gray-600">Loading tasks...</span>
+      <div className={`app-card p-4 ${className}`} aria-busy="true">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="h-8 w-8 skeleton-shimmer rounded-lg" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-32 skeleton-shimmer rounded-md" />
+            <div className="h-3 w-20 skeleton-shimmer rounded-md" />
+          </div>
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 w-full skeleton-shimmer rounded-lg" />
+          ))}
         </div>
       </div>
     );

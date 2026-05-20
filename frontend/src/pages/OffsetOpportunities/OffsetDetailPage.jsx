@@ -150,7 +150,21 @@ export default function OffsetDetailPage() {
   const fmtQty = (n) => Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 });
 
   if (loading) {
-    return <p className="p-8 text-center text-gray-500">Loading…</p>;
+    return (
+      <div className="space-y-6 max-w-5xl mx-auto page-enter">
+        <div className="h-4 w-32 skeleton-shimmer rounded-md" />
+        <div className="app-card p-6 space-y-4">
+          <div className="h-6 w-48 skeleton-shimmer rounded-md" />
+          <div className="grid grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 skeleton-shimmer rounded-lg" />
+            ))}
+          </div>
+        </div>
+        <div className="app-card p-6 h-40 skeleton-shimmer rounded-xl" />
+        <div className="app-card p-6 h-48 skeleton-shimmer rounded-xl" />
+      </div>
+    );
   }
   if (!offset) return null;
 

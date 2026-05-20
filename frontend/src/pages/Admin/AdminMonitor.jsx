@@ -906,8 +906,13 @@ const AdminMonitor = () => {
 
         <div className="p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
+            <div className="space-y-6" aria-busy="true">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="app-card p-5 h-24 skeleton-shimmer rounded-xl" />
+                ))}
+              </div>
+              <div className="h-64 skeleton-shimmer rounded-xl" />
             </div>
           ) : (
             <>

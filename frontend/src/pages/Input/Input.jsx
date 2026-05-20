@@ -7,6 +7,7 @@ import { useActivity } from '../../context/ActivityContext';
 import { emissionsAPI } from '../../services/api';
 import { emissionFactors } from '../../data/complete_emission_factors_db';
 import PageHeader from '../../components/PageHeader/PageHeader';
+import { SkeletonInputPage } from '../../components/ui/Skeleton';
 import EmissionForm from '../../components/EmissionForm/EmissionForm';
 import InfoTooltip from '../../components/InfoTooltip/InfoTooltip';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
@@ -503,12 +504,7 @@ const Input = () => {
   const availableScopes = scopes.filter(scope => canAccessScope(scope.id));
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-2 border-gray-200 dark:border-slate-600 border-t-emerald-600"></div>
-        <span className="ml-3 text-lg text-gray-600 dark:text-gray-400">Loading...</span>
-      </div>
-    );
+    return <SkeletonInputPage />;
   }
 
   if (!user || !['admin', 'contributor'].includes(user.role)) {

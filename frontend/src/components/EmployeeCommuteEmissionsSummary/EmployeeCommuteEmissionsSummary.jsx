@@ -23,6 +23,7 @@ import {
 } from '../../utils/commuteModes';
 import { useTheme } from '../../context/ThemeContext';
 import { getChartTooltipProps } from '../../utils/chartTheme';
+import { SkeletonCard, SkeletonChart } from '../ui/Skeleton';
 
 const EmployeeCommuteEmissionsSummary = ({ embedded = false }) => {
   const { theme } = useTheme();
@@ -131,8 +132,16 @@ const EmployeeCommuteEmissionsSummary = ({ embedded = false }) => {
       )}
 
       {loading ? (
-        <div className="app-card p-8 text-sm text-gray-500 text-center">
-          Calculating commute emissions…
+        <div className="space-y-6" aria-busy="true">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <SkeletonCard key={i} className="h-20" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SkeletonChart height="h-56" />
+            <SkeletonChart height="h-56" />
+          </div>
         </div>
       ) : !hasData ? (
         <div className="app-card p-8 text-sm text-gray-500 text-center">

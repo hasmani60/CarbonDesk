@@ -21,6 +21,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate } from '../../utils/formatters';
 import FactorySiteSettings from '../../components/FactorySiteSettings/FactorySiteSettings';
+import { SkeletonOrganisation } from '../../components/ui/Skeleton';
 
 const OrganisationPage = () => {
   const { user } = useAuth();
@@ -78,14 +79,7 @@ const OrganisationPage = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-center">
-          <div className="motion-safe:animate-spin rounded-full h-12 w-12 border-2 border-emerald-600 border-t-transparent mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading organisation details...</p>
-        </div>
-      </div>
-    );
+    return <SkeletonOrganisation />;
   }
 
   if (error) {

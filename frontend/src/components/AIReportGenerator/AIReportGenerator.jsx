@@ -19,6 +19,8 @@ import { reportsAPI } from '../../services/api';
 import AIReportViewer from './AIReportViewer';
 import ReportChartSnapshots from './ReportChartSnapshots';
 import { formatPeriodRange, toDateInputValue } from '../../utils/formatters';
+import ReportGenerationProgress from '../ui/ReportGenerationProgress';
+import { SkeletonReportFilters, SkeletonChart } from '../ui/Skeleton';
 
 const POLL_MS = 4000;
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
@@ -589,10 +591,7 @@ export default function AIReportGenerator() {
           </div>
 
           {loadingOptions ? (
-            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm py-8 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading filter options…
-            </div>
+            <SkeletonReportFilters />
           ) : (
             <div className="space-y-4">
               <CollapsibleSection title="Reporting period" icon={Calendar} defaultOpen>
@@ -778,33 +777,18 @@ export default function AIReportGenerator() {
             </div>
           )}
 
-          {isRunning && (
-            <div className="app-card p-8 flex flex-col items-center justify-center text-center min-h-[320px]">
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mb-4">
-                <Loader2 className="w-7 h-7 text-blue-600 dark:text-blue-400 animate-spin" />
-              </div>
-              <p className="font-semibold text-gray-900 dark:text-white">Generating your report</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-sm">
-                AI is analysing your emissions data and drafting a GHG Protocol–aligned report.
-                This panel will update automatically when ready.
-              </p>
-              {countFilters(activeReport.filters) > 0 && (
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-                  {countFilters(activeReport.filters)} filter
-                  {countFilters(activeReport.filters) !== 1 ? 's' : ''} applied
-                </p>
-              )}
-            </div>
-          )}
+          {isRunning && <ReportGenerationProgress active />}
 
           {hasCompletedReport && (
             <div className="app-card overflow-hidden flex flex-col min-h-[320px]">
               {showReportViewer ? (
                 <>
                   {capturingCharts && reportChartImages.length === 0 && (
-                    <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700/80 flex items-center gap-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Adding analytics charts to report…
+                    <div className="p-4 border-b border-gray-100 dark:border-slate-700/80">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">
+                        Adding analytics charts to report…
+                      </p>
+                      <SkeletonChart height="h-32" className="shadow-none border-0" />
                     </div>
                   )}
                   <AIReportViewer

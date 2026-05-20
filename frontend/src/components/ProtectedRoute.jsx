@@ -1,17 +1,14 @@
 // components/ProtectedRoute.jsx - Enhanced with automatic redirect for restricted users
 import { useAuth } from '../context/AuthContext';
 import { Navigate, useLocation } from 'react-router-dom';
+import { SkeletonAppShell } from './ui/Skeleton';
 
 const ProtectedRoute = ({ children, requiredRoles = [], requiredPermissions = [] }) => {
   const { isAuthenticated, loading, user, hasRole, hasPermission, canAccessPage } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading...</div>
-      </div>
-    );
+    return <SkeletonAppShell />;
   }
 
   if (!isAuthenticated) {

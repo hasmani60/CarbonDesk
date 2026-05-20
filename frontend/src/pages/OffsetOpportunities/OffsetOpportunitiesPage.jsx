@@ -19,6 +19,7 @@ import { offsetsAPI } from '../../services/api';
 import OffsetSummaryCards from './components/OffsetSummaryCards';
 import OffsetFormModal, { emptyOffsetForm } from './components/OffsetFormModal';
 import OffsetUtilizationModal from './components/OffsetUtilizationModal';
+import { SkeletonTable, SkeletonOffsetList } from '../../components/ui/Skeleton';
 import {
   formatOffsetType,
   formatOffsetUnit,
@@ -206,8 +207,16 @@ export default function OffsetOpportunitiesPage() {
 
   const fmtQty = (n) => Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 });
 
+  if (loading && items.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto page-enter">
+        <SkeletonOffsetList />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto page-enter">
       <PageHeader
         title="Offset Opportunities"
         subtitle="Manage emission offset assets, track utilization, and calculate net emissions."
@@ -349,7 +358,7 @@ export default function OffsetOpportunitiesPage() {
         </div>
 
         {loading ? (
-          <p className="p-8 text-center text-gray-500">Loading…</p>
+          <SkeletonTable rows={8} cols={7} />
         ) : items.length === 0 ? (
           <div className="p-12 text-center">
             <Scale className="h-12 w-12 text-gray-300 mx-auto mb-3" />

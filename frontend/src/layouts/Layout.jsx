@@ -24,7 +24,9 @@ const Layout = () => {
           />
           <div className="relative z-[1] max-w-screen-xl mx-auto backdrop-blur-[2px]">
             <Breadcrumbs />
-            <Outlet />
+            <div key={location.pathname} className="page-enter">
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>

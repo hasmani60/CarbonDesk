@@ -4,6 +4,7 @@ import PageHeader from '../../components/PageHeader/PageHeader';
 import { formatDateTime } from '../../utils/formatters';
 import { useAnalytics } from './AnalyticsContext';
 import AnalyticsTabNav from './components/AnalyticsTabNav';
+import { SkeletonAnalytics } from '../../components/ui/Skeleton';
 
 export default function AnalyticsShell() {
   const {
@@ -17,14 +18,7 @@ export default function AnalyticsShell() {
   } = useAnalytics();
 
   if (loading && !overviewStats) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-center">
-          <RefreshCw className="w-12 h-12 motion-safe:animate-spin text-emerald-600 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Loading analytics…</p>
-        </div>
-      </div>
-    );
+    return <SkeletonAnalytics />;
   }
 
   if (error) {

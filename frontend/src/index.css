@@ -6,7 +6,9 @@
 @layer components {
   /* Shared surface: aligns Analytics with glass-style pages (Dashboard, Monitor) */
   .app-card {
-    @apply bg-white/95 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl border border-gray-200/90 dark:border-slate-700/90 shadow-sm dark:shadow-none;
+    @apply bg-white/95 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl border border-gray-200/90 dark:border-slate-700/90
+      shadow-sm shadow-gray-200/40 dark:shadow-none
+      transition-shadow duration-200;
   }
 
   .app-card-interactive {
@@ -36,6 +38,83 @@
   /* Form density: stacked auth / admin forms */
   .form-stack {
     @apply space-y-5;
+  }
+
+  /* Shimmer skeleton */
+  .skeleton-shimmer {
+    @apply relative overflow-hidden bg-gray-200/90 dark:bg-slate-700/80;
+  }
+
+  .skeleton-shimmer::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.45),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .dark .skeleton-shimmer::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.06),
+      transparent
+    );
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg
+      bg-emerald-600 text-white shadow-sm
+      transition-all duration-200 ease-out
+      hover:bg-emerald-700 hover:shadow-md
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2
+      dark:focus-visible:ring-offset-slate-900
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg
+      border border-gray-200 dark:border-slate-600 bg-white/90 dark:bg-slate-800/90 text-gray-700 dark:text-gray-200
+      transition-all duration-200 ease-out
+      hover:bg-gray-50 dark:hover:bg-slate-700/80 hover:border-gray-300 dark:hover:border-slate-500
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .page-enter {
+    @apply animate-in fade-in duration-300;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-in {
+  animation: fade-in 0.35s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+  }
+  .animate-in {
+    animation: none;
   }
 }
 

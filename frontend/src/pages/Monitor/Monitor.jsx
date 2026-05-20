@@ -38,7 +38,7 @@ import {
 } from '../../utils/emissionDisplay';
 import Pagination from '../../components/Pagination/Pagination';
 import TaskAssignmentModal from '../../components/TaskAssignmentModal/TaskAssignmentModal';
-import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import toast from 'react-hot-toast';
 import TransportCategoryBadge from '../../components/TransportCategoryBadge/TransportCategoryBadge';
 import { isMaterialTransportRow } from '../../utils/transportCategory';
@@ -867,10 +867,7 @@ const Monitor = () => {
             </div>
 
             {loading ? (
-              <div className="p-6 space-y-4">
-                <SkeletonLoader type="text" lines={1} className="h-10" />
-                <SkeletonLoader type="text" lines={5} className="h-16" />
-              </div>
+              <SkeletonTable rows={8} cols={8} className="border-0 shadow-none rounded-none" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">

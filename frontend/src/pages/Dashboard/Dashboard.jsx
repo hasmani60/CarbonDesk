@@ -10,6 +10,7 @@ import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -340,11 +341,7 @@ const Dashboard = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   if (error) {

@@ -215,10 +215,12 @@ const AssignedTasks = ({
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-lg shadow-sm border p-6 ${className}`}>
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
-          <span className="ml-2 text-gray-600">Loading tasks...</span>
+      <div className={`app-card p-6 ${className}`} aria-busy="true">
+        <div className="h-6 w-40 skeleton-shimmer rounded-md mb-6" />
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-16 skeleton-shimmer rounded-lg" />
+          ))}
         </div>
       </div>
     );

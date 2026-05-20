@@ -1,27 +1,31 @@
-import React from 'react';
+/**
+ * @deprecated Prefer imports from `../ui/Skeleton` — this wrapper keeps legacy props working.
+ */
+import { Skeleton, SkeletonText, SkeletonCircle } from '../ui/Skeleton';
 
 const SkeletonLoader = ({ className = '', type = 'rect', lines = 1 }) => {
-  const baseClasses = 'animate-pulse bg-gray-200 dark:bg-gray-700';
-
   if (type === 'text') {
-    return (
-      <div className="space-y-3 w-full">
-        {Array.from({ length: lines }).map((_, i) => (
-          <div
-            key={i}
-            className={`${baseClasses} h-4 rounded w-${i === lines - 1 && lines > 1 ? '2/3' : 'full'} ${className}`}
-          />
-        ))}
-      </div>
-    );
+    return <SkeletonText lines={lines} className={className} />;
   }
-
   if (type === 'circle') {
-    return <div className={`${baseClasses} rounded-full ${className}`} />;
+    return <SkeletonCircle className={className} />;
   }
-
-  // Default rectangle
-  return <div className={`${baseClasses} rounded-lg ${className}`} />;
+  return <Skeleton className={className} />;
 };
 
 export default SkeletonLoader;
+export {
+  Skeleton,
+  SkeletonText,
+  SkeletonCircle,
+  SkeletonCard,
+  SkeletonChart,
+  SkeletonTable,
+  SkeletonDashboard,
+  SkeletonAnalytics,
+  SkeletonInputPage,
+  SkeletonOrganisation,
+  SkeletonOffsetList,
+  SkeletonAppShell,
+  SkeletonReportFilters
+} from '../ui/Skeleton';
