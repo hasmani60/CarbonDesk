@@ -1,4 +1,12 @@
 name: SonarQube Analysis
+# SonarCloud & GitHub Actions
+# ----------------------------
+# SonarCloud does not allow BOTH this workflow (CI analysis) AND "Automatic Analysis" on the same project.
+# If the log says: "You are running CI analysis while Automatic Analysis is enabled":
+#   → SonarCloud → CarbonDesk → Administration → Analysis method → turn OFF Automatic Analysis
+#   → Keep this workflow, OR delete this workflow and use only Automatic Analysis (pick one).
+#
+# Token: GitHub repo → Settings → Secrets → SONAR_TOKEN (SonarCloud: Account → My Account → Security).
 
 on:
   push:
