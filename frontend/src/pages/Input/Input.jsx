@@ -1,5 +1,5 @@
 // pages/Input/Input.jsx - Fine-Grained RBAC Implementation with TaskWidget Integration
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, ChevronDown, ChevronUp, Info, Lock, Shield, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -200,7 +200,7 @@ const Input = () => {
     return iconMap[categoryName] || '📊';
   };
 
-  const activityStructure = getActivityStructure();
+  const activityStructure = useMemo(() => getActivityStructure(), []);
 
   // RBAC check - ensure user can access Input page
   useEffect(() => {
@@ -257,10 +257,13 @@ const Input = () => {
     }
   }, [searchParams, activeSection]);
 
-  // Load activities when active scope changes
+  // Load activities when on emissions tab; other sections have no activity list
   useEffect(() => {
+    if (!user) return;
     if (activeSection === 'emissions' && activeScope) {
       loadActivities();
+    } else {
+      setLoading(false);
     }
   }, [activeSection, activeScope, user]);
 
@@ -324,41 +327,25 @@ const Input = () => {
   
     let allActivities = activityStructure[activeScope] || [];
     
-    console.log(`[RBAC Debug] Loading activities for Scope ${activeScope}`);
-    console.log(`[RBAC Debug] Total activities in scope: ${allActivities.length}`);
-    console.log(`[RBAC Debug] User role: ${user.role}`);
-    console.log(`[RBAC Debug] User restrictions:`, user.restrictions);
-    
     // Fine-grained RBAC filtering for contributors
     if (user.role === 'contributor' && user.restrictions) {
       const { allowedScopes, allowedActivities } = user.restrictions;
-      
-      console.log(`[RBAC Debug] Allowed scopes:`, allowedScopes);
-      console.log(`[RBAC Debug] Allowed activities:`, allowedActivities);
       
       // Check if user has full scope access
       const hasFullScopeAccess = allowedScopes && scopeAllowListIncludes(allowedScopes, activeScope);
       
       if (hasFullScopeAccess) {
-        console.log(`[RBAC Debug] User has FULL access to Scope ${activeScope}`);
         // User has full scope access, show all activities
       } else if (allowedActivities && allowedActivities.length > 0) {
         // User has activity-specific access, filter activities
-        console.log(`[RBAC Debug] Filtering to specific activities`);
-        allActivities = allActivities.filter(activity => {
-          const hasAccess = allowedActivities.includes(activity.name);
-          console.log(`[RBAC Debug] Activity "${activity.name}": ${hasAccess ? 'ALLOWED' : 'DENIED'}`);
-          return hasAccess;
-        });
+        allActivities = allActivities.filter(activity =>
+          allowedActivities.includes(activity.name)
+        );
       } else {
-        console.log(`[RBAC Debug] No access configured - showing NO activities`);
         // No access configured for this scope
         allActivities = [];
       }
     }
-    
-    console.log(`[RBAC Debug] Final filtered activities: ${allActivities.length}`);
-    console.log(`[RBAC Debug] Activities:`, allActivities.map(a => a.name));
     
     setActivities(allActivities);
     setLoading(false);
@@ -510,12 +497,12 @@ const Input = () => {
   if (!user || !['admin', 'contributor'].includes(user.role)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
-        <div className="max-w-md w-full bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-8 text-center">
+        <div className="max-w-md w-full premium-glass-panel p-10 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Shield className="w-8 h-8 text-red-600" />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Access Restricted</h1>
+          <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white mb-4">Access Restricted</h1>
           
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <div className="flex items-center">
@@ -555,14 +542,14 @@ const Input = () => {
   if (accessDenied || availableScopes.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900/50">
-        <div className="max-w-md w-full bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-8 text-center">
+        <div className="max-w-md w-full premium-glass-panel p-10 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Lock className="w-8 h-8 text-red-600" />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Scope Access Restricted</h1>
+          <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white mb-4">Scope Access Restricted</h1>
           
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
             <div className="flex items-center">
               <Shield className="w-5 h-5 text-yellow-600 mr-3" />
               <div className="text-left">
@@ -576,20 +563,20 @@ const Input = () => {
             </div>
           </div>
 
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-8">
             <p>Contact your administrator to request access to emission scopes.</p>
           </div>
 
-          <div className="flex space-x-3">
+          <div className="flex space-x-4">
             <button
               onClick={() => navigate('/settings')}
-              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors"
+              className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-4 rounded-xl transition-colors"
             >
               Settings
             </button>
             <button
               onClick={() => navigate('/dashboard')}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              className="flex-1 bg-primary hover:bg-primary-dark text-white font-medium py-3 px-4 rounded-xl transition-colors"
             >
               Dashboard
             </button>
@@ -602,7 +589,7 @@ const Input = () => {
   const sectionMeta = INPUT_SECTIONS[activeSection] || INPUT_SECTIONS.emissions;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-8 w-full max-w-none">
       <PageHeader
         title={sectionMeta.title}
         breadcrumb={[
@@ -636,10 +623,10 @@ const Input = () => {
       )}
 
       {activeSection === 'emissions' && user?.role === 'contributor' && user?.restrictions && (
-        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Shield className="w-5 h-5 text-blue-600" />
-            <h3 className="font-medium text-blue-900 dark:text-blue-100">Your Access Permissions</h3>
+        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <Shield className="w-6 h-6 text-blue-600" />
+            <h3 className="font-heading font-semibold text-lg text-blue-900 dark:text-blue-100">Your Access Permissions</h3>
           </div>
           <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
             {user.restrictions.allowedScopes && user.restrictions.allowedScopes.length > 0 && (
@@ -660,17 +647,17 @@ const Input = () => {
       )}
 
       {activeSection === 'emissions' && (
-      <div className="input-section-panel bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+      <div className="input-section-panel p-4 md:p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-gray-200/50 dark:border-slate-700/50 gap-4">
           <div className="flex space-x-1">
             {availableScopes.map((scope) => (
               <button
                 key={scope.id}
                 onClick={() => handleScopeChange(scope.id)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-6 py-2.5 text-sm font-medium rounded-xl transition-colors ${
                   activeScope === scope.id
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100'
+                    ? 'bg-primary text-primary-foreground shadow-teal-md'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-slate-800/50'
                 }`}
               >
                 {scope.label}
@@ -685,15 +672,15 @@ const Input = () => {
               placeholder="Search Activities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className="pl-10 pr-6 py-3 w-full md:w-80 border border-gray-300/50 dark:border-slate-600/50 rounded-xl bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary shadow-sm transition-colors"
             />
           </div>
         </div>
 
-        <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
-          <div className="flex items-center space-x-2">
-            <Info className="w-4 h-4 text-emerald-600" />
-            <span className="text-sm text-emerald-800 dark:text-emerald-300">
+        <div className="p-6 bg-primary/5 dark:bg-primary/10 border-b border-gray-200/50 dark:border-slate-700/50">
+          <div className="flex items-center space-x-3">
+            <Info className="w-5 h-5 text-primary" />
+            <span className="text-sm font-medium text-primary dark:text-primary-foreground">
               {scopes.find(s => s.id === activeScope)?.description}
             </span>
           </div>
@@ -709,23 +696,23 @@ const Input = () => {
                   <div 
                     key={index} 
                     id={`activity-${activity.name}`}
-                    className="border rounded-lg hover:shadow-md transition-shadow"
+                    className="border border-gray-200/50 dark:border-slate-700/50 rounded-xl hover:shadow-teal-md transition-shadow duration-200 bg-white dark:bg-slate-800"
                   >
                     <button
                       onClick={() => hasActivityAccess ? toggleActivityExpansion(activity.name) : null}
                       disabled={!hasActivityAccess}
-                      className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-gray-50 dark:bg-gray-900/50"
+                      className="w-full flex items-center justify-between p-6 text-left transition-colors hover:bg-white/60 dark:hover:bg-slate-800/60 rounded-xl"
                     >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-2xl">{activity.icon}</span>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-3xl bg-white/50 dark:bg-slate-700/50 p-3 rounded-xl shadow-sm">{activity.icon}</span>
                         <div className="flex-1">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-gray-900 dark:text-white">{activity.name}</h3>
-                            <span className="text-xs bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-full">
+                          <div className="flex items-center space-x-3 mb-1">
+                            <h3 className="font-heading font-semibold text-lg text-gray-900 dark:text-white">{activity.name}</h3>
+                            <span className="text-xs bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-foreground px-3 py-1 rounded-full font-medium">
                               {activity.sources.length} sources
                             </span>
                           </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">{activity.description}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">{activity.description}</p>
                         </div>
                       </div>
                       {expandedActivities[activity.name] ? (

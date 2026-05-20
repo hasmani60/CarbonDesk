@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import ChartFrame from '../../../components/charts/ChartFrame';
 import { Target, Lightbulb } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAnalytics } from '../AnalyticsContext';
@@ -91,24 +92,24 @@ export default function AnalyticsScopeTab({ scope }) {
 
   return (
     <div className="analytics-tab-panel">
-      <section className={`app-card p-6 border-l-4 ${meta.ring}`}>
+      <section className={`app-card p-6 md:p-8 border-l-4 ${meta.ring}`}>
         <p className={`text-xs font-semibold uppercase tracking-wide ${meta.text}`}>Scope {scope}</p>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{meta.title}</h2>
-        <p className="text-gray-600 dark:text-gray-400 mt-2 max-w-3xl">{meta.subtitle}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-          <div className={`rounded-lg p-4 ${meta.bg}`}>
+        <h2 className="text-2xl md:text-3xl font-heading font-bold text-gray-900 dark:text-white mt-1">{meta.title}</h2>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">{meta.subtitle}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-6">
+          <div className={`rounded-xl p-5 md:p-6 ${meta.bg}`}>
             <p className="text-sm text-gray-600 dark:text-gray-400">Total CO₂e</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">
               {formatLargeNumber(scopeVal)}
             </p>
           </div>
-          <div className={`rounded-lg p-4 ${meta.bg}`}>
+          <div className={`rounded-xl p-5 md:p-6 ${meta.bg}`}>
             <p className="text-sm text-gray-600 dark:text-gray-400">Share of organisation</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{share.toFixed(1)}%</p>
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">{share.toFixed(1)}%</p>
           </div>
-          <div className={`rounded-lg p-4 ${meta.bg}`}>
+          <div className={`rounded-xl p-5 md:p-6 ${meta.bg}`}>
             <p className="text-sm text-gray-600 dark:text-gray-400">Data points</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{scopeCount}</p>
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">{scopeCount}</p>
           </div>
         </div>
       </section>
@@ -150,18 +151,18 @@ export default function AnalyticsScopeTab({ scope }) {
             <Target className="w-6 h-6 shrink-0 text-emerald-600" />
             Monthly emissions (Scope {scope})
           </h2>
-          <div className="app-card p-6">
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyScope}>
+          <div className="app-card p-6 md:p-8">
+            <ChartFrame height={360}>
+              {(width, height) => (
+                <BarChart width={width} height={height} data={monthlyScope}>
                   <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
                   <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
                   <YAxis {...chartAxisProps(rt)} />
                   <Tooltip />
                   <Bar dataKey="emissions" fill={meta.chart} name="CO₂e" radius={[4, 4, 0, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
-            </div>
+              )}
+            </ChartFrame>
           </div>
         </section>
       )}

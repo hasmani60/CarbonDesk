@@ -7,10 +7,10 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
 import { Zap } from 'lucide-react';
+import ChartFrame from '../../../components/charts/ChartFrame';
 import ChartTooltip from './ChartTooltip';
 import { chartAxisProps } from '../../../utils/chartTheme';
 
@@ -57,24 +57,24 @@ export default function VelocitySection({ velocityData, rt, isDark }) {
 
       <div className="app-card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Rate of change</h3>
-        <div className="h-80 sm:h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={velocityData.periods}>
+        <ChartFrame height={400}>
+          {(width, height) => (
+            <ComposedChart width={width} height={height} data={velocityData.periods}>
               <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
               <XAxis
                 {...chartAxisProps(rt, {
                   dataKey: 'period',
-                  angle: -45,
+                  angle: -35,
                   textAnchor: 'end',
                   height: 72,
-                  tick: { fontSize: 11 }
+                  tick: { fontSize: 10 }
                 })}
               />
               <YAxis yAxisId="left" {...chartAxisProps(rt)} />
               <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
               <Tooltip content={<ChartTooltip isDark={isDark} />} />
               <Legend wrapperStyle={{ color: rt.legendColor }} />
-              <Bar yAxisId="left" dataKey="velocity" fill={isDark ? '#34d399' : '#10b981'} name="Velocity (%)" />
+              <Bar yAxisId="left" dataKey="velocity" fill={isDark ? '#34d399' : '#10b981'} name="Velocity (%)" isAnimationActive={false} />
               <Line
                 yAxisId="right"
                 type="monotone"
@@ -82,11 +82,13 @@ export default function VelocitySection({ velocityData, rt, isDark }) {
                 stroke="#ef4444"
                 strokeWidth={2}
                 name="Acceleration"
+                dot={false}
+                isAnimationActive={false}
               />
               <ReferenceLine yAxisId="left" y={0} stroke={rt.refLine} strokeDasharray="3 3" />
             </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartFrame>
       </div>
     </section>
   );

@@ -80,10 +80,7 @@ const Dashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log('📊 Fetching dashboard data from MongoDB for organisation:', user?.organisation_id);
-      
-      // Fetch from MongoDB backend
+
       const summary = await dashboardAPI.getSummary();
       
       console.log('✅ Dashboard data received from MongoDB:', summary);
@@ -166,7 +163,15 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error);
-      setError('Failed to load dashboard data. Please try refreshing.');
+      const isNetwork =
+        error?.status === 'NETWORK_ERROR' ||
+        error?.message?.includes('connect') ||
+        error?.message?.includes('timed out');
+      setError(
+        isNetwork
+          ? 'Cannot reach the API. Check your connection and that VITE_API_URL in frontend/.env points to your hosted backend (e.g. https://carbondesk.onrender.com/api).'
+          : 'Failed to load dashboard data. Please try refreshing.'
+      );
     } finally {
       setLoading(false);
     }
@@ -371,9 +376,9 @@ const Dashboard = () => {
           breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
         />
         
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-12 text-center">
+        <div className="app-card p-12 text-center">
           <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Data Available</h2>
+          <h2 className="text-2xl font-heading font-semibold text-gray-900 dark:text-white mb-2">No Data Available</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
             Your organisation doesn't have any emission data yet.
             {user?.organisation?.name && (
@@ -394,94 +399,60 @@ const Dashboard = () => {
     );
   }
 
+  const roleBadgeClass =
+    user?.role === 'admin'
+      ? 'badge-role-admin'
+      : user?.role === 'analyst'
+        ? 'badge-role-analyst'
+        : user?.role === 'contributor'
+          ? 'badge-role-contributor'
+          : 'badge bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
+
   return (
     <div className="space-y-6">
-      {/* Welcome Header with Role-based Content */}
-      <div className="bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-700 dark:from-emerald-900 dark:via-teal-900 dark:to-slate-900 rounded-3xl p-8 shadow-teal-lg dark:shadow-glass-dark border border-white/20 dark:border-slate-700 relative overflow-hidden">
-        {/* Decorative background elements */}
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
-        <div className="absolute bottom-0 right-32 -mb-16 w-48 h-48 rounded-full bg-teal-300/20 blur-2xl mix-blend-overlay pointer-events-none"></div>
-        
-        <div className="flex items-center justify-between relative z-10">
-          <div>
-            <h1 className="text-3xl font-extrabold text-white mb-2 drop-shadow-md">
-              {getGreeting()}, {user?.name || 'User'} 👋
-            </h1>
-            <p className="text-emerald-50 text-lg font-medium mb-3 opacity-90">
-              {getRoleDescription(user?.role)}
-            </p>
-            {user?.organisation?.name && (
-              <p className="text-sm text-emerald-100 font-semibold mb-3 flex items-center bg-black/10 w-fit px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
-                <span className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></span>
-                {user.organisation.name}
-              </p>
-            )}
-            <div className="flex items-center space-x-4 text-sm text-emerald-50 font-medium">
-              <span className="flex items-center space-x-1">
-                <Database className="w-4 h-4" />
-                <span>{dashboardData.totalEntries} total entries</span>
-              </span>
-              {userActivityStats && (
-                <>
-                  <span className="flex items-center space-x-1">
-                    <Activity className="w-4 h-4" />
-                    <span>{userActivityStats.today} activities today</span>
-                  </span>
-                  <span>{userActivityStats.thisWeek} this week</span>
-                </>
-              )}
-              <span className="text-xs">
-                Last updated: {formatDateTime(lastUpdate)}
-              </span>
-            </div>
-          </div>
-          <div className="hidden md:flex items-center space-x-4">
-            <div className={`px-4 py-1.5 rounded-full text-sm font-bold shadow-sm border border-white/20 backdrop-blur-md ${
-              user?.role === 'admin' ? 'bg-red-500/20 text-red-50' :
-              user?.role === 'analyst' ? 'bg-blue-500/20 text-blue-50' :
-              user?.role === 'contributor' ? 'bg-emerald-400/20 text-emerald-50' :
-              'bg-white/20 text-white'
-            }`}>
-              {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
-            </div>
-            <div className="w-32 h-32 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.1)]">
-              <svg className="w-16 h-16 text-white drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Page Header */}
-      <PageHeader 
-        title="Dashboard"
+      <PageHeader
+        title={`${getGreeting()}, ${user?.name?.split(' ')[0] || 'there'}`}
+        subtitle={getRoleDescription(user?.role)}
         breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
+        meta={
+          <>
+            {user?.organisation?.name && (
+              <span className="badge bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
+                {user.organisation.name}
+              </span>
+            )}
+            <span className={`${roleBadgeClass} capitalize`}>
+              {user?.role || 'user'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Database className="w-3.5 h-3.5" />
+              {dashboardData.totalEntries} entries
+            </span>
+            {userActivityStats && (
+              <span className="inline-flex items-center gap-1">
+                <Activity className="w-3.5 h-3.5" />
+                {userActivityStats.today} today · {userActivityStats.thisWeek} this week
+              </span>
+            )}
+            <span>Updated {formatDateTime(lastUpdate)}</span>
+          </>
+        }
         action={
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-2">
             {canViewAllData(user?.role) && (
-              <button 
-                onClick={() => handleQuickAction('view_monitor')}
-                className="flex items-center space-x-2 px-3 py-2 text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50"
-              >
+              <button type="button" onClick={() => handleQuickAction('view_monitor')} className="btn-secondary">
                 <Eye className="w-4 h-4" />
                 <span>Monitor</span>
               </button>
             )}
             {isAdmin(user?.role) && (
-              <button 
-                onClick={() => handleQuickAction('admin_panel')}
-                className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
+              <button type="button" onClick={() => handleQuickAction('admin_panel')} className="btn-danger">
                 <Shield className="w-4 h-4" />
                 <span>Admin</span>
               </button>
             )}
-            <button 
-              onClick={fetchDashboardData}
-              className="p-2 text-gray-500 hover:text-gray-700 rounded-lg"
-            >
-              <RefreshCw className="w-5 h-5" />
+            <button type="button" onClick={fetchDashboardData} className="icon-btn" aria-label="Refresh dashboard">
+              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         }
@@ -489,9 +460,9 @@ const Dashboard = () => {
 
       {/* Admin Summary (Admin Only) */}
       {isAdmin(user?.role) && adminData && (
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
+        <div className="app-card p-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-heading font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
               <Shield className="w-5 h-5 text-red-500" />
               <span>System Overview</span>
             </h2>
@@ -502,7 +473,7 @@ const Dashboard = () => {
               View Details →
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 lg:gap-8">
             <div className="text-center">
               <p className="text-2xl font-bold text-blue-600">
                 {adminData.totalUsers || adminData.userStats?.total || 0}
@@ -541,8 +512,8 @@ const Dashboard = () => {
       )}
 
       {/* Key Metrics Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="app-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Entries</p>
@@ -557,7 +528,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+        <div className="app-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 1 Entries</p>
@@ -574,7 +545,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+        <div className="app-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 2 Entries</p>
@@ -591,7 +562,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+        <div className="app-card p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 3 Entries</p>
@@ -610,7 +581,7 @@ const Dashboard = () => {
       </div>
 
       {/* Emission Scope Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         {['scope1', 'scope2', 'scope3'].map((scope, index) => {
           const scopeData = dashboardData[scope];
           const scopeNumber = index + 1;
@@ -618,9 +589,9 @@ const Dashboard = () => {
           const pieSlices = scopeData.topCategories.filter((c) => c.value > 0);
 
           return (
-            <div key={scope} className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            <div key={scope} className="app-card p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-heading font-semibold text-gray-900 dark:text-white">
                   Scope {scopeNumber} Entries
                 </h3>
                 <div className="flex items-center space-x-2">
@@ -727,10 +698,10 @@ const Dashboard = () => {
       </div>
 
       {/* Notifications Section */}
-      <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-xl transition-all duration-300 motion-reduce:hover:translate-y-0 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
+      <div className="premium-glass-panel">
         <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
           <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h2>
+            <h2 className="text-lg font-heading font-semibold text-gray-900 dark:text-white">Notifications</h2>
             <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs px-2 py-1 rounded-full">
               {notifications?.length || 0}
             </span>

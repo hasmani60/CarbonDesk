@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
@@ -11,11 +11,62 @@ import {
   calculateTrends
 } from '../../utils/analysisHelpers';
 
+function normalizeOverview(data = {}) {
+  const totalEmissions = data.totalEmissions ?? data.total_emissions ?? 0;
+  const totalEntries = data.totalEntries ?? data.total_count ?? 0;
+  let scope1 = data.scope1 ?? 0;
+  let scope2 = data.scope2 ?? 0;
+  let scope3 = data.scope3 ?? 0;
+  let scope1Count = data.scope1Count ?? data.scope_1_count ?? 0;
+  let scope2Count = data.scope2Count ?? data.scope_2_count ?? 0;
+  let scope3Count = data.scope3Count ?? data.scope_3_count ?? 0;
+
+  const byScope = data.by_scope;
+  if (Array.isArray(byScope) && byScope.length) {
+    const pick = (n) =>
+      byScope.find((s) => s._id === n || s.scope === n || Number(s._id) === n) || {};
+    const s1 = pick(1);
+    const s2 = pick(2);
+    const s3 = pick(3);
+    scope1 = s1.total ?? s1.total_co2e ?? scope1;
+    scope2 = s2.total ?? s2.total_co2e ?? scope2;
+    scope3 = s3.total ?? s3.total_co2e ?? scope3;
+    scope1Count = s1.count ?? scope1Count;
+    scope2Count = s2.count ?? scope2Count;
+    scope3Count = s3.count ?? scope3Count;
+  }
+
+  return {
+    totalEmissions,
+    totalEntries,
+    scope1,
+    scope2,
+    scope3,
+    scope1Count,
+    scope2Count,
+    scope3Count,
+    scope3_activity_co2e: data.scope3_activity_co2e ?? scope3 - (data.scope3_commute_co2e ?? 0),
+    scope3_commute_co2e: data.scope3_commute_co2e ?? 0,
+    scope3_commute_present_days: data.scope3_commute_present_days ?? 0
+  };
+}
+
+const withTimeout = (promise, ms, label = 'Request') =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    })
+  ]);
+
 export default function useAnalyticsData() {
   const { user } = useAuth();
   const { logPageView, logActivity } = useActivity();
+  const hasLoggedView = useRef(false);
 
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [chartsLoading, setChartsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
@@ -31,62 +82,79 @@ export default function useAnalyticsData() {
   const [maccOpportunities, setMaccOpportunities] = useState([]);
   const [showMaccModal, setShowMaccModal] = useState(false);
 
-  const loadOverviewStats = useCallback(async () => {
-    try {
-      const response = await analyticsAPI.getOverview();
-      const data = response?.data != null ? response.data : response;
+  const applyMigrationPeriods = useCallback((periodData) => {
+    if (!periodData?.length) {
+      setScopeMigrationData([]);
+      setMigrationInsights(null);
+      return;
+    }
+    setScopeMigrationData(periodData);
+    if (periodData.length >= 2) {
+      const trends = calculateTrends(periodData);
+      const burdenShift = detectBurdenShifting(periodData);
+      const insights = generateMigrationInsights(periodData);
+      setMigrationInsights({ ...insights, burdenShifting: burdenShift, trends });
+    } else {
+      setMigrationInsights(null);
+    }
+  }, []);
 
-      const totalEmissions = data.totalEmissions ?? data.total_emissions ?? 0;
-      const totalEntries = data.totalEntries ?? data.total_count ?? 0;
+  const applyParetoRows = useCallback((rows) => {
+    if (!rows?.length) {
+      setParetoGrouped([]);
+      setParetoData([]);
+      setParetoInsights(null);
+      setSelectedParent(null);
+      return;
+    }
+    const grouped = rows.map((item) => ({
+      name: item.name ?? item._id ?? 'Unknown',
+      value: Number(item.value ?? item.total_co2e ?? item.emissions ?? 0) || 0,
+      count: item.count ?? 0,
+      scope: Number(item.scope) || item.scope,
+      canDrill: item.canDrill !== false,
+      percentage: item.percentage,
+      cumulative: item.cumulative ?? item.cumulativePercentage
+    }));
+    setParetoGrouped(grouped);
+    setParetoData(rows);
+    setParetoInsights(
+      rows[0].percentage !== undefined ? generateParetoInsights(rows, 80) : generateParetoInsights(calculatePareto(grouped), 80)
+    );
+    setSelectedParent(null);
+  }, []);
 
-      let scope1 = data.scope1 ?? 0;
-      let scope2 = data.scope2 ?? 0;
-      let scope3 = data.scope3 ?? 0;
-      let scope1Count = data.scope1Count ?? data.scope_1_count ?? 0;
-      let scope2Count = data.scope2Count ?? data.scope_2_count ?? 0;
-      let scope3Count = data.scope3Count ?? data.scope_3_count ?? 0;
+  const loadBootstrap = useCallback(async () => {
+    const result = await analyticsAPI.getBootstrap();
+    return result?.data ?? result;
+  }, []);
 
-      const byScope = data.by_scope;
-      if (Array.isArray(byScope) && byScope.length) {
-        const pick = (n) =>
-          byScope.find((s) => s._id === n || s.scope === n || Number(s._id) === n) || {};
-        const s1 = pick(1);
-        const s2 = pick(2);
-        const s3 = pick(3);
-        scope1 = s1.total ?? s1.total_co2e ?? scope1;
-        scope2 = s2.total ?? s2.total_co2e ?? scope2;
-        scope3 = s3.total ?? s3.total_co2e ?? scope3;
-        scope1Count = s1.count ?? scope1Count;
-        scope2Count = s2.count ?? scope2Count;
-        scope3Count = s3.count ?? scope3Count;
+  const applyBootstrapPayload = useCallback(
+    (data, { deferCharts = false } = {}) => {
+      if (!data) return;
+      if (data.overview) {
+        setOverviewStats(normalizeOverview(data.overview));
       }
 
-      setOverviewStats({
-        totalEmissions,
-        totalEntries,
-        scope1,
-        scope2,
-        scope3,
-        scope1Count,
-        scope2Count,
-        scope3Count,
-        scope3_activity_co2e: data.scope3_activity_co2e ?? scope3 - (data.scope3_commute_co2e ?? 0),
-        scope3_commute_co2e: data.scope3_commute_co2e ?? 0,
-        scope3_commute_present_days: data.scope3_commute_present_days ?? 0
-      });
-    } catch (err) {
-      console.error('Error loading overview stats:', err);
-      setOverviewStats({
-        totalEmissions: 0,
-        totalEntries: 0,
-        scope1: 0,
-        scope2: 0,
-        scope3: 0,
-        scope1Count: 0,
-        scope2Count: 0,
-        scope3Count: 0
-      });
-    }
+      const applyCharts = () => {
+        applyMigrationPeriods(data.scopeMigration?.periodData ?? []);
+        applyParetoRows(data.pareto?.paretoData ?? []);
+      };
+
+      if (deferCharts) {
+        requestAnimationFrame(applyCharts);
+      } else {
+        applyCharts();
+      }
+    },
+    [applyMigrationPeriods, applyParetoRows]
+  );
+
+  const loadOverviewStats = useCallback(async () => {
+    const response = await analyticsAPI.getOverview();
+    const data = response?.data != null ? response.data : response;
+    setOverviewStats(normalizeOverview(data));
+    return normalizeOverview(data);
   }, []);
 
   const loadScopeMigrationData = useCallback(async () => {
@@ -94,41 +162,12 @@ export default function useAnalyticsData() {
       const result = await analyticsAPI.getScopeMigration();
       const periodData =
         result?.periodData ?? result?.data?.periodData ?? (Array.isArray(result) ? result : []) ?? [];
-
-      if (periodData.length === 0) {
-        setScopeMigrationData([]);
-        setMigrationInsights(null);
-        return;
-      }
-
-      setScopeMigrationData(periodData);
-
-      if (periodData.length >= 2) {
-        const trends = calculateTrends(periodData);
-        const burdenShift = detectBurdenShifting(periodData);
-        const insights = generateMigrationInsights(periodData);
-        setMigrationInsights({ ...insights, burdenShifting: burdenShift, trends });
-      } else {
-        setMigrationInsights(null);
-      }
+      applyMigrationPeriods(periodData);
     } catch (err) {
       console.error('Error loading scope migration data:', err);
-      setScopeMigrationData([]);
-      setMigrationInsights(null);
+      applyMigrationPeriods([]);
     }
-  }, []);
-
-  const applyParetoGrouped = useCallback((grouped) => {
-    setParetoGrouped(grouped);
-    const paretoResults = calculatePareto(grouped);
-    if (paretoResults.length > 0 && paretoResults[0].percentage !== undefined) {
-      setParetoInsights(generateParetoInsights(paretoResults, 80));
-    } else {
-      setParetoInsights(null);
-    }
-    setParetoData(paretoResults);
-    setSelectedParent(null);
-  }, []);
+  }, [applyMigrationPeriods]);
 
   const loadParetoData = useCallback(async () => {
     try {
@@ -140,33 +179,38 @@ export default function useAnalyticsData() {
       if (!Array.isArray(paretoRawData)) paretoRawData = [];
 
       if (paretoRawData.length === 0) {
-        setParetoGrouped([]);
-        setParetoData([]);
-        setParetoInsights(null);
+        applyParetoRows([]);
         return;
       }
 
-      const grouped = paretoRawData.map((item) => ({
-        name: item.name ?? item._id ?? 'Unknown',
-        value: Number(item.value ?? item.total_co2e ?? item.emissions ?? 0) || 0,
-        count: item.count ?? 0,
-        scope: Number(item.scope) || item.scope,
-        canDrill: item.canDrill !== false
-      }));
-
-      applyParetoGrouped(grouped);
+      applyParetoRows(paretoRawData);
     } catch (err) {
       console.error('Error loading Pareto data:', err);
-      setParetoGrouped([]);
-      setParetoData([]);
-      setParetoInsights(null);
+      applyParetoRows([]);
     }
-  }, [applyParetoGrouped]);
+  }, [applyParetoRows]);
 
   const loadVelocityData = useCallback(async () => {
     try {
       const result = await analyticsAPI.getVelocity();
-      setVelocityData(result.data || result || null);
+      const raw = result?.data ?? result;
+      if (!raw) {
+        setVelocityData(null);
+        return;
+      }
+      const chartData = raw.chartData ?? raw.periods ?? [];
+      const summary = raw.summary ?? {};
+      setVelocityData({
+        periods: chartData,
+        summary: {
+          avgVelocity: summary.avgVelocity ?? 0,
+          avgAcceleration: summary.avgAcceleration ?? 0,
+          trendDirection: summary.trendDirection ?? summary.trend ?? 'stable',
+          inflectionPoints: summary.inflectionPoints ?? 0,
+          currentVelocity: summary.currentVelocity,
+          projectedNextMonth: summary.projectedNextMonth
+        }
+      });
     } catch (err) {
       console.error('Error loading velocity data:', err);
       setVelocityData(null);
@@ -186,55 +230,106 @@ export default function useAnalyticsData() {
     }
   }, []);
 
-  const loadAllData = useCallback(async () => {
+  const loadSecondaryData = useCallback(async () => {
+    await Promise.all([loadVelocityData(), loadMACCData()]);
+    setLastUpdate(new Date());
+  }, [loadVelocityData, loadMACCData]);
+
+  const loadChartData = useCallback(async () => {
+    setChartsLoading(true);
     try {
-      setLoading(true);
-      setError(null);
-      await Promise.all([
-        loadOverviewStats(),
-        loadScopeMigrationData(),
-        loadParetoData(),
-        loadVelocityData(),
-        loadMACCData()
-      ]);
+      try {
+        const payload = await withTimeout(loadBootstrap(), 120000, 'Analytics bootstrap');
+        applyBootstrapPayload(payload, { deferCharts: true });
+      } catch (bootstrapErr) {
+        console.warn('Analytics bootstrap failed, using separate chart requests:', bootstrapErr);
+        await Promise.all([loadScopeMigrationData(), loadParetoData()]);
+      }
       setLastUpdate(new Date());
-      logActivity('viewed_analytics', 'analytics', null, 'Viewed analytics dashboard');
-    } catch (err) {
-      console.error('Error loading analytics:', err);
-      setError('Failed to load analytics data. Please try refreshing.');
-      toast.error('Failed to load analytics data');
     } finally {
-      setLoading(false);
+      setChartsLoading(false);
     }
   }, [
-    loadOverviewStats,
+    loadBootstrap,
+    applyBootstrapPayload,
     loadScopeMigrationData,
-    loadParetoData,
-    loadVelocityData,
-    loadMACCData,
-    logActivity
+    loadParetoData
   ]);
+
+  const loadAllData = useCallback(
+    async ({ silent = false } = {}) => {
+      const showShellSpinner = !silent && overviewStats == null;
+
+      try {
+        setError(null);
+        if (showShellSpinner) {
+          setInitialLoading(true);
+        } else {
+          setRefreshing(true);
+        }
+
+        try {
+          await withTimeout(loadOverviewStats(), 90000, 'Analytics overview');
+        } catch (overviewErr) {
+          console.error('Error loading analytics overview:', overviewErr);
+          setOverviewStats(normalizeOverview({}));
+          const msg =
+            overviewErr?.message?.includes('connect') || overviewErr?.status === 'NETWORK_ERROR'
+              ? 'Unable to reach the API. Confirm VITE_API_URL in frontend/.env (e.g. https://carbondesk.onrender.com/api).'
+              : 'Failed to load analytics overview. Try refreshing.';
+          setError(msg);
+          if (!silent) toast.error(msg);
+        }
+
+        if (showShellSpinner) {
+          setInitialLoading(false);
+        }
+
+        if (!hasLoggedView.current) {
+          hasLoggedView.current = true;
+          logActivity('viewed_analytics', 'analytics', null, 'Viewed analytics dashboard');
+        }
+
+        await loadChartData();
+      } catch (err) {
+        console.error('Error loading analytics:', err);
+        if (!error) {
+          setError('Failed to load analytics data. Please try refreshing.');
+        }
+        if (!silent) toast.error('Some analytics data could not be loaded');
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
+
+      void loadSecondaryData().catch((err) => {
+        console.error('Error loading secondary analytics:', err);
+      });
+    },
+    [loadOverviewStats, loadChartData, loadSecondaryData, logActivity, overviewStats, error]
+  );
 
   useEffect(() => {
     logPageView('Analytics');
     loadAllData();
 
     const handleEmissionAdded = () => {
-      setTimeout(loadAllData, 500);
+      setTimeout(() => loadAllData({ silent: true }), 500);
       toast.success('Analytics updated with new data!');
     };
 
     window.addEventListener('emission-added', handleEmissionAdded);
     const refreshInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      loadAllData();
+      loadAllData({ silent: true });
     }, 5 * 60 * 1000);
 
     return () => {
       window.removeEventListener('emission-added', handleEmissionAdded);
       clearInterval(refreshInterval);
     };
-  }, [loadAllData, logPageView]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getParetoForScope = useCallback(
     (scopeNum) => {
@@ -253,33 +348,30 @@ export default function useAnalyticsData() {
     [overviewStats]
   );
 
-  const handleDrillDown = useCallback(
-    async (item) => {
-      if (!item.canDrill) return;
-      try {
-        const result = await analyticsAPI.getParetoDrilldown(item.name);
-        const payload = result?.data != null ? result.data : result;
-        let drillDownRawData = payload?.paretoData ?? result?.paretoData ?? result ?? [];
-        if (!Array.isArray(drillDownRawData)) drillDownRawData = [];
+  const handleDrillDown = useCallback(async (item) => {
+    if (!item.canDrill) return;
+    try {
+      const result = await analyticsAPI.getParetoDrilldown(item.name);
+      const payload = result?.data != null ? result.data : result;
+      let drillDownRawData = payload?.paretoData ?? result?.paretoData ?? result ?? [];
+      if (!Array.isArray(drillDownRawData)) drillDownRawData = [];
 
-        const grouped = drillDownRawData.map((row) => ({
-          name: row.name ?? row._id ?? 'Unknown',
-          value: Number(row.value ?? row.total_co2e ?? row.emissions ?? 0) || 0,
-          count: row.count ?? 0,
-          scope: row.scope,
-          canDrill: false
-        }));
+      const grouped = drillDownRawData.map((row) => ({
+        name: row.name ?? row._id ?? 'Unknown',
+        value: Number(row.value ?? row.total_co2e ?? row.emissions ?? 0) || 0,
+        count: row.count ?? 0,
+        scope: row.scope,
+        canDrill: false
+      }));
 
-        setParetoData(calculatePareto(grouped));
-        setSelectedParent(item.name);
-        toast.success(`Showing breakdown for ${item.name}`);
-      } catch (err) {
-        console.error('Drill-down error:', err);
-        toast.error('Failed to drill down');
-      }
-    },
-    []
-  );
+      setParetoData(calculatePareto(grouped));
+      setSelectedParent(item.name);
+      toast.success(`Showing breakdown for ${item.name}`);
+    } catch (err) {
+      console.error('Drill-down error:', err);
+      toast.error('Failed to drill down');
+    }
+  }, []);
 
   const resetDrillDown = useCallback(() => {
     setSelectedParent(null);
@@ -292,42 +384,37 @@ export default function useAnalyticsData() {
       setParetoData(getParetoForScope(scopeNum));
       const results = getParetoForScope(scopeNum);
       setParetoInsights(
-        results.length && results[0].percentage !== undefined
-          ? generateParetoInsights(results, 80)
-          : null
+        results.length && results[0].percentage !== undefined ? generateParetoInsights(results, 80) : null
       );
     },
     [getParetoForScope]
   );
 
-  const handleDrillDownScoped = useCallback(
-    async (item, scopeNum) => {
-      if (!item.canDrill) return;
-      try {
-        const result = await analyticsAPI.getParetoDrilldown(item.name);
-        const payload = result?.data != null ? result.data : result;
-        let drillDownRawData = payload?.paretoData ?? result?.paretoData ?? result ?? [];
-        if (!Array.isArray(drillDownRawData)) drillDownRawData = [];
+  const handleDrillDownScoped = useCallback(async (item, scopeNum) => {
+    if (!item.canDrill) return;
+    try {
+      const result = await analyticsAPI.getParetoDrilldown(item.name);
+      const payload = result?.data != null ? result.data : result;
+      let drillDownRawData = payload?.paretoData ?? result?.paretoData ?? result ?? [];
+      if (!Array.isArray(drillDownRawData)) drillDownRawData = [];
 
-        const grouped = drillDownRawData
-          .map((row) => ({
-            name: row.name ?? row._id ?? 'Unknown',
-            value: Number(row.value ?? row.total_co2e ?? row.emissions ?? 0) || 0,
-            count: row.count ?? 0,
-            canDrill: false
-          }))
-          .filter((row) => row.value > 0);
+      const grouped = drillDownRawData
+        .map((row) => ({
+          name: row.name ?? row._id ?? 'Unknown',
+          value: Number(row.value ?? row.total_co2e ?? row.emissions ?? 0) || 0,
+          count: row.count ?? 0,
+          canDrill: false
+        }))
+        .filter((row) => row.value > 0);
 
-        setParetoData(calculatePareto(grouped));
-        setSelectedParent(item.name);
-        toast.success(`Showing breakdown for ${item.name}`);
-      } catch (err) {
-        console.error('Drill-down error:', err);
-        toast.error('Failed to drill down');
-      }
-    },
-    []
-  );
+      setParetoData(calculatePareto(grouped));
+      setSelectedParent(item.name);
+      toast.success(`Showing breakdown for ${item.name}`);
+    } catch (err) {
+      console.error('Drill-down error:', err);
+      toast.error('Failed to drill down');
+    }
+  }, []);
 
   const handleSaveMaccOpportunity = useCallback(
     async (opportunity) => {
@@ -399,7 +486,10 @@ export default function useAnalyticsData() {
 
   return {
     user,
-    loading,
+    loading: initialLoading,
+    initialLoading,
+    refreshing,
+    chartsLoading,
     error,
     lastUpdate,
     overviewStats,

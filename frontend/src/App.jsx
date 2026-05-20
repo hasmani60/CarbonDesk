@@ -1,4 +1,5 @@
 // frontend/src/App.jsx - Complete App with Multi-Tenant Support
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ThemeToaster from './components/ThemeToaster';
 import { AuthProvider } from './context/AuthContext';
@@ -17,20 +18,27 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 
-// Main app pages
-import Dashboard from './pages/Dashboard/Dashboard';
-import Input from './pages/Input/Input';
-import Monitor from './pages/Monitor/Monitor';
-import Analytics from './pages/Analytics/Analytics';
-import AIReportsPage from './pages/Reports/AIReportsPage';
-import Settings from './pages/Settings/Settings';
-import OrganisationPage from './pages/Organisation/OrganisationPage';
-import OffsetOpportunitiesPage from './pages/OffsetOpportunities/OffsetOpportunitiesPage';
-import OffsetDetailPage from './pages/OffsetOpportunities/OffsetDetailPage';
+import { SkeletonAnalytics } from './components/ui/Skeleton';
 
-// Admin pages
-import AdminMonitor from './pages/Admin/AdminMonitor';
-import UserManagement from './pages/Admin/UserManagement';
+const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard'));
+const Input = lazy(() => import('./pages/Input/Input'));
+const Monitor = lazy(() => import('./pages/Monitor/Monitor'));
+const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
+const AIReportsPage = lazy(() => import('./pages/Reports/AIReportsPage'));
+const Settings = lazy(() => import('./pages/Settings/Settings'));
+const OrganisationPage = lazy(() => import('./pages/Organisation/OrganisationPage'));
+const OffsetOpportunitiesPage = lazy(() => import('./pages/OffsetOpportunities/OffsetOpportunitiesPage'));
+const OffsetDetailPage = lazy(() => import('./pages/OffsetOpportunities/OffsetDetailPage'));
+const AdminMonitor = lazy(() => import('./pages/Admin/AdminMonitor'));
+const UserManagement = lazy(() => import('./pages/Admin/UserManagement'));
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
 
 // Company Operations Portal (HIDDEN)
 import CompanyOperationsPortal from './pages/Company/CompanyOperationsPortal';
@@ -95,7 +103,9 @@ function App() {
                     path="dashboard" 
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'viewer', 'contributor']}>
-                        <Dashboard />
+                        <Suspense fallback={<PageFallback />}>
+                          <Dashboard />
+                        </Suspense>
                       </ProtectedRoute>
                     } 
                   />
@@ -105,7 +115,9 @@ function App() {
                     path="input" 
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'contributor']}>
-                        <Input />
+                        <Suspense fallback={<PageFallback />}>
+                          <Input />
+                        </Suspense>
                       </ProtectedRoute>
                     } 
                   />
@@ -115,7 +127,9 @@ function App() {
                     path="monitor" 
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'viewer']}>
-                        <Monitor />
+                        <Suspense fallback={<PageFallback />}>
+                          <Monitor />
+                        </Suspense>
                       </ProtectedRoute>
                     } 
                   />
@@ -125,7 +139,9 @@ function App() {
                     path="analytics/*"
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'viewer']}>
-                        <Analytics />
+                        <Suspense fallback={<SkeletonAnalytics />}>
+                          <Analytics />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -135,7 +151,9 @@ function App() {
                     path="offset-opportunities"
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
-                        <OffsetOpportunitiesPage />
+                        <Suspense fallback={<PageFallback />}>
+                          <OffsetOpportunitiesPage />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -143,7 +161,9 @@ function App() {
                     path="offset-opportunities/:id"
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
-                        <OffsetDetailPage />
+                        <Suspense fallback={<PageFallback />}>
+                          <OffsetDetailPage />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -153,7 +173,9 @@ function App() {
                     path="reports"
                     element={
                       <ProtectedRoute requiredRoles={['admin']}>
-                        <AIReportsPage />
+                        <Suspense fallback={<PageFallback />}>
+                          <AIReportsPage />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -163,7 +185,9 @@ function App() {
                     path="settings" 
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
-                        <Settings />
+                        <Suspense fallback={<PageFallback />}>
+                          <Settings />
+                        </Suspense>
                       </ProtectedRoute>
                     } 
                   />
@@ -172,7 +196,9 @@ function App() {
                     path="organisation"
                     element={
                       <ProtectedRoute requiredRoles={['admin', 'analyst', 'contributor', 'viewer']}>
-                        <OrganisationPage />
+                        <Suspense fallback={<PageFallback />}>
+                          <OrganisationPage />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -184,8 +210,8 @@ function App() {
                     <AdminRoute>
                       <Routes>
                         <Route index element={<Navigate to="/admin/monitor" replace />} />
-                        <Route path="monitor" element={<AdminMonitor />} />
-                        <Route path="users" element={<UserManagement />} />
+                        <Route path="monitor" element={<Suspense fallback={<PageFallback />}><AdminMonitor /></Suspense>} />
+                        <Route path="users" element={<Suspense fallback={<PageFallback />}><UserManagement /></Suspense>} />
                         <Route path="organisation" element={<Navigate to="/organisation" replace />} />
                         <Route path="system" element={<AdminMonitor />} />
                       </Routes>

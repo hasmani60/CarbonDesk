@@ -10,13 +10,32 @@ export default {
       colors: {
         // Semantic tokens — same hsl variables as index.css (:root / .dark)
         app: {
-          bg: 'hsl(var(--background))',
-          fg: 'hsl(var(--foreground))',
-          card: 'hsl(var(--card))',
-          muted: 'hsl(var(--muted))',
-          'muted-fg': 'hsl(var(--muted-foreground))',
-          border: 'hsl(var(--border))',
+          bg: 'hsl(var(--background) / <alpha-value>)',
+          fg: 'hsl(var(--foreground) / <alpha-value>)',
+          card: 'hsl(var(--card) / <alpha-value>)',
+          muted: 'hsl(var(--muted) / <alpha-value>)',
+          'muted-fg': 'hsl(var(--muted-foreground) / <alpha-value>)',
+          border: 'hsl(var(--border) / <alpha-value>)',
         },
+        primary: {
+          DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
+          foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
+          foreground: 'hsl(var(--secondary-foreground) / <alpha-value>)',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
+          foreground: 'hsl(var(--accent-foreground) / <alpha-value>)',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
+          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
+        },
+        border: 'hsl(var(--border) / <alpha-value>)',
+        input: 'hsl(var(--input) / <alpha-value>)',
+        ring: 'hsl(var(--ring) / <alpha-value>)',
         // Primary Brand Colors (from Figma)
         'primary-teal': '#006C54',
         'primary-dark': '#0A3124',
@@ -80,6 +99,7 @@ export default {
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
         inter: ['Inter', 'sans-serif'],
+        outfit: ['Outfit', 'sans-serif'],
       },
       fontWeight: {
         light: '300',
@@ -90,23 +110,39 @@ export default {
         extrabold: '800',
       },
       borderRadius: {
-        lg: '0.5rem',
-        md: '0.375rem',
-        sm: '0.25rem',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       boxShadow: {
+        card: '0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06)',
+        'card-md': '0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04)',
         'teal-sm': '0 1px 2px 0 rgba(0, 108, 84, 0.05)',
-        'teal-md': '0 4px 6px -1px rgba(0, 108, 84, 0.1)',
-        'teal-lg': '0 10px 15px -3px rgba(0, 108, 84, 0.1)',
-        'teal-xl': '0 20px 25px -5px rgba(0, 108, 84, 0.1)',
-        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.05)',
-        'glass-dark': '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
-        'glow': '0 0 15px rgba(16, 185, 129, 0.3)',
+        'teal-md': '0 2px 4px 0 rgba(0, 0, 0, 0.06)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'glass-gradient': 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
-        'glass-gradient-dark': 'linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(2, 6, 23, 0.9) 100%)',
+        'glass-gradient': 'linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 100%)',
+        'glass-gradient-dark': 'linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(2, 6, 23, 0.8) 100%)',
+      },
+      keyframes: {
+        'float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        },
+        'pulse-glow': {
+          '0%, 100%': { opacity: 1, boxShadow: '0 0 15px rgba(16, 185, 129, 0.3)' },
+          '50%': { opacity: 0.8, boxShadow: '0 0 25px rgba(16, 185, 129, 0.5)' },
+        },
+        'slide-up-fade': {
+          '0%': { opacity: 0, transform: 'translateY(10px)' },
+          '100%': { opacity: 1, transform: 'translateY(0)' },
+        }
+      },
+      animation: {
+        'float': 'float 3s ease-in-out infinite',
+        'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+        'slide-up-fade': 'slide-up-fade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
       }
     },
   },

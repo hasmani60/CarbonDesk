@@ -378,7 +378,7 @@ const Monitor = () => {
       console.error('❌ Error assigning task:', error);
       
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        toast.error('Cannot connect to backend. Is server running on port 5001?');
+        toast.error('Cannot connect to the API. Check VITE_API_URL in frontend/.env.');
       } else if (error instanceof SyntaxError) {
         toast.error('Invalid server response. Check backend logs.');
       } else {

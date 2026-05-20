@@ -5,17 +5,20 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Environment Variables
+# Environment Variables (never commit secrets or local API URLs)
 .env
-.env.local
-.env.development
-.env.test
-.env.production
-.env.production.local
+.env.*
+.env.example
+.env.local.example
+.env.production.example
 backend/.env
-backend/.env.production
-backend/.env.production.local
+backend/.env.*
+backend/.env.example
+backend/.env.production.example
 frontend/.env
+frontend/.env.*
+frontend/.env.example
+frontend/.env.local.example
 frontend/.env.production
 frontend/.env.production.local
 

@@ -4,89 +4,196 @@
 @import 'tailwindcss/utilities';
 
 @layer components {
-  /* Shared surface: aligns Analytics with glass-style pages (Dashboard, Monitor) */
+  /* Surfaces */
   .app-card {
-    @apply bg-white/95 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl border border-gray-200/90 dark:border-slate-700/90
-      shadow-sm shadow-gray-200/40 dark:shadow-none
-      transition-shadow duration-200;
+    @apply bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/90 dark:border-zinc-800 shadow-sm;
   }
 
   .app-card-interactive {
-    @apply motion-safe:hover:shadow-md motion-safe:transition-[box-shadow,transform] motion-safe:duration-300 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:transform-none;
+    @apply motion-safe:transition-[box-shadow,border-color] motion-safe:duration-150
+      motion-safe:hover:border-zinc-300 dark:motion-safe:hover:border-zinc-700
+      motion-reduce:transition-none;
+  }
+
+  .premium-glass-panel,
+  .input-section-panel {
+    @apply bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden;
+  }
+
+  .premium-card-hover {
+    @apply motion-safe:transition-[border-color,box-shadow] motion-safe:duration-150
+      motion-safe:hover:border-zinc-300 dark:motion-safe:hover:border-zinc-700 motion-reduce:transition-none;
+  }
+
+  /* Typography */
+  .page-title {
+    @apply text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+  }
+
+  .section-title {
+    @apply text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+  }
+
+  .text-caption {
+    @apply text-xs text-zinc-500 dark:text-zinc-400;
+  }
+
+  .font-heading {
+    @apply font-semibold tracking-tight;
   }
 
   .analytics-section-title {
-    @apply text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2;
+    @apply text-lg sm:text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 mb-5 flex items-center gap-2.5;
   }
 
   .analytics-tab-panel {
-    @apply space-y-2 min-h-[40vh];
+    @apply space-y-6 w-full min-w-0 max-w-full;
+  }
+
+  .analytics-chart-wrap {
+    @apply w-full min-w-0 max-w-full overflow-x-auto;
   }
 
   .analytics-tab-section {
-    @apply mb-10 last:mb-4;
+    @apply mb-8 last:mb-0 w-full;
   }
 
-  .analytics-tab-section .analytics-section-title {
-    @apply mb-4;
-  }
-
-  .input-section-panel {
-    @apply rounded-2xl border border-gray-200/90 dark:border-slate-700/90 overflow-hidden;
-  }
-
-  /* Form density: stacked auth / admin forms */
   .form-stack {
-    @apply space-y-5;
+    @apply space-y-4;
   }
 
-  /* Shimmer skeleton */
   .skeleton-shimmer {
-    @apply relative overflow-hidden bg-gray-200/90 dark:bg-slate-700/80;
+    @apply relative overflow-hidden bg-zinc-200/80 dark:bg-zinc-800;
   }
 
   .skeleton-shimmer::after {
     content: '';
     @apply absolute inset-0 -translate-x-full;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.45),
-      transparent
-    );
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
     animation: skeleton-shimmer 1.6s ease-in-out infinite;
   }
 
   .dark .skeleton-shimmer::after {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.06),
-      transparent
-    );
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
   }
 
+  /* Buttons */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg
-      bg-emerald-600 text-white shadow-sm
-      transition-all duration-200 ease-out
-      hover:bg-emerald-700 hover:shadow-md
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2
-      dark:focus-visible:ring-offset-slate-900
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-md
+      bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]
+      transition-colors duration-150
+      hover:brightness-[0.92] dark:hover:brightness-110
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2
+      dark:focus-visible:ring-offset-zinc-950
       disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg
-      border border-gray-200 dark:border-slate-600 bg-white/90 dark:bg-slate-800/90 text-gray-700 dark:text-gray-200
-      transition-all duration-200 ease-out
-      hover:bg-gray-50 dark:hover:bg-slate-700/80 hover:border-gray-300 dark:hover:border-slate-500
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-md
+      border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200
+      transition-colors duration-150
+      hover:bg-zinc-50 dark:hover:bg-zinc-800
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]/40 focus-visible:ring-offset-2
+      dark:focus-visible:ring-offset-zinc-950
       disabled:opacity-50 disabled:pointer-events-none;
   }
 
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md
+      text-zinc-600 dark:text-zinc-400
+      transition-colors duration-150
+      hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]/30;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-md
+      bg-red-600 text-white transition-colors duration-150 hover:bg-red-700
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2
+      dark:focus-visible:ring-offset-zinc-950 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .icon-btn {
+    @apply inline-flex items-center justify-center p-2 rounded-md text-zinc-500 dark:text-zinc-400
+      transition-colors duration-150
+      hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]/30;
+  }
+
+  /* Sidebar navigation */
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-zinc-600 dark:text-zinc-400
+      transition-colors duration-150
+      hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-zinc-900 dark:hover:text-zinc-100;
+  }
+
+  .sidebar-nav-item-active {
+    @apply bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50;
+  }
+
+  .sidebar-nav-item-active-indicator {
+    @apply border-l-[3px] border-l-[hsl(var(--primary))] pl-[calc(0.75rem-3px)];
+  }
+
+  /* Collapsed sidebar: icon-only, centered (no left-border offset) */
+  .sidebar-nav-item-icon {
+    @apply flex items-center justify-center w-full min-w-0 p-2 rounded-md text-zinc-600 dark:text-zinc-400
+      transition-colors duration-150
+      hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-zinc-900 dark:hover:text-zinc-100;
+  }
+
+  .sidebar-nav-item-icon-active {
+    @apply bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50
+      ring-1 ring-inset ring-[hsl(var(--primary))]/30;
+  }
+
+  .sidebar-subnav-item {
+    @apply flex items-center gap-2.5 px-3 py-2 text-sm rounded-md text-zinc-500 dark:text-zinc-400
+      transition-colors duration-150
+      hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-zinc-900 dark:hover:text-zinc-100;
+  }
+
+  .sidebar-subnav-item-active {
+    @apply bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium;
+  }
+
+  /* Segmented section tabs (Input, Analytics) */
+  .segmented-nav {
+    @apply flex flex-col sm:flex-row sm:flex-wrap gap-1 p-1 rounded-lg
+      bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-700;
+  }
+
+  .segmented-nav-item {
+    @apply flex-1 min-w-[9rem] text-left px-4 py-3 rounded-md text-sm transition-colors duration-150;
+  }
+
+  .segmented-nav-item-inactive {
+    @apply text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100
+      hover:bg-white/70 dark:hover:bg-zinc-700/50;
+  }
+
+  .segmented-nav-item-active {
+    @apply bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 font-medium shadow-sm ring-1 ring-zinc-200/90 dark:ring-zinc-600;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-md border;
+  }
+
+  .badge-role-admin {
+    @apply badge bg-red-50 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-200 dark:border-red-900;
+  }
+
+  .badge-role-analyst {
+    @apply badge bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/50 dark:text-sky-200 dark:border-sky-900;
+  }
+
+  .badge-role-contributor {
+    @apply badge bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900;
+  }
+
   .page-enter {
-    animation: fade-in 0.35s ease-out forwards;
+    animation: fade-in 0.25s ease-out forwards;
   }
 }
 
@@ -120,91 +227,84 @@
 }
 
 :root {
-  /* Professional Green Conservation Theme */
-  --background: 142 20% 97%;              /* Soft sage white */
-  --foreground: 150 30% 15%;              /* Deep forest green text */
-  --card: 0 0% 100%;                      /* Pure white cards */
-  --card-foreground: 150 25% 20%;         /* Dark green card text */
+  /* Neutral enterprise shell + brand green accent */
+  --background: 0 0% 98%;
+  --foreground: 240 6% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 6% 10%;
   --popover: 0 0% 100%;
-  --popover-foreground: 150 25% 20%;
-  
-  /* Primary: Professional Forest Green */
-  --primary: 152 55% 35%;                 /* Forest green */
-  --primary-foreground: 0 0% 100%;        /* White text on primary */
-  
-  /* Secondary: Earthy Sage */
-  --secondary: 142 25% 88%;               /* Light sage */
-  --secondary-foreground: 150 30% 25%;    /* Dark green text */
-  
-  /* Muted: Soft natural tones */
-  --muted: 142 20% 92%;                   /* Very light sage */
-  --muted-foreground: 150 15% 45%;        /* Medium green-gray */
-  
-  /* Accent: Vibrant eco-green */
-  --accent: 142 65% 45%;                  /* Bright conservation green */
+  --popover-foreground: 240 6% 10%;
+
+  --primary: 162 72% 28%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 6% 20%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+
+  --accent: 162 55% 38%;
   --accent-foreground: 0 0% 100%;
-  
-  /* Destructive: Natural warning red */
-  --destructive: 0 65% 50%;
+
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  
-  /* Borders & Inputs */
-  --border: 142 20% 88%;                  /* Soft sage border */
-  --input: 142 20% 95%;                   /* Light input bg */
-  --ring: 152 55% 35%;                    /* Focus ring matches primary */
+
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 162 72% 28%;
   --radius: 0.5rem;
   
   /* Custom conservation colors */
-  --eco-primary: 152 55% 35%;             /* Primary forest green */
+  --eco-primary: 152 65% 32%;             /* Primary forest green */
   --eco-light: 142 40% 92%;               /* Light sage background */
-  --eco-accent: 142 70% 50%;              /* Bright green accent */
-  --eco-dark: 150 45% 25%;                /* Deep forest */
+  --eco-accent: 142 75% 42%;              /* Bright green accent */
+  --eco-dark: 150 45% 20%;                /* Deep forest */
   --eco-muted: 142 15% 65%;               /* Muted green-gray */
   
   /* Chart colors - Professional green palette */
-  --chart-1: 152 55% 35%;                 /* Forest green */
-  --chart-2: 142 65% 45%;                 /* Bright eco green */
-  --chart-3: 168 60% 42%;                 /* Teal green */
-  --chart-4: 142 40% 60%;                 /* Sage green */
-  --chart-5: 150 35% 50%;                 /* Deep sea green */
-  --chart-6: 142 25% 70%;                 /* Light sage */
+  --chart-1: 152 65% 32%;                 /* Forest green */
+  --chart-2: 142 75% 42%;                 /* Bright eco green */
+  --chart-3: 168 65% 38%;                 /* Teal green */
+  --chart-4: 142 45% 55%;                 /* Sage green */
+  --chart-5: 150 40% 45%;                 /* Deep sea green */
+  --chart-6: 142 30% 65%;                 /* Light sage */
 }
 
 .dark {
-  /* Dark mode: Premium deep slate theme */
-  --background: 222 47% 11%;              /* Slate 900: #0f172a */
-  --foreground: 210 40% 98%;              /* Slate 50: #f8fafc */
-  --card: 222 47% 11%;                    /* Slate 900 */
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  
-  --primary: 142 60% 55%;                 /* Brighter green for dark mode */
-  --primary-foreground: 150 30% 10%;
-  
-  --secondary: 150 15% 20%;               /* Dark sage */
-  --secondary-foreground: 142 20% 85%;
-  
-  --muted: 150 15% 20%;
-  --muted-foreground: 142 15% 65%;
-  
-  --accent: 142 70% 50%;
-  --accent-foreground: 222 47% 11%;
-  
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --border: 217 33% 17%;                  /* Slate 800: #1e293b */
-  --input: 217 33% 17%;
-  --ring: 142 70% 50%;
+  --background: 240 6% 7%;
+  --foreground: 0 0% 98%;
+  --card: 240 5% 10%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 5% 10%;
+  --popover-foreground: 0 0% 98%;
+
+  --primary: 162 55% 42%;
+  --primary-foreground: 240 6% 8%;
+
+  --secondary: 240 4% 16%;
+  --secondary-foreground: 0 0% 90%;
+
+  --muted: 240 4% 16%;
+  --muted-foreground: 240 5% 65%;
+
+  --accent: 162 50% 45%;
+  --accent-foreground: 240 6% 8%;
+
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border: 240 4% 18%;
+  --input: 240 4% 18%;
+  --ring: 162 55% 42%;
   
   /* Dark mode chart colors */
-  --chart-1: 142 60% 55%;
-  --chart-2: 142 70% 60%;
-  --chart-3: 168 65% 52%;
-  --chart-4: 142 45% 65%;
-  --chart-5: 150 40% 55%;
-  --chart-6: 142 30% 75%;
+  --chart-1: 142 65% 50%;
+  --chart-2: 142 75% 55%;
+  --chart-3: 168 70% 48%;
+  --chart-4: 142 50% 60%;
+  --chart-5: 150 45% 50%;
+  --chart-6: 142 35% 70%;
 }
 
 * {
@@ -215,13 +315,17 @@ body {
   color: hsl(var(--foreground));
   background: hsl(var(--background));
   font-feature-settings: "rlig" 1, "calt" 1;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
 }
 
 /* Custom scrollbar - Green theme */
@@ -510,48 +614,8 @@ header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
   transform-origin: center;
 }
 
-/* Button styles - Green theme */
-.btn-primary {
-  background: linear-gradient(135deg, 
-    hsl(var(--primary)), 
-    hsl(152 60% 40%));
-  color: hsl(var(--primary-foreground));
-  border: none;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px hsl(var(--primary) / 0.2);
-}
-
-.btn-primary:hover {
-  background: linear-gradient(135deg, 
-    hsl(152 60% 30%), 
-    hsl(152 65% 35%));
-  box-shadow: 0 4px 12px hsl(var(--primary) / 0.3);
-  transform: translateY(-2px);
-}
-
-.btn-secondary {
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
-  border: 1px solid hsl(var(--border));
-  transition: all 0.3s ease;
-}
-
-.btn-secondary:hover {
-  background: hsl(var(--muted));
-  border-color: hsl(var(--primary));
-}
-
-/* Card styles - Professional design */
 .professional-card {
-  background: hsl(var(--card));
-  border-radius: 12px;
-  border: 1px solid hsl(var(--border));
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
-  transition: all 0.3s ease;
-}
-
-.professional-card:hover {
-  box-shadow: 0 8px 16px hsl(var(--primary) / 0.1);
+  @apply app-card;
 }
 
 /* Loading spinner - Green theme */
@@ -569,17 +633,8 @@ header button span[class*="absolute"][class*="top-0"][class*="right-0"] {
   100% { transform: rotate(360deg); }
 }
 
-/* Card hover effects */
 .card-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid hsl(var(--border));
-}
-
-.card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px -8px hsl(var(--primary) / 0.15),
-              0 4px 8px -4px hsl(var(--primary) / 0.1);
-  border-color: hsl(var(--primary) / 0.3);
+  @apply app-card app-card-interactive;
 }
 
 /* Better mobile responsiveness */

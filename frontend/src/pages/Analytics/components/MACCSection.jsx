@@ -1,5 +1,6 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
 import { DollarSign, Plus } from 'lucide-react';
+import ChartFrame from '../../../components/charts/ChartFrame';
 import { formatLargeNumber } from '../../../utils/analysisHelpers';
 import { chartAxisProps } from '../../../utils/chartTheme';
 
@@ -60,19 +61,19 @@ export default function MACCSection({
               </p>
             </div>
           </div>
-          <div className="app-card p-6">
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={maccData.opportunities} layout="vertical">
+          <div className="app-card p-6 md:p-8">
+            <ChartFrame height={400}>
+              {(width, height) => (
+                <BarChart width={width} height={height} data={maccData.opportunities} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
                   <XAxis type="number" {...chartAxisProps(rt)} />
                   <YAxis type="category" dataKey="name" width={160} {...chartAxisProps(rt)} />
                   <Tooltip />
-                  <Bar dataKey="costPerTon" fill="#10b981" />
+                  <Bar dataKey="costPerTon" fill="#10b981" isAnimationActive={false} />
                   <ReferenceLine x={0} stroke={rt.refLine} strokeWidth={2} />
                 </BarChart>
-              </ResponsiveContainer>
-            </div>
+              )}
+            </ChartFrame>
           </div>
         </>
       )}

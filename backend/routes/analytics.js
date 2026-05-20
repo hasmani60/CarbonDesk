@@ -12,6 +12,7 @@ const {
   aggregateCommuteEmissionsByMonth,
   COMMUTE_ACTIVITY_LABEL
 } = require('../services/commuteAnalyticsService');
+const { buildAnalyticsBootstrap } = require('../services/analyticsBootstrapService');
 
 const COMMUTE_PARETO_LABEL = COMMUTE_ACTIVITY_LABEL;
 
@@ -148,6 +149,22 @@ router.get('/health', async (req, res) => {
       mongodb: false,
       error: error.message
     });
+  }
+});
+
+/**
+ * Bootstrap — overview + scope migration + pareto in one request (one commute pass)
+ * GET /api/analytics/bootstrap
+ */
+router.get('/bootstrap', authenticateToken, async (req, res) => {
+  try {
+    const match = emissionMatchFromRequest(req);
+    const filters = analyticsFiltersFromRequest(req);
+    const payload = await buildAnalyticsBootstrap(match, filters, includesScope3(filters));
+    res.json({ success: true, data: payload });
+  } catch (error) {
+    console.error('Analytics bootstrap error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch analytics bootstrap' });
   }
 });
 

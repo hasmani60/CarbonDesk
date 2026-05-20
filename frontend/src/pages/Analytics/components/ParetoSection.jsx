@@ -7,9 +7,9 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
 } from 'recharts';
 import { Target, ChevronDown, ChevronUp } from 'lucide-react';
+import ChartFrame from '../../../components/charts/ChartFrame';
 import { formatLargeNumber } from '../../../utils/analysisHelpers';
 import { getChartTooltipProps, chartAxisProps } from '../../../utils/chartTheme';
 
@@ -86,43 +86,47 @@ export default function ParetoSection({
             </button>
           )}
         </div>
-        <div className="h-80 sm:h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={paretoData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-              <XAxis
-                {...chartAxisProps(rt, {
-                  dataKey: 'name',
-                  angle: -40,
-                  textAnchor: 'end',
-                  height: 100,
-                  interval: 0,
-                  tick: { fontSize: 11 }
-                })}
-              />
-              <YAxis yAxisId="left" orientation="left" {...chartAxisProps(rt)} />
-              <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
-              <Tooltip {...getChartTooltipProps(rt)} />
-              <Legend wrapperStyle={{ color: rt.legendColor }} />
-              <Bar
-                yAxisId="left"
-                dataKey="value"
-                fill="#10b981"
-                name="Emissions"
-                onClick={(data) => onDrillDown(data)}
-                cursor={!selectedParent ? 'pointer' : 'default'}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="cumulative"
-                stroke="#ef4444"
-                strokeWidth={2}
-                name="Cumulative %"
-                dot={{ r: 4 }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div className="analytics-chart-wrap">
+          <ChartFrame height={400} className="min-w-[520px]">
+            {(width, height) => (
+              <ComposedChart width={width} height={height} data={paretoData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
+                <XAxis
+                  {...chartAxisProps(rt, {
+                    dataKey: 'name',
+                    angle: -35,
+                    textAnchor: 'end',
+                    height: 88,
+                    interval: 'preserveStartEnd',
+                    tick: { fontSize: 10 }
+                  })}
+                />
+                <YAxis yAxisId="left" orientation="left" {...chartAxisProps(rt)} />
+                <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
+                <Tooltip {...getChartTooltipProps(rt)} />
+                <Legend wrapperStyle={{ color: rt.legendColor }} />
+                <Bar
+                  yAxisId="left"
+                  dataKey="value"
+                  fill="#10b981"
+                  name="Emissions"
+                  onClick={(data) => onDrillDown(data)}
+                  cursor={!selectedParent ? 'pointer' : 'default'}
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="cumulative"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  name="Cumulative %"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
+            )}
+          </ChartFrame>
         </div>
         {!selectedParent && (
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">

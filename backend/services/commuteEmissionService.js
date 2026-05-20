@@ -3,10 +3,31 @@ const { FUEL_BASED_MODES } = require('../models/Employee');
 
 const COMMUTE_CATEGORY = 'scope3_commute';
 
+/** Per-request cache — avoids repeated DB lookups during analytics bootstrap */
+let activeFactorCache = null;
+
+function cacheKey(organisationId, transportMode) {
+  return `${organisationId}:${transportMode}`;
+}
+
+async function runWithCommuteFactorCache(fn) {
+  activeFactorCache = new Map();
+  try {
+    return await fn();
+  } finally {
+    activeFactorCache = null;
+  }
+}
+
 /**
  * Fetch commute emission factor from DB (org-specific overrides global).
  */
 async function getCommuteEmissionFactor(organisationId, transportMode) {
+  const key = cacheKey(organisationId, transportMode);
+  if (activeFactorCache?.has(key)) {
+    return activeFactorCache.get(key);
+  }
+
   const baseQuery = {
     scope: 3,
     category: COMMUTE_CATEGORY,
@@ -19,7 +40,10 @@ async function getCommuteEmissionFactor(organisationId, transportMode) {
     organisation_id: organisationId
   }).lean();
 
-  if (orgFactor) return orgFactor;
+  if (orgFactor) {
+    activeFactorCache?.set(key, orgFactor);
+    return orgFactor;
+  }
 
   const globalFactor = await EmissionFactor.findOne({
     scope: 3,
@@ -33,6 +57,7 @@ async function getCommuteEmissionFactor(organisationId, transportMode) {
     ]
   }).lean();
 
+  activeFactorCache?.set(key, globalFactor);
   return globalFactor;
 }
 
@@ -40,17 +65,35 @@ async function getCommuteEmissionFactor(organisationId, transportMode) {
  * List transport modes used by org that lack a configured factor.
  */
 async function getMissingCommuteFactors(organisationId, transportModes) {
-  const uniqueModes = [...new Set(transportModes)];
-  const missing = [];
+  const uniqueModes = [...new Set(transportModes.filter(Boolean))];
+  if (!uniqueModes.length) return [];
 
-  for (const mode of uniqueModes) {
-    const factor = await getCommuteEmissionFactor(organisationId, mode);
-    if (!factor) {
-      missing.push(mode);
-    }
+  const baseQuery = {
+    scope: 3,
+    category: COMMUTE_CATEGORY,
+    subcategory: { $in: uniqueModes },
+    isActive: true
+  };
+
+  const [orgFactors, globalFactors] = await Promise.all([
+    EmissionFactor.find({ ...baseQuery, organisation_id: organisationId }).lean(),
+    EmissionFactor.find({
+      ...baseQuery,
+      $or: [
+        { organisation_id: null },
+        { organisation_id: { $exists: false } },
+        { organisation_id: '' }
+      ]
+    }).lean()
+  ]);
+
+  const covered = new Set();
+  for (const f of orgFactors) covered.add(f.subcategory);
+  for (const f of globalFactors) {
+    if (!covered.has(f.subcategory)) covered.add(f.subcategory);
   }
 
-  return missing;
+  return uniqueModes.filter((mode) => !covered.has(mode));
 }
 
 /**
@@ -119,6 +162,7 @@ function monthRangeUTC(monthStr) {
 
 module.exports = {
   COMMUTE_CATEGORY,
+  runWithCommuteFactorCache,
   getCommuteEmissionFactor,
   getMissingCommuteFactors,
   calculateCommuteEmissions,

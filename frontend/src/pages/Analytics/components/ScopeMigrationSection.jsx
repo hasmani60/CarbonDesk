@@ -1,5 +1,6 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Activity, AlertTriangle } from 'lucide-react';
+import ChartFrame from '../../../components/charts/ChartFrame';
 import ChartTooltip from './ChartTooltip';
 import { chartAxisProps, getScopeLineColors } from '../../../utils/chartTheme';
 
@@ -34,38 +35,38 @@ export default function ScopeMigrationSection({
         </div>
       )}
 
-      <div className="app-card p-6">
-        <div className="h-80 sm:h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={scopeMigrationData}>
+      <div className="app-card p-6 min-w-0">
+        <ChartFrame height={400}>
+          {(width, height) => (
+            <LineChart width={width} height={height} data={scopeMigrationData}>
               <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
               <XAxis
                 {...chartAxisProps(rt, {
                   dataKey: 'period',
-                  angle: -45,
+                  angle: -35,
                   textAnchor: 'end',
                   height: 72,
-                  tick: { fontSize: 11 }
+                  tick: { fontSize: 10 }
                 })}
               />
               <YAxis {...chartAxisProps(rt)} />
               <Tooltip content={<ChartTooltip isDark={isDark} />} />
               <Legend wrapperStyle={{ color: rt.legendColor }} />
               {(!highlightScope || highlightScope === 1) && (
-                <Line type="monotone" dataKey="scope1" stroke={scopeLineColors.scope1} strokeWidth={2} name="Scope 1" />
+                <Line type="monotone" dataKey="scope1" stroke={scopeLineColors.scope1} strokeWidth={2} name="Scope 1" dot={false} isAnimationActive={false} />
               )}
               {(!highlightScope || highlightScope === 2) && (
-                <Line type="monotone" dataKey="scope2" stroke={scopeLineColors.scope2} strokeWidth={2} name="Scope 2" />
+                <Line type="monotone" dataKey="scope2" stroke={scopeLineColors.scope2} strokeWidth={2} name="Scope 2" dot={false} isAnimationActive={false} />
               )}
               {(!highlightScope || highlightScope === 3) && (
-                <Line type="monotone" dataKey="scope3" stroke={scopeLineColors.scope3} strokeWidth={2} name="Scope 3" />
+                <Line type="monotone" dataKey="scope3" stroke={scopeLineColors.scope3} strokeWidth={2} name="Scope 3" dot={false} isAnimationActive={false} />
               )}
               {!highlightScope && (
-                <Line type="monotone" dataKey="total" stroke={isDark ? '#94a3b8' : '#64748b'} strokeWidth={2} name="Total" dot={false} />
+                <Line type="monotone" dataKey="total" stroke={isDark ? '#94a3b8' : '#64748b'} strokeWidth={2} name="Total" dot={false} isAnimationActive={false} />
               )}
             </LineChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartFrame>
       </div>
     </section>
   );

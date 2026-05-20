@@ -2,7 +2,8 @@ const Employee = require('../models/Employee');
 const EmployeeAttendance = require('../models/EmployeeAttendance');
 const {
   calculateCommuteEmissions,
-  getMissingCommuteFactors
+  getMissingCommuteFactors,
+  runWithCommuteFactorCache
 } = require('./commuteEmissionService');
 const { ensureScope3CommuteFactors } = require('./scope3CommuteFactorSeed');
 
@@ -55,20 +56,23 @@ async function aggregateCommuteEmissions(organisationId, startDate = null, endDa
   let totalCo2eKg = 0;
   let presentDays = 0;
 
-  for (const emp of employees) {
-    const empId = emp._id.toString();
-    const days = attendanceByEmployee[empId] || [];
-    const present = days.filter((d) => d.is_present);
+  const employeeResults = await Promise.all(
+    employees.map(async (emp) => {
+      if (missingFactors.includes(emp.transport_mode)) return null;
+      const empId = emp._id.toString();
+      const days = attendanceByEmployee[empId] || [];
+      try {
+        return await calculateCommuteEmissions(emp, days, organisationId);
+      } catch {
+        return null;
+      }
+    })
+  );
 
-    if (missingFactors.includes(emp.transport_mode)) continue;
-
-    try {
-      const result = await calculateCommuteEmissions(emp, days, organisationId);
-      totalCo2eKg += result.total_co2e_kg;
-      presentDays += result.present_days;
-    } catch {
-      /* skip employees that cannot be calculated */
-    }
+  for (const result of employeeResults) {
+    if (!result) continue;
+    totalCo2eKg += result.total_co2e_kg;
+    presentDays += result.present_days;
   }
 
   return {
@@ -127,13 +131,20 @@ async function aggregateCommuteEmissionsByMonth(organisationId, startDate = null
 
   const monthTotals = new Map();
 
-  for (const { period, emp, days } of Object.values(byMonthEmployeeDays)) {
-    try {
-      const result = await calculateCommuteEmissions(emp, days, organisationId);
-      monthTotals.set(period, (monthTotals.get(period) || 0) + result.total_co2e_kg);
-    } catch {
-      /* skip */
-    }
+  const monthResults = await Promise.all(
+    Object.values(byMonthEmployeeDays).map(async ({ period, emp, days }) => {
+      try {
+        const result = await calculateCommuteEmissions(emp, days, organisationId);
+        return { period, kg: result.total_co2e_kg };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  for (const row of monthResults) {
+    if (!row) continue;
+    monthTotals.set(row.period, (monthTotals.get(row.period) || 0) + row.kg);
   }
 
   return monthTotals;
@@ -250,6 +261,7 @@ function upsertCommuteInTopActivities(activities, commuteKg, limit = 3) {
 
 module.exports = {
   COMMUTE_ACTIVITY_LABEL,
+  runWithCommuteFactorCache,
   aggregateCommuteEmissions,
   aggregateCommuteEmissionsByMonth,
   includesScope3InFilters,

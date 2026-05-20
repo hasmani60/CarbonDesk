@@ -24,10 +24,12 @@ API default: `http://localhost:5001`
 
 ```bash
 cd frontend
-cp .env.example .env.local   # VITE_API_URL=http://localhost:5001/api
+cp .env.example .env   # VITE_API_URL=https://carbondesk.onrender.com/api (hosted API)
 npm install
 npm run dev
 ```
+
+Use `frontend/.env.local` only if you need to override `.env` (e.g. a different API URL).
 
 UI default: `http://localhost:5173`
 

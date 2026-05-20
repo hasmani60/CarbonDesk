@@ -223,6 +223,20 @@ const Sidebar = () => {
     return false;
   };
 
+  const getNavItemClasses = (active, { submenu = false } = {}) => {
+    if (isCollapsed) {
+      return ['sidebar-nav-item-icon w-full', active && 'sidebar-nav-item-icon-active'].filter(Boolean).join(' ');
+    }
+    return [
+      'sidebar-nav-item w-full',
+      submenu && 'justify-between',
+      active && 'sidebar-nav-item-active',
+      active && 'sidebar-nav-item-active-indicator'
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+
   const getRoleDisplay = (role) => {
     const roleMap = {
       admin: { label: 'Administrator', color: 'text-red-600', bgColor: 'bg-red-100', icon: Crown },
@@ -251,17 +265,17 @@ const Sidebar = () => {
       <div 
         className={`${
           isCollapsed ? 'w-20' : 'w-64'
-        } bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-r border-gray-200 dark:border-slate-800 shadow-glass dark:shadow-glass-dark flex flex-col transition-all duration-300 ease-in-out relative overflow-visible ${
+        } bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-[width] duration-200 ease-out relative overflow-visible ${
           isMobile ? 'fixed inset-y-0 left-0 z-40' : ''
-        }`}
+        } z-20`}
       >
         {/* Logo/Brand Section */}
-        <div className="p-4 border-b border-gray-200 dark:border-slate-800 relative">
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 relative">
           {/* Toggle Button - Desktop */}
           {!isMobile && (
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="absolute -right-3 top-6 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full p-1 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm z-10"
+              className="absolute -right-3 top-6 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full p-1 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors z-10"
             >
               {isCollapsed ? (
                 <ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-300" />
@@ -318,7 +332,7 @@ const Sidebar = () => {
 
         {/* Navigation */}
         <nav className="flex-1 py-4 overflow-x-visible overflow-y-auto">
-          <ul className={`space-y-2 ${isCollapsed ? 'px-2' : 'px-3'}`}>
+          <ul className={`space-y-0.5 ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
             {navItems.map((item) => (
               <li 
                 key={item.path}
@@ -345,46 +359,47 @@ const Sidebar = () => {
                           }
                         }
                       }}
-                      className={`w-full flex items-center px-3 py-2.5 text-sm font-medium transition-all duration-300 rounded-xl ${
-                        isActive(item.path)
-                          ? 'bg-gradient-to-r from-emerald-500/10 to-transparent dark:from-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-semibold shadow-[inset_4px_0_0_0_rgba(16,185,129,1)]'
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50/80 dark:hover:bg-slate-800/80 hover:text-gray-900 dark:hover:text-gray-200'
-                      } ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}
+                      className={getNavItemClasses(isActive(item.path), { submenu: true })}
                       title={isCollapsed ? item.label : ''}
                     >
-                      <div className={`flex items-center ${isCollapsed ? 'justify-center w-full' : 'space-x-3'}`}>
-                        <item.icon className="w-5 h-5 flex-shrink-0" />
-                        {!isCollapsed && (
-                          <>
-                            <span>{item.label}</span>
-                            {item.label === 'Admin Panel' && (
-                              <Shield className="w-3 h-3 text-red-500" />
-                            )}
-                          </>
-                        )}
-                      </div>
-                      {!isCollapsed && (
-                        <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${
-                          (item.path === '/input' && isInputExpanded) || 
-                          (item.path === '/admin' && isAdminExpanded)
-                            ? 'rotate-180' : ''
-                        }`} />
+                      {isCollapsed ? (
+                        <item.icon
+                          className={`w-[18px] h-[18px] shrink-0 ${isActive(item.path) ? 'text-[hsl(var(--primary))]' : ''}`}
+                        />
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <item.icon
+                              className={`w-[18px] h-[18px] shrink-0 ${isActive(item.path) ? 'text-[hsl(var(--primary))]' : ''}`}
+                            />
+                            <span className="truncate">{item.label}</span>
+                            {item.label === 'Admin Panel' && <Shield className="w-3 h-3 shrink-0 text-red-500" />}
+                          </div>
+                          <ChevronDown
+                            className={`w-4 h-4 shrink-0 transition-transform ${
+                              (item.path === '/input' && isInputExpanded) ||
+                              (item.path === '/admin' && isAdminExpanded)
+                                ? 'rotate-180'
+                                : ''
+                            }`}
+                          />
+                        </>
                       )}
                     </button>
                     
                     {/* Submenu - Regular (Expanded Sidebar) */}
                     {!isCollapsed && ((item.path === '/input' && isInputExpanded) || 
                       (item.path === '/admin' && isAdminExpanded)) && (
-                      <ul className="ml-8 mt-2 space-y-1 animate-slideDown">
+                      <ul className="ml-9 mt-2 space-y-2 animate-slideDown">
                         {item.submenu.map((subItem) => (
                           <li key={subItem.path}>
                             <Link
                               to={subItem.path}
-                              className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-lg transition-colors ${
+                              className={
                                 isSubmenuActive(subItem.path)
-                                  ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium'
-                                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                              }`}
+                                  ? 'sidebar-subnav-item-active sidebar-subnav-item'
+                                  : 'sidebar-subnav-item'
+                              }
                             >
                               {subItem.icon && <subItem.icon className="w-4 h-4" />}
                               <span>{subItem.label}</span>
@@ -396,14 +411,14 @@ const Sidebar = () => {
 
                     {/* Hover Submenu - Collapsed Sidebar */}
                     {isCollapsed && hoveredSubmenu === item.path && (
-                      <div className="absolute left-full top-0 ml-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-2 px-1 min-w-[160px] z-50 animate-scaleIn">
+                      <div className="absolute left-full top-0 ml-2 app-card shadow-md py-2 px-1 min-w-[180px] z-50">
                         {/* Arrow pointing to sidebar */}
                         <div className="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
                           <div className="w-2 h-2 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 transform rotate-45"></div>
                         </div>
                         
                         {/* Menu Title */}
-                        <div className="px-3 py-2 border-b border-gray-100 mb-1">
+                        <div className="px-4 py-2 border-b border-gray-100 mb-2">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                             {item.label}
                           </p>
@@ -415,11 +430,11 @@ const Sidebar = () => {
                             <Link
                               key={subItem.path}
                               to={subItem.path}
-                              className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                              className={
                                 isSubmenuActive(subItem.path)
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium'
-                                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'
-                              }`}
+                                  ? 'sidebar-subnav-item-active sidebar-subnav-item'
+                                  : 'sidebar-subnav-item'
+                              }
                             >
                               {subItem.icon && <subItem.icon className="w-4 h-4 flex-shrink-0" />}
                               <span className="whitespace-nowrap">{subItem.label}</span>
@@ -435,15 +450,13 @@ const Sidebar = () => {
                 ) : (
                   <Link
                     to={item.path}
-                    className={`flex items-center py-2.5 text-sm font-medium transition-all duration-300 rounded-xl ${
-                      isActive(item.path)
-                        ? 'bg-gradient-to-r from-emerald-500/10 to-transparent dark:from-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-semibold shadow-[inset_4px_0_0_0_rgba(16,185,129,1)]'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50/80 dark:hover:bg-slate-800/80 hover:text-gray-900 dark:hover:text-gray-200'
-                    } ${isCollapsed ? 'justify-center px-0' : 'px-3 space-x-3'}`}
+                    className={getNavItemClasses(isActive(item.path))}
                     title={isCollapsed ? item.label : ''}
                   >
-                    <item.icon className="w-5 h-5 flex-shrink-0" />
-                    {!isCollapsed && <span>{item.label}</span>}
+                    <item.icon
+                      className={`w-[18px] h-[18px] shrink-0 ${isActive(item.path) ? 'text-[hsl(var(--primary))]' : ''}`}
+                    />
+                    {!isCollapsed && <span className="truncate">{item.label}</span>}
                   </Link>
                 )}
               </li>
@@ -495,7 +508,7 @@ const Sidebar = () => {
         </nav>
 
         {/* User Profile Section */}
-        <div className={`p-4 border-t border-gray-200 dark:border-slate-800 bg-gradient-to-br from-gray-50/50 to-white/50 dark:from-slate-900 dark:to-slate-950 ${isCollapsed ? 'px-2' : ''}`}>
+        <div className={`p-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 ${isCollapsed ? 'px-2' : ''}`}>
           {!isCollapsed ? (
             <>
               <div className="flex items-center space-x-3 mb-3">

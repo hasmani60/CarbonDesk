@@ -11,12 +11,12 @@ const Breadcrumbs = () => {
   }
 
   return (
-    <nav className="flex mb-6 text-sm" aria-label="Breadcrumb">
-      <ol className="inline-flex items-center space-x-1 md:space-x-3">
+    <nav className="flex mb-4 text-xs" aria-label="Breadcrumb">
+      <ol className="inline-flex items-center flex-wrap gap-x-1 gap-y-1">
         <li className="inline-flex items-center">
           <Link
             to={`/${pathnames[0]}`}
-            className="inline-flex items-center text-gray-500 hover:text-primary-teal transition-colors capitalize font-medium"
+            className="inline-flex items-center text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors capitalize"
           >
             {pathnames[0]}
           </Link>
@@ -28,15 +28,15 @@ const Breadcrumbs = () => {
           return (
             <li key={to}>
               <div className="flex items-center">
-                <ChevronRight className="w-4 h-4 text-gray-400 mx-1" />
+                <ChevronRight className="w-3.5 h-3.5 text-zinc-400 mx-1" />
                 {isLast ? (
-                  <span className="text-gray-900 font-semibold capitalize cursor-default">
+                  <span className="text-zinc-800 dark:text-zinc-200 font-medium capitalize">
                     {value.replace(/-/g, ' ')}
                   </span>
                 ) : (
                   <Link
                     to={to}
-                    className="text-gray-500 hover:text-primary-teal transition-colors capitalize font-medium"
+                    className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors capitalize"
                   >
                     {value.replace(/-/g, ' ')}
                   </Link>

@@ -1,35 +1,35 @@
 // services/api.js - Updated API service with 429 Retry Logic and Advanced Analytics
 import axios from 'axios';
 
-// Base API configuration — must end with /api (e.g. http://localhost:5001/api)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Base API — set VITE_API_URL in frontend/.env (hosted API, e.g. https://your-app.onrender.com/api)
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
-if (!API_BASE_URL.endsWith('/api')) {
+if (!API_BASE_URL) {
   console.error(
-    'VITE_API_URL must end with /api (e.g. http://localhost:5001/api). Current value:',
-    API_BASE_URL
+    'VITE_API_URL is missing. Set it in frontend/.env (e.g. https://carbondesk.onrender.com/api).'
   );
-}
-
-if (
-  import.meta.env.DEV &&
-  typeof window !== 'undefined' &&
-  window.location.hostname === 'localhost' &&
-  /onrender\.com|vercel\.app/i.test(API_BASE_URL)
-) {
-  console.warn(
-    'VITE_API_URL points at production while you are on localhost — API calls will not hit your local backend. Use frontend/.env.local with VITE_API_URL=http://localhost:5001/api'
-  );
+} else if (!API_BASE_URL.endsWith('/api')) {
+  console.error('VITE_API_URL must end with /api. Current value:', API_BASE_URL);
 }
 
 // Create axios instance with default configuration
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 300000, // Increased from 15000 to 30000 (30 seconds)
+  baseURL: API_BASE_URL || '/api',
+  // Hosted backends (e.g. Render) can cold-start; avoid cutting requests too short
+  timeout: 120000,
   headers: {
     'Content-Type': 'application/json'
   }
 });
+
+/** Per-request timeout overrides (ms) — tuned for hosted APIs (Render cold start) */
+export const API_TIMEOUT = {
+  fast: 30000,
+  default: 120000,
+  analyticsOverview: 90000,
+  analyticsBootstrap: 120000,
+  dashboard: 90000
+};
 
 // Request interceptor to add auth token
 apiClient.interceptors.request.use(
@@ -38,7 +38,9 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('API Request:', config.method?.toUpperCase(), config.url);
+    if (import.meta.env.VITE_DEBUG_API === 'true') {
+      console.log('API Request:', config.method?.toUpperCase(), config.url);
+    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -47,8 +49,10 @@ apiClient.interceptors.request.use(
 // Response interceptor with 429 retry logic and error handling
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('API Response:', response.status, response.data);
-    
+    if (import.meta.env.VITE_DEBUG_API === 'true') {
+      console.log('API Response:', response.status, response.config?.url);
+    }
+
     if (response.data?.success !== false) {
       return response.data?.data ? response.data.data : response.data;
     } else {
@@ -231,7 +235,11 @@ export const adminAPI = {
 
 // Dashboard API
 export const dashboardAPI = {
-  getSummary: (userId) => apiClient.get('/dashboard/summary', { params: userId ? { userId } : {} }),
+  getSummary: (userId) =>
+    apiClient.get('/dashboard/summary', {
+      params: userId ? { userId } : {},
+      timeout: API_TIMEOUT.dashboard
+    }),
   getNotifications: () => apiClient.get('/dashboard/notifications'),
   getRecentActivity: () => apiClient.get('/dashboard/recent-activity')
 };
@@ -347,8 +355,13 @@ export const analyticsAPI = {
    */
   getSeasonalAnalysis: (params) => apiClient.get('/analytics/seasonal-analysis', { params }),
 
+  /** Single request: overview + scope migration + pareto */
+  getBootstrap: (params) =>
+    apiClient.get('/analytics/bootstrap', { params, timeout: API_TIMEOUT.analyticsBootstrap }),
+
   /** Organisation-wide rollup (scopes + totals) — matches GET /api/analytics/overview */
-  getOverview: (params) => apiClient.get('/analytics/overview', { params }),
+  getOverview: (params) =>
+    apiClient.get('/analytics/overview', { params, timeout: API_TIMEOUT.analyticsOverview }),
   
   getScopeMigration: (params) => apiClient.get('/analytics/scope-migration', { params }),
   getPareto: (params) => apiClient.get('/analytics/pareto', { params }),

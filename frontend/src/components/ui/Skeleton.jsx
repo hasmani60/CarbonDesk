@@ -96,25 +96,25 @@ export function SkeletonDashboard() {
 
 export function SkeletonAnalytics() {
   return (
-    <div className="max-w-7xl mx-auto pb-12 space-y-6 page-enter" aria-busy="true" aria-label="Loading analytics">
-      <div className="space-y-3">
-        <Skeleton className="h-8 w-48" rounded="rounded-md" />
-        <Skeleton className="h-4 w-64" rounded="rounded-md" />
-        <div className="flex gap-2 flex-wrap">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-28" rounded="rounded-lg" />
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="space-y-8 w-full max-w-none pb-12 page-enter" aria-busy="true" aria-label="Loading analytics">
+      <Skeleton className="h-10 w-56" rounded="rounded-md" />
+      <Skeleton className="h-4 w-72 max-w-full" rounded="rounded-md" />
+      <div className="flex flex-col sm:flex-row gap-3 p-2 rounded-2xl bg-gray-100/80 dark:bg-slate-800/60">
         {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonCard key={i} className="h-24" />
+          <Skeleton key={i} className="h-[72px] flex-1 min-w-[160px]" rounded="rounded-xl" />
         ))}
       </div>
-      <SkeletonChart height="h-72" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SkeletonChart height="h-64" />
-        <SkeletonChart height="h-64" />
+      <div className="input-section-panel premium-glass-panel p-6 md:p-8 space-y-8 min-h-[50vh]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} className="h-28" />
+          ))}
+        </div>
+        <SkeletonChart height="h-96" />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          <SkeletonChart height="h-96" />
+          <SkeletonChart height="h-96" />
+        </div>
       </div>
     </div>
   );

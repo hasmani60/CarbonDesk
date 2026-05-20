@@ -1,5 +1,5 @@
 // Enhanced ActivityContext.jsx with integrated admin monitoring and user activity tracking
-import { createContext, useContext, useCallback, useEffect } from 'react';
+import { createContext, useContext, useCallback, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { activityAPI } from '../services/api';
 
@@ -43,11 +43,12 @@ export const ActivityProvider = ({ children }) => {
   const logActivity = useCallback(async (action, resourceType = null, resourceId = null, details = null, additionalData = {}) => {
     if (!user) return;
 
+    const isPageView = action === 'page_view';
+
     try {
       const timestamp = new Date().toISOString();
       const sessionId = getOrCreateSessionId();
-      const browserInfo = getBrowserInfo();
-      
+
       const activityData = {
         id: generateUniqueId(),
         user: {
@@ -55,67 +56,48 @@ export const ActivityProvider = ({ children }) => {
           name: user.name,
           role: user.role,
           email: user.email,
-          organisation_id: user.organisation_id || user.organizationId || null  // ← ADD THIS LINE
+          organisation_id: user.organisation_id || user.organizationId || null
         },
-        organisation_id: user.organisation_id || user.organizationId || null,  // ← ADD THIS LINE
+        organisation_id: user.organisation_id || user.organizationId || null,
         action,
         resourceType,
         resourceId,
         details,
         timestamp,
         sessionId,
-        ipAddress: await getClientIP(),
+        ipAddress: isPageView ? undefined : await getClientIP(),
         userAgent: navigator.userAgent,
         url: window.location.pathname + window.location.search,
         referrer: document.referrer,
-        browserInfo,
-        screenResolution: `${window.screen.width}x${window.screen.height}`,
+        browserInfo: isPageView ? undefined : getBrowserInfo(),
+        screenResolution: isPageView ? undefined : `${window.screen.width}x${window.screen.height}`,
         severity: classifyActivitySeverity(action),
         category: categorizeActivity(action),
         ...additionalData
       };
 
-      // Store in localStorage for immediate access and offline scenarios
-      const localActivities = JSON.parse(localStorage.getItem('user_activities') || '[]');
-      localActivities.push(activityData);
-      
-      // Keep only last 500 activities in localStorage to prevent storage overflow
-      if (localActivities.length > 500) {
-        localActivities.splice(0, localActivities.length - 500);
-      }
-      
-      localStorage.setItem('user_activities', JSON.stringify(localActivities));
-
-      // Dispatch custom event for real-time updates in admin panel and other components
-      window.dispatchEvent(new CustomEvent('user-activity-logged', {
-        detail: { 
-          activity: activityData, 
-          user: user,
-          timestamp: new Date(),
-          isRealTime: true
+      if (!isPageView) {
+        const localActivities = JSON.parse(localStorage.getItem('user_activities') || '[]');
+        localActivities.push(activityData);
+        if (localActivities.length > 500) {
+          localActivities.splice(0, localActivities.length - 500);
         }
-      }));
+        localStorage.setItem('user_activities', JSON.stringify(localActivities));
 
-      // Also trigger a user-specific event
-      window.dispatchEvent(new CustomEvent(`user-activity-${user.id}`, {
-        detail: activityData
-      }));
-
-      // Try to send to backend API (non-blocking)
-      try {
-        await sendActivityToBackend(activityData);
-      } catch (error) {
-        console.warn('Backend activity logging failed (non-critical):', error);
-        // Store in a separate queue for retry later
-        queueFailedActivity(activityData);
+        window.dispatchEvent(
+          new CustomEvent('user-activity-logged', {
+            detail: { activity: activityData, user, timestamp: new Date(), isRealTime: true }
+          })
+        );
+        window.dispatchEvent(new CustomEvent(`user-activity-${user.id}`, { detail: activityData }));
+        updateSessionActivityCount();
       }
 
-      // Update session activity counter
-      updateSessionActivityCount();
-
+      void sendActivityToBackend(activityData).catch(() => {
+        if (!isPageView) queueFailedActivity(activityData);
+      });
     } catch (error) {
       console.warn('Failed to log activity:', error);
-      // Don't throw error as this is non-critical functionality
     }
   }, [user]);
 
@@ -125,8 +107,7 @@ const sendActivityToBackend = async (activityData) => {
   if (!token) return;
 
   try {
-    const result = await activityAPI.logActivity(activityData);
-    console.log('Activity logged to backend:', result);
+    await activityAPI.logActivity(activityData);
   } catch (error) {
     // Activity logging is non-critical, don't throw or block UI
     console.warn('Backend activity logging failed (non-critical):', error.message);
@@ -677,30 +658,42 @@ const sendActivityToBackend = async (activityData) => {
     }
   }, []);
 
-  const value = {
-    // Core logging function
-    logActivity,
-    
-    // Specific logging functions
-    logPageView,
-    logUserLogin,
-    logUserLogout,
-    logEmissionAction,
-    logAdminAction,
-    logSecurityEvent,
-    logFormSubmission,
-    logDataExport,
-    logSearch,
-    
-    // Data retrieval functions
-    getRecentActivities,
-    getActivitySummaryForAdmin,
-    getActivityStats,
-    clearLocalActivities,
-    
-    // Utility functions
-    retryFailedActivities
-  };
+  const value = useMemo(
+    () => ({
+      logActivity,
+      logPageView,
+      logUserLogin,
+      logUserLogout,
+      logEmissionAction,
+      logAdminAction,
+      logSecurityEvent,
+      logFormSubmission,
+      logDataExport,
+      logSearch,
+      getRecentActivities,
+      getActivitySummaryForAdmin,
+      getActivityStats,
+      clearLocalActivities,
+      retryFailedActivities
+    }),
+    [
+      logActivity,
+      logPageView,
+      logUserLogin,
+      logUserLogout,
+      logEmissionAction,
+      logAdminAction,
+      logSecurityEvent,
+      logFormSubmission,
+      logDataExport,
+      logSearch,
+      getRecentActivities,
+      getActivitySummaryForAdmin,
+      getActivityStats,
+      clearLocalActivities,
+      retryFailedActivities
+    ]
+  );
 
   return (
     <ActivityContext.Provider value={value}>
