@@ -375,7 +375,7 @@ const Dashboard = () => {
       <div className="space-y-6">
         <PageHeader 
           title="Dashboard"
-          breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
+          breadcrumb={[{ label: 'Home', href: '/dashboard' }, { label: 'Dashboard' }]}
         />
         
         <div className="app-card p-12 text-center">

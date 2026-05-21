@@ -30,6 +30,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
 import { monitorAPI, emissionsAPI, employeesAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
+import KpiCard from '../../components/ui/KpiCard';
 import {
   getDisplayedActivityQuantity,
   getDisplayedCo2e,
@@ -89,9 +90,6 @@ const Monitor = () => {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ amount: '', status: '' });
   const [isSaving, setIsSaving] = useState(false);
-
-  // Backend URL
-  const BACKEND_URL = 'http://localhost:5001';
 
   /** Always points to latest fetch — avoids stale closures on background intervals. */
   const loadActivitiesRef = useRef(async () => {});
@@ -631,24 +629,25 @@ const Monitor = () => {
   if (!loading && pagination.totalItems === 0 && activeTab === 'activities') {
     return (
       <div className="space-y-6">
-        <PageHeader 
-          title="Monitor - Real-time Activity Tracking"
+        <PageHeader
+          eyebrow="Operations"
+          title="Monitor"
+          subtitle="Real-time activity tracking across your organisation."
           breadcrumb={[
-            { label: 'App', href: '/' },
+            { label: 'Home', href: '/dashboard' },
             { label: 'Monitor' }
           ]}
-          action={isAdmin && (
-            <button
-              onClick={() => setShowTaskModal(true)}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 inline-flex items-center space-x-2"
-            >
-              <Users className="w-4 h-4" />
-              <span>Assign Task</span>
-            </button>
-          )}
+          action={
+            isAdmin ? (
+              <button type="button" onClick={() => setShowTaskModal(true)} className="btn-primary">
+                <Users className="w-4 h-4" />
+                <span>Assign task</span>
+              </button>
+            ) : null
+          }
         />
-        
-        <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-12 text-center">
+
+        <div className="app-card p-12 text-center">
           <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Activities Found</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-2">
@@ -673,138 +672,97 @@ const Monitor = () => {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Monitor - Real-time Activity Tracking"
+      <PageHeader
+        eyebrow="Operations"
+        title="Monitor"
+        subtitle="Real-time activity tracking across your organisation."
         breadcrumb={[
-          { label: 'App', href: '/' },
+          { label: 'Home', href: '/dashboard' },
           { label: 'Monitor' }
         ]}
+        meta={
+          user?.organisation?.name ? (
+            <span className="badge bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
+              {user.organisation.name}
+            </span>
+          ) : null
+        }
         action={
-          <div className="flex items-center space-x-3">
-            {user?.organisation?.name && (
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                {user.organisation.name}
-              </span>
-            )}
-            {isAdmin && (
-              <button
-                onClick={() => setShowTaskModal(true)}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 inline-flex items-center space-x-2"
-              >
-                <Users className="w-4 h-4" />
-                <span>Assign Task</span>
-              </button>
-            )}
-          </div>
+          isAdmin ? (
+            <button type="button" onClick={() => setShowTaskModal(true)} className="btn-primary">
+              <Users className="w-4 h-4" />
+              <span>Assign task</span>
+            </button>
+          ) : null
         }
       />
 
-      {/* Tab Navigation */}
-      <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
-        <div className="border-b dark:border-gray-700">
-          <nav className="flex space-x-8 px-6">
+      <div className="app-card overflow-hidden">
+        <nav className="monitor-tabs" aria-label="Monitor views">
+          <button
+            type="button"
+            onClick={() => setActiveTab('activities')}
+            className={activeTab === 'activities' ? 'monitor-tab monitor-tab-active' : 'monitor-tab'}
+          >
+            <Activity className="w-4 h-4" />
+            Emission activities
+          </button>
+          {isAdmin && (
             <button
-              onClick={() => setActiveTab('activities')}
-              className={`py-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'activities'
-                  ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-              }`}
+              type="button"
+              onClick={() => {
+                setActiveTab('tasks');
+                loadAllUserTasks();
+              }}
+              className={activeTab === 'tasks' ? 'monitor-tab monitor-tab-active' : 'monitor-tab'}
             >
-              <Activity className="w-4 h-4 inline mr-2" />
-              Emission Activities
+              <CheckSquare className="w-4 h-4" />
+              Task management
+              {taskStats && taskStats.pending_tasks > 0 && (
+                <span className="badge bg-red-50 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-200 dark:border-red-900">
+                  {taskStats.pending_tasks}
+                </span>
+              )}
             </button>
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setActiveTab('tasks');
-                  loadAllUserTasks();
-                }}
-                className={`py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'tasks'
-                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                }`}
-              >
-                <CheckSquare className="w-4 h-4 inline mr-2" />
-                Task Management (By User)
-                {taskStats && taskStats.pending_tasks > 0 && (
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    {taskStats.pending_tasks}
-                  </span>
-                )}
-              </button>
-            )}
-          </nav>
-        </div>
+          )}
+        </nav>
       </div>
 
       {/* Tab Content */}
       {activeTab === 'activities' && (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Emissions</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatNumber(emissionStats.total)} CO₂e
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-emerald-600" />
-              </div>
-            </div>
-            
-            <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 1</p>
-                <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-300">
-                  {formatNumber(emissionStats.scope1)}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 2</p>
-                <p className="text-2xl font-bold text-blue-900 dark:text-blue-300">
-                  {formatNumber(emissionStats.scope2)}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 3</p>
-                <p className="text-2xl font-bold text-red-900 dark:text-red-300">
-                  {formatNumber(emissionStats.scope3)}
-                </p>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <KpiCard
+              label="Total emissions"
+              value={`${formatNumber(emissionStats.total)}`}
+              hint="tCO₂e"
+              icon={TrendingUp}
+            />
+            <KpiCard label="Scope 1" value={formatNumber(emissionStats.scope1)} hint="tCO₂e" scope={1} />
+            <KpiCard label="Scope 2" value={formatNumber(emissionStats.scope2)} hint="tCO₂e" scope={2} />
+            <KpiCard label="Scope 3" value={formatNumber(emissionStats.scope3)} hint="tCO₂e" scope={3} />
           </div>
 
-          {/* Controls Section */}
-          <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <div className="app-card p-4 md:p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div className="relative w-full xl:max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search activities..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 w-80"
+                  className="w-full pl-10 pr-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]/40"
                 />
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={filters.scope}
                   onChange={(e) => handleFilterChange('scope', e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                 >
-                  <option value="all">All Scopes</option>
+                  <option value="all">All scopes</option>
                   <option value="1">Scope 1</option>
                   <option value="2">Scope 2</option>
                   <option value="3">Scope 3</option>
@@ -813,41 +771,32 @@ const Monitor = () => {
                 <select
                   value={filters.dateRange}
                   onChange={(e) => handleFilterChange('dateRange', e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                 >
-                  <option value="all">All Time</option>
-                  <option value="7days">Last 7 Days</option>
-                  <option value="30days">Last 30 Days</option>
-                  <option value="90days">Last 90 Days</option>
+                  <option value="all">All time</option>
+                  <option value="7days">Last 7 days</option>
+                  <option value="30days">Last 30 days</option>
+                  <option value="90days">Last 90 days</option>
                 </select>
 
                 <select
                   value={filters.status}
                   onChange={(e) => handleFilterChange('status', e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                 >
                   <option value="all">All status</option>
                   <option value="draft">Draft</option>
-                  <option value="submitted">Submitted (pending review)</option>
+                  <option value="submitted">Submitted</option>
                   <option value="verified">Verified</option>
                   <option value="rejected">Rejected</option>
                 </select>
-              </div>
 
-              <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={() => loadActivities({ silent: false })}
-                  className="border border-gray-300 dark:border-slate-600 px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-gray-200 transition-colors flex items-center space-x-2"
-                >
+                <button type="button" onClick={() => loadActivities({ silent: false })} className="btn-secondary">
                   <RefreshCw className="w-4 h-4" />
                   <span>Refresh</span>
                 </button>
 
-                <button
-                  onClick={() => handleExport('csv')}
-                  className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors flex items-center space-x-2"
-                >
+                <button type="button" onClick={() => handleExport('csv')} className="btn-primary">
                   <Download className="w-4 h-4" />
                   <span>Export</span>
                 </button>
@@ -856,7 +805,7 @@ const Monitor = () => {
           </div>
 
           {/* Activity Table */}
-          <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 overflow-hidden">
+          <div className="app-card overflow-hidden">
             <div className="px-6 py-4 border-b dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activities</h3>
@@ -1068,7 +1017,7 @@ const Monitor = () => {
           {/* Task Stats */}
           {taskStats && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+              <div className="app-card p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Tasks</p>
@@ -1077,7 +1026,7 @@ const Monitor = () => {
                   <CheckSquare className="w-8 h-8 text-gray-600 dark:text-gray-400" />
                 </div>
               </div>
-              <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+              <div className="app-card p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Pending</p>
@@ -1086,7 +1035,7 @@ const Monitor = () => {
                   <Clock className="w-8 h-8 text-yellow-600" />
                 </div>
               </div>
-              <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+              <div className="app-card p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">In Progress</p>
@@ -1095,7 +1044,7 @@ const Monitor = () => {
                   <Activity className="w-8 h-8 text-blue-600" />
                 </div>
               </div>
-              <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50 p-4">
+              <div className="app-card p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
@@ -1108,7 +1057,7 @@ const Monitor = () => {
           )}
 
           {/* Tasks Grouped by User */}
-          <div className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl transition-all duration-300 shadow-glass dark:shadow-glass-dark rounded-2xl border border-white/20 dark:border-slate-700/50">
+          <div className="app-card">
             <div className="px-6 py-4 border-b dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Tasks by User</h3>

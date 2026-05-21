@@ -129,8 +129,26 @@
     @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-[hsl(var(--primary))] mb-1;
   }
 
+  .page-header {
+    @apply relative isolate w-full clear-both;
+  }
+
   .page-title {
-    @apply font-display text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+    @apply font-display text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 break-words;
+  }
+
+  .monitor-tabs {
+    @apply flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800 px-2 sm:px-4;
+  }
+
+  .monitor-tab {
+    @apply inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors
+      border-transparent text-zinc-500 dark:text-zinc-400
+      hover:text-zinc-800 dark:hover:text-zinc-200;
+  }
+
+  .monitor-tab-active {
+    @apply border-[hsl(var(--primary))] text-[hsl(var(--primary))] dark:text-[hsl(var(--primary))];
   }
 
   .section-title {
