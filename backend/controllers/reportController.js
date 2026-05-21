@@ -5,7 +5,24 @@ const {
   assertCanGenerateReport,
   getOrganisationQuota
 } = require('../services/aiReportQuotaService');
+const { getReportEngine, enqueueReportGeneration } = require('../services/reportLlmService');
 const logger = require('../utils/logger');
+
+function normalizeReportError(error) {
+  if (error == null) return null;
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object') {
+    return (
+      error.message ||
+      error.error?.message ||
+      (error.status === 429
+        ? 'AI provider rate limit (429). Enable backend OpenRouter on Render or add batching/delay in n8n.'
+        : null) ||
+      JSON.stringify(error).slice(0, 500)
+    );
+  }
+  return String(error);
+}
 
 const ALLOWED_STATUS = ['pending', 'processing', 'completed', 'failed'];
 
@@ -26,6 +43,21 @@ const getReportQuota = async (req, res) => {
     res.json({ success: true, data: quota });
   } catch (error) {
     logger.error('getReportQuota error', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getReportEngineInfo = async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        engine: getReportEngine(),
+        backendConfigured: getReportEngine() === 'backend'
+      }
+    });
+  } catch (error) {
+    logger.error('getReportEngineInfo error', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -60,6 +92,11 @@ const generateReport = async (req, res) => {
       }
     });
 
+    const engine = getReportEngine();
+    if (engine === 'backend') {
+      enqueueReportGeneration(report._id.toString());
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -67,13 +104,17 @@ const generateReport = async (req, res) => {
         status: report.status,
         filters: report.filters,
         createdAt: report.created_at,
+        engine,
         quota: {
           used: quota.used + 1,
           limit: quota.limit,
           remaining: Math.max(0, quota.remaining - 1)
         }
       },
-      message: 'Report generation started'
+      message:
+        engine === 'backend'
+          ? 'Report generation started (server OpenRouter)'
+          : 'Report generation started'
     });
   } catch (error) {
     logger.error('generateReport error', error);
@@ -210,7 +251,7 @@ const reportCallback = async (req, res) => {
 
     if (status) report.status = status;
     if (reportContent != null) report.reportContent = reportContent;
-    if (error != null) report.error = error;
+    if (error != null) report.error = normalizeReportError(error);
     if (metadata) {
       report.metadata = { ...(report.metadata || {}), callback: metadata };
     }
@@ -428,6 +469,7 @@ const saveChartImages = async (req, res) => {
 
 module.exports = {
   getReportQuota,
+  getReportEngineInfo,
   getFilterOptions,
   generateReport,
   prepareReportData,

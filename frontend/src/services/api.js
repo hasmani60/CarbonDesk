@@ -448,6 +448,7 @@ export const analyticsAPI = {
 // AI Reports API (async generation via n8n)
 export const reportsAPI = {
   getQuota: () => apiClient.get('/reports/quota'),
+  getEngine: () => apiClient.get('/reports/engine'),
   getFilterOptions: () => apiClient.get('/reports/filter-options'),
   generate: (filters) => apiClient.post('/reports/generate', filters),
   getById: (id) => apiClient.get(`/reports/${id}`),
