@@ -221,7 +221,7 @@ async function buildAnalyticsBootstrap(match, filters, includeCommute) {
     periods,
     overview,
     commute,
-    includeScope3
+    includeScope3: includeCommute
   });
 
   return {

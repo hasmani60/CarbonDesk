@@ -164,7 +164,11 @@ router.get('/bootstrap', authenticateToken, async (req, res) => {
     res.json({ success: true, data: payload });
   } catch (error) {
     console.error('Analytics bootstrap error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch analytics bootstrap' });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch analytics bootstrap',
+      message: process.env.NODE_ENV !== 'production' ? error.message : undefined
+    });
   }
 });
 
