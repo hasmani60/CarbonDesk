@@ -1,27 +1,21 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { TrendingUp, Database, ArrowRight } from 'lucide-react';
 import DeferredMount from '../../../components/charts/DeferredMount';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAnalytics } from '../AnalyticsContext';
-import { formatLargeNumber } from '../../../utils/analysisHelpers';
-import { getRechartsTheme, getScopePieData } from '../../../utils/chartTheme';
+import { getRechartsTheme } from '../../../utils/chartTheme';
 
-const DistributionCharts = lazy(() => import('../components/DistributionCharts'));
-const ScopeMigrationSection = lazy(() => import('../components/ScopeMigrationSection'));
-const ParetoSection = lazy(() => import('../components/ParetoSection'));
-const VelocitySection = lazy(() => import('../components/VelocitySection'));
-const MACCSection = lazy(() => import('../components/MACCSection'));
+const AnalyticsCompactDashboard = lazy(() => import('../components/AnalyticsCompactDashboard'));
 const MACCModal = lazy(() => import('../components/MACCModal'));
-const ExtendedAnalyticsPanel = lazy(() => import('../components/ExtendedAnalyticsCharts'));
 
-function SectionFallback({ height = 280 }) {
+function SectionFallback() {
   return (
     <div
-      className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800"
-      style={{ minHeight: height }}
+      className="analytics-report w-full rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden"
       aria-hidden
-    />
+    >
+      <div className="analytics-report-band opacity-60">Emissions overview</div>
+      <div className="analytics-report-body min-h-[480px] bg-zinc-50 dark:bg-zinc-900 animate-pulse" />
+    </div>
   );
 }
 
@@ -48,103 +42,24 @@ export default function AnalyticsOverviewTab() {
     extendedCharts
   } = useAnalytics();
 
-  const pieData = useMemo(() => getScopePieData(isDark, stats), [isDark, stats]);
-
   return (
-    <div className="analytics-tab-panel">
-      <section className="analytics-tab-section">
-        <h2 className="analytics-section-title">
-          <TrendingUp className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          Summary
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div className="app-card app-card-interactive p-6 md:p-7">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total emissions</p>
-            <p className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mt-1">
-              {formatLargeNumber(stats.totalEmissions)}
-            </p>
-            <p className="text-xs text-gray-500 mt-2">{stats.totalEntries} entries</p>
-          </div>
-          {[
-            { n: 1, val: stats.scope1, count: stats.scope1Count, to: '/analytics/scope-1' },
-            { n: 2, val: stats.scope2, count: stats.scope2Count, to: '/analytics/scope-2' },
-            { n: 3, val: stats.scope3, count: stats.scope3Count, to: '/analytics/scope-3' }
-          ].map(({ n, val, count, to }) => (
-            <Link key={n} to={to} className="app-card app-card-interactive p-6 md:p-7 group block">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Scope {n}</p>
-              <p className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mt-1">
-                {formatLargeNumber(val)}
-              </p>
-              <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                {count} entries
-                <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section className="analytics-tab-section">
-        <h2 className="analytics-section-title">
-          <Database className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          Distribution &amp; trend
-        </h2>
-        <DeferredMount minHeight={320}>
-          <Suspense fallback={<SectionFallback height={320} />}>
-            <DistributionCharts
-              pieData={pieData}
-              scopeMigrationData={scopeMigrationData}
-              rt={rt}
-              isDark={isDark}
-            />
-          </Suspense>
-        </DeferredMount>
-      </section>
-
-      <DeferredMount minHeight={800}>
-        <Suspense fallback={<SectionFallback height={800} />}>
-          <ExtendedAnalyticsPanel extended={extendedCharts} rt={rt} isDark={isDark} />
-        </Suspense>
-      </DeferredMount>
-
-      <DeferredMount minHeight={420}>
-        <Suspense fallback={<SectionFallback height={420} />}>
-          <ScopeMigrationSection
+    <div className="analytics-tab-panel analytics-tab-panel--compact">
+      <DeferredMount minHeight={520}>
+        <Suspense fallback={<SectionFallback />}>
+          <AnalyticsCompactDashboard
+            stats={stats}
             scopeMigrationData={scopeMigrationData}
             migrationInsights={migrationInsights}
-            rt={rt}
-            isDark={isDark}
-          />
-        </Suspense>
-      </DeferredMount>
-
-      <DeferredMount minHeight={480}>
-        <Suspense fallback={<SectionFallback height={480} />}>
-          <ParetoSection
-            title="Organisation hotspots (top categories)"
-            paretoData={paretoData.slice(0, 12)}
+            paretoData={paretoData}
             paretoInsights={paretoInsights}
             selectedParent={selectedParent}
             onDrillDown={handleDrillDown}
             onResetDrillDown={resetDrillDown}
-            rt={rt}
-            isDark={isDark}
-          />
-        </Suspense>
-      </DeferredMount>
-
-      <DeferredMount minHeight={200}>
-        <Suspense fallback={<SectionFallback height={200} />}>
-          <VelocitySection velocityData={velocityData} rt={rt} isDark={isDark} />
-        </Suspense>
-      </DeferredMount>
-
-      <DeferredMount minHeight={200}>
-        <Suspense fallback={<SectionFallback height={200} />}>
-          <MACCSection
+            extended={extendedCharts}
+            velocityData={velocityData}
             maccData={maccData}
             maccOpportunities={maccOpportunities}
-            onAddClick={() => setShowMaccModal(true)}
+            onAddMacc={() => setShowMaccModal(true)}
             rt={rt}
             isDark={isDark}
           />

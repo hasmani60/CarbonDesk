@@ -102,7 +102,7 @@ export default function AnalyticsShell() {
         }
       />
       <AnalyticsTabNav />
-      <div className="input-section-panel p-4 md:p-6 lg:p-8 w-full min-w-0 overflow-hidden">
+      <div className="input-section-panel p-2 sm:p-3 md:p-4 w-full min-w-0 overflow-hidden">
         <Outlet />
       </div>
     </div>

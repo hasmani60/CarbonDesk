@@ -43,13 +43,14 @@ function ChartCard({ title, subtitle, children, className = '' }) {
 export const StackedScopeTrendChart = memo(function StackedScopeTrendChart({
   periods,
   rt,
-  isDark
+  isDark,
+  height = 220
 }) {
   const scopeColors = getScopeLineColors(isDark);
   if (!periods?.length) return <EmptyChart message="Add emissions with dates to see scope trends." />;
 
   return (
-    <ChartFrame height={320}>
+    <ChartFrame height={height}>
       {(width, height) => (
         <BarChart width={width} height={height} data={periods}>
           <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
@@ -70,7 +71,9 @@ export const StackedScopeTrendChart = memo(function StackedScopeTrendChart({
 export const EmissionsIntensityChart = memo(function EmissionsIntensityChart({
   intensity,
   rt,
-  isDark
+  isDark,
+  height = 200,
+  showNote = true
 }) {
   const series = intensity?.series?.filter((r) => r.intensity != null) ?? [];
   if (!intensity?.hasData || !series.length) {
@@ -81,9 +84,9 @@ export const EmissionsIntensityChart = memo(function EmissionsIntensityChart({
 
   return (
     <>
-      <ChartFrame height={300}>
-        {(width, height) => (
-          <ComposedChart width={width} height={height} data={intensity.series}>
+      <ChartFrame height={height}>
+        {(width, h) => (
+          <ComposedChart width={width} height={h} data={intensity.series}>
             <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
             <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
             <YAxis yAxisId="left" {...chartAxisProps(rt)} />
@@ -104,13 +107,15 @@ export const EmissionsIntensityChart = memo(function EmissionsIntensityChart({
           </ComposedChart>
         )}
       </ChartFrame>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">{intensity.unitNote}</p>
+      {showNote && (
+        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 leading-snug">{intensity.unitNote}</p>
+      )}
     </>
   );
 });
 
 /** Phase 2 — #8 Science-based trajectory */
-export const TrajectoryChart = memo(function TrajectoryChart({ trajectory, rt, isDark }) {
+export const TrajectoryChart = memo(function TrajectoryChart({ trajectory, rt, isDark, height = 200, compact = false }) {
   const chartData = useMemo(() => {
     const hist = trajectory?.historical ?? [];
     const t15 = trajectory?.targets?.['1.5C'] ?? [];
@@ -139,19 +144,22 @@ export const TrajectoryChart = memo(function TrajectoryChart({ trajectory, rt, i
 
   return (
     <>
-      {metrics && (
-        <div className="flex flex-wrap gap-3 mb-4">
-          <span className="badge bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800">
-            Pace: {String(metrics.pace || '—').replace(/_/g, ' ')}
+      {metrics && !compact && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          <span className="analytics-inline-badge">
+            {String(metrics.pace || '—').replace(/_/g, ' ')}
           </span>
-          <span
-            className={`badge ${metrics.on_track ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}
-          >
-            {metrics.on_track ? 'On track (1.5°C)' : 'Behind 1.5°C pathway'}
+          <span className={`analytics-inline-badge ${metrics.on_track ? 'is-ok' : 'is-warn'}`}>
+            {metrics.on_track ? 'On 1.5°C path' : 'Behind 1.5°C'}
           </span>
         </div>
       )}
-      <ChartFrame height={320}>
+      {metrics && compact && (
+        <p className="text-[10px] text-zinc-500 mb-1">
+          {metrics.on_track ? 'On 1.5°C pathway' : 'Behind 1.5°C'} · {String(metrics.pace || '').replace(/_/g, ' ')}
+        </p>
+      )}
+      <ChartFrame height={height}>
         {(width, height) => (
           <LineChart width={width} height={height} data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
@@ -174,13 +182,17 @@ export const ActivityBreakdownChart = memo(function ActivityBreakdownChart({
   chartData,
   rt,
   isDark,
-  horizontal = true
+  horizontal = true,
+  height,
+  maxItems = 12
 }) {
-  const data = (chartData ?? []).slice(0, 12);
+  const data = (chartData ?? []).slice(0, maxItems);
   if (!data.length) return <EmptyChart message="No activity-level emissions in this period." />;
 
+  const chartH = height ?? Math.min(220, Math.max(140, data.length * 28));
+
   return (
-    <ChartFrame height={Math.max(280, data.length * 36)}>
+    <ChartFrame height={chartH}>
       {(width, height) => (
         <BarChart
           width={width}
@@ -210,7 +222,7 @@ export const ActivityBreakdownChart = memo(function ActivityBreakdownChart({
 });
 
 /** Phase 3 — #4 & #5 Scope 3 pies */
-export const Scope3MiniPies = memo(function Scope3MiniPies({ scope3Split, scope3Transport, rt }) {
+export const Scope3MiniPies = memo(function Scope3MiniPies({ scope3Split, scope3Transport, rt, pieHeight = 140 }) {
   const split = scope3Split?.chartData ?? [];
   const transport = scope3Transport?.chartData ?? [];
 
@@ -221,10 +233,18 @@ export const Scope3MiniPies = memo(function Scope3MiniPies({ scope3Split, scope3
   const renderPie = (title, data) => (
     <div className="min-w-0">
       <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{title}</p>
-      <ChartFrame height={220}>
+      <ChartFrame height={pieHeight}>
         {(width, height) => (
           <PieChart width={width} height={height}>
-            <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={72} isAnimationActive={false}>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={Math.min(56, height * 0.36)}
+              isAnimationActive={false}
+            >
               {data.map((_, i) => (
                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
               ))}
@@ -246,17 +266,24 @@ export const Scope3MiniPies = memo(function Scope3MiniPies({ scope3Split, scope3
 });
 
 /** Phase 4 — #9 YoY */
-export const YoYComparisonChart = memo(function YoYComparisonChart({ yoy, rt, isDark }) {
+export const YoYComparisonChart = memo(function YoYComparisonChart({ yoy, rt, isDark, height = 200, compact = false }) {
   if (!yoy?.hasData) {
     return <EmptyChart message="Need emissions across two calendar years for year-over-year comparison." />;
   }
 
   return (
     <>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-        Comparing {yoy.previousYear} vs {yoy.currentYear}
-      </p>
-      <ChartFrame height={300}>
+      {!compact && (
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Comparing {yoy.previousYear} vs {yoy.currentYear}
+        </p>
+      )}
+      {compact && (
+        <p className="text-[10px] text-zinc-500 mb-1">
+          {yoy.previousYear} vs {yoy.currentYear}
+        </p>
+      )}
+      <ChartFrame height={height}>
         {(width, height) => (
           <BarChart width={width} height={height} data={yoy.chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
@@ -274,7 +301,7 @@ export const YoYComparisonChart = memo(function YoYComparisonChart({ yoy, rt, is
 });
 
 /** Phase 4 — #11 Gross vs net */
-export const GrossNetOffsetsChart = memo(function GrossNetOffsetsChart({ grossNet, rt, isDark }) {
+export const GrossNetOffsetsChart = memo(function GrossNetOffsetsChart({ grossNet, rt, isDark, height = 180, compact = false }) {
   if (!grossNet?.hasData) {
     return <EmptyChart message="No gross emissions or offset utilisation for this reporting year." />;
   }
@@ -283,10 +310,17 @@ export const GrossNetOffsetsChart = memo(function GrossNetOffsetsChart({ grossNe
 
   return (
     <>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-        Reporting year {grossNet.reporting_year} — net: {formatLargeNumber(grossNet.net_emissions)} kg CO₂e
-      </p>
-      <ChartFrame height={260}>
+      {!compact && (
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Reporting year {grossNet.reporting_year} — net: {formatLargeNumber(grossNet.net_emissions)} kg CO₂e
+        </p>
+      )}
+      {compact && (
+        <p className="text-[10px] text-zinc-500 mb-1">
+          FY {grossNet.reporting_year} · Net {formatLargeNumber(grossNet.net_emissions)}
+        </p>
+      )}
+      <ChartFrame height={height}>
         {(width, height) => (
           <BarChart width={width} height={height} data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
@@ -309,32 +343,39 @@ export const GrossNetOffsetsChart = memo(function GrossNetOffsetsChart({ grossNe
 });
 
 /** Phase 5 — #6 Location */
-export const LocationBreakdownChart = memo(function LocationBreakdownChart({ byLocation, rt, isDark }) {
+export const LocationBreakdownChart = memo(function LocationBreakdownChart({
+  byLocation,
+  rt,
+  isDark,
+  height = 200
+}) {
   const data = byLocation?.chartData ?? [];
   if (!byLocation?.hasData) {
     return <EmptyChart message="Add a location on emission entries to compare sites." />;
   }
-  return <ActivityBreakdownChart chartData={data} rt={rt} isDark={isDark} horizontal />;
+  return (
+    <ActivityBreakdownChart chartData={data} rt={rt} isDark={isDark} horizontal height={height} maxItems={8} />
+  );
 });
 
 /** Phase 5 — #7 Data quality */
-export const DataQualityChart = memo(function DataQualityChart({ byStatus, rt, isDark }) {
+export const DataQualityChart = memo(function DataQualityChart({ byStatus, rt, isDark, height = 180 }) {
   const data = byStatus?.chartData ?? [];
   if (!byStatus?.hasData) {
     return <EmptyChart message="No emission records in this period." />;
   }
 
   return (
-    <ChartFrame height={280}>
-      {(width, height) => (
-        <BarChart width={width} height={height} data={data}>
+    <ChartFrame height={height}>
+      {(width, h) => (
+        <BarChart width={width} height={h} data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-          <XAxis {...chartAxisProps(rt, { dataKey: 'name' })} />
+          <XAxis {...chartAxisProps(rt, { dataKey: 'name', tick: { fontSize: 9 } })} />
           <YAxis yAxisId="left" {...chartAxisProps(rt)} />
           <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
           <Tooltip content={<ChartTooltip isDark={isDark} />} />
-          <Legend wrapperStyle={{ color: rt.legendColor }} />
-          <Bar yAxisId="left" dataKey="count" fill="#64748b" name="Entry count" isAnimationActive={false} />
+          <Legend wrapperStyle={{ fontSize: 10, color: rt.legendColor }} />
+          <Bar yAxisId="left" dataKey="count" fill="#64748b" name="Entries" isAnimationActive={false} />
           <Bar yAxisId="right" dataKey="value" fill="#059669" name="CO₂e" isAnimationActive={false} />
         </BarChart>
       )}
@@ -343,7 +384,13 @@ export const DataQualityChart = memo(function DataQualityChart({ byStatus, rt, i
 });
 
 /** Phase 5 — #10 Waterfall */
-export const EmissionsWaterfallChart = memo(function EmissionsWaterfallChart({ waterfall, rt, isDark }) {
+export const EmissionsWaterfallChart = memo(function EmissionsWaterfallChart({
+  waterfall,
+  rt,
+  isDark,
+  height = 200,
+  compact = false
+}) {
   const bars = useMemo(() => toWaterfallBars(waterfall?.steps), [waterfall?.steps]);
 
   if (!waterfall?.hasData) {
@@ -352,10 +399,17 @@ export const EmissionsWaterfallChart = memo(function EmissionsWaterfallChart({ w
 
   return (
     <>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-        Change from {waterfall.periodStart} to {waterfall.periodEnd}
-      </p>
-      <ChartFrame height={300}>
+      {!compact && (
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Change from {waterfall.periodStart} to {waterfall.periodEnd}
+        </p>
+      )}
+      {compact && (
+        <p className="text-[10px] text-zinc-500 mb-1">
+          {waterfall.periodStart} → {waterfall.periodEnd}
+        </p>
+      )}
+      <ChartFrame height={height}>
         {(width, height) => (
           <BarChart width={width} height={height} data={bars}>
             <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
