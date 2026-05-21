@@ -138,15 +138,13 @@ const prepareReportData = async (req, res) => {
       default_reporting_period: req.organisationSettings?.default_reporting_period
     });
 
-    const aiContext = reportDataService.buildAiReportContext(prepared);
+    const reportContext = reportDataService.buildAiReportContext(prepared);
 
-    // company_data: compact context for OpenRouter (full aggregates stay in data)
+    // Single payload for n8n / OpenRouter — do not duplicate as aiContext, company_data, or full aggregates
     res.json({
       success: true,
-      data: prepared,
-      aiContext,
-      company_data: aiContext,
-      reportId: reportId || null
+      reportId: reportId || null,
+      data: reportContext
     });
   } catch (error) {
     logger.error('prepareReportData error', error);

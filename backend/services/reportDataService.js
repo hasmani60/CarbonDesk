@@ -69,10 +69,7 @@ function buildAiReportContext(prepared) {
     summary: {
       totalCo2eKg: summary?.totalCo2eKg,
       entryCount: summary?.entryCount,
-      verifiedPercent: summary?.verifiedPercent,
-      scope1: summary?.scope1,
-      scope2: summary?.scope2,
-      scope3: summary?.scope3
+      verifiedPercent: summary?.verifiedPercent
     },
     scopeBreakdown,
     recentMonthlyEmissions: recentMonthly,
