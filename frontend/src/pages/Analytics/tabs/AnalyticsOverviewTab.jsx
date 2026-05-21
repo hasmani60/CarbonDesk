@@ -13,6 +13,7 @@ const ParetoSection = lazy(() => import('../components/ParetoSection'));
 const VelocitySection = lazy(() => import('../components/VelocitySection'));
 const MACCSection = lazy(() => import('../components/MACCSection'));
 const MACCModal = lazy(() => import('../components/MACCModal'));
+const ExtendedAnalyticsPanel = lazy(() => import('../components/ExtendedAnalyticsCharts'));
 
 function SectionFallback({ height = 280 }) {
   return (
@@ -43,7 +44,8 @@ export default function AnalyticsOverviewTab() {
     setShowMaccModal,
     handleDrillDown,
     resetDrillDown,
-    handleSaveMaccOpportunity
+    handleSaveMaccOpportunity,
+    extendedCharts
   } = useAnalytics();
 
   const pieData = useMemo(() => getScopePieData(isDark, stats), [isDark, stats]);
@@ -98,6 +100,12 @@ export default function AnalyticsOverviewTab() {
           </Suspense>
         </DeferredMount>
       </section>
+
+      <DeferredMount minHeight={800}>
+        <Suspense fallback={<SectionFallback height={800} />}>
+          <ExtendedAnalyticsPanel extended={extendedCharts} rt={rt} isDark={isDark} />
+        </Suspense>
+      </DeferredMount>
 
       <DeferredMount minHeight={420}>
         <Suspense fallback={<SectionFallback height={420} />}>

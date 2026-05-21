@@ -81,6 +81,7 @@ export default function useAnalyticsData() {
   const [maccData, setMaccData] = useState(null);
   const [maccOpportunities, setMaccOpportunities] = useState([]);
   const [showMaccModal, setShowMaccModal] = useState(false);
+  const [extendedCharts, setExtendedCharts] = useState(null);
 
   const applyMigrationPeriods = useCallback((periodData) => {
     if (!periodData?.length) {
@@ -139,6 +140,7 @@ export default function useAnalyticsData() {
       const applyCharts = () => {
         applyMigrationPeriods(data.scopeMigration?.periodData ?? []);
         applyParetoRows(data.pareto?.paretoData ?? []);
+        setExtendedCharts(data.extended ?? null);
       };
 
       if (deferCharts) {
@@ -442,7 +444,8 @@ export default function useAnalyticsData() {
         scopeMigration: { periods: scopeMigrationData, insights: migrationInsights },
         paretoAnalysis: { data: paretoData, insights: paretoInsights },
         velocity: velocityData,
-        macc: { opportunities: maccOpportunities, analysis: maccData }
+        macc: { opportunities: maccOpportunities, analysis: maccData },
+        extended: extendedCharts
       };
 
       const dataStr = JSON.stringify(exportData, null, 2);
@@ -495,6 +498,7 @@ export default function useAnalyticsData() {
     overviewStats,
     scopeMigrationData,
     scopeTrendData,
+    extendedCharts,
     migrationInsights,
     paretoGrouped,
     paretoData,

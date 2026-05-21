@@ -9,6 +9,7 @@ const {
   COMMUTE_ACTIVITY_LABEL,
   runWithCommuteFactorCache
 } = require('./commuteAnalyticsService');
+const { buildExtendedCharts } = require('./analyticsChartsService');
 
 const sumCo2 = { $sum: { $ifNull: ['$co2e', 0] } };
 
@@ -213,15 +214,21 @@ async function buildAnalyticsBootstrap(match, filters, includeCommute) {
 
   const commute = commuteBundle.total;
   const commuteByMonth = commuteBundle.byMonth;
+  const overview = buildOverviewFromScopeStats(scopeStats, commute);
+  const periods = buildScopeMigrationPeriods(periodData, commuteByMonth);
+
+  const extended = await buildExtendedCharts(match, filters, {
+    periods,
+    overview,
+    commute,
+    includeScope3
+  });
 
   return {
-    overview: buildOverviewFromScopeStats(scopeStats, commute),
-    scopeMigration: {
-      periodData: buildScopeMigrationPeriods(periodData, commuteByMonth)
-    },
-    pareto: {
-      paretoData: buildParetoData(categoryData, commute)
-    }
+    overview,
+    scopeMigration: { periodData: periods },
+    pareto: { paretoData: buildParetoData(categoryData, commute) },
+    extended
   };
 }
 

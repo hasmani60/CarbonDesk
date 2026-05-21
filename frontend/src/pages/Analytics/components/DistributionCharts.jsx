@@ -1,12 +1,10 @@
-import { memo, useMemo } from 'react';
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { memo } from 'react';
+import { PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import ChartFrame from '../../../components/charts/ChartFrame';
-import ChartTooltip from './ChartTooltip';
-import { formatLargeNumber } from '../../../utils/analysisHelpers';
-import { getChartTooltipProps, chartAxisProps } from '../../../utils/chartTheme';
+import { getChartTooltipProps } from '../../../utils/chartTheme';
+import { StackedScopeTrendChart } from './ExtendedAnalyticsCharts';
 
 function DistributionCharts({ pieData, scopeMigrationData, rt, isDark }) {
-  const lineData = useMemo(() => scopeMigrationData ?? [], [scopeMigrationData]);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
@@ -34,26 +32,11 @@ function DistributionCharts({ pieData, scopeMigrationData, rt, isDark }) {
         </ChartFrame>
       </div>
       <div className="app-card p-6 md:p-8 min-w-0">
-        <h3 className="text-lg font-heading font-semibold text-gray-900 dark:text-white mb-4">Monthly total</h3>
-        <ChartFrame height={300}>
-          {(width, height) => (
-            <LineChart width={width} height={height} data={lineData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-              <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
-              <YAxis {...chartAxisProps(rt)} />
-              <Tooltip content={<ChartTooltip isDark={isDark} />} />
-              <Line
-                type="monotone"
-                dataKey="total"
-                stroke="#10b981"
-                strokeWidth={2}
-                name="Total"
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          )}
-        </ChartFrame>
+        <h3 className="text-lg font-heading font-semibold text-gray-900 dark:text-white mb-1">
+          Monthly emissions by scope
+        </h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Stacked Scope 1, 2, and 3</p>
+        <StackedScopeTrendChart periods={scopeMigrationData} rt={rt} isDark={isDark} />
       </div>
     </div>
   );

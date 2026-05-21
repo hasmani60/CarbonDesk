@@ -13,6 +13,8 @@ import ScopeMigrationSection from '../components/ScopeMigrationSection';
 import ParetoSection from '../components/ParetoSection';
 import Scope3TransportSummary from '../../../components/Scope3TransportSummary/Scope3TransportSummary';
 import EmployeeCommuteEmissionsSummary from '../../../components/EmployeeCommuteEmissionsSummary/EmployeeCommuteEmissionsSummary';
+import { ActivityBreakdownChart } from '../components/ExtendedAnalyticsCharts';
+import { filterActivitiesByScope } from '../components/extendedChartUtils';
 
 export default function AnalyticsScopeTab({ scope }) {
   const meta = SCOPE_META[scope];
@@ -27,7 +29,13 @@ export default function AnalyticsScopeTab({ scope }) {
     paretoGrouped,
     getParetoForScope,
     getScopeShare,
+    extendedCharts,
   } = useAnalytics();
+
+  const scopeActivities = useMemo(
+    () => filterActivitiesByScope(extendedCharts?.activityBreakdown?.chartData, scope),
+    [extendedCharts, scope]
+  );
 
   const [scopePareto, setScopePareto] = useState([]);
   const [scopeInsights, setScopeInsights] = useState(null);
@@ -163,6 +171,18 @@ export default function AnalyticsScopeTab({ scope }) {
                 </BarChart>
               )}
             </ChartFrame>
+          </div>
+        </section>
+      )}
+
+      {scopeActivities.length > 0 && (
+        <section className="analytics-tab-section">
+          <h2 className="analytics-section-title">
+            <Target className="w-6 h-6 shrink-0 text-emerald-600" />
+            Top activities (Scope {scope})
+          </h2>
+          <div className="app-card p-6 md:p-8">
+            <ActivityBreakdownChart chartData={scopeActivities} rt={rt} isDark={isDark} />
           </div>
         </section>
       )}
