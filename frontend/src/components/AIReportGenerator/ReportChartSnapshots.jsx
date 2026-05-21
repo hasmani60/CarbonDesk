@@ -21,10 +21,7 @@ import {
   chartAxisProps
 } from '../../utils/chartTheme';
 import { captureChartSnapshot, wait, waitForPaint } from '../../utils/chartCapture';
-import {
-  reportFiltersToAnalyticsParams,
-  reportFiltersToScopeParams
-} from '../../utils/reportAnalyticsParams';
+import { reportFiltersToAnalyticsParams } from '../../utils/reportAnalyticsParams';
 import { scopesForReportFilters } from '../../utils/reportChartSections';
 import { formatPeriodRange } from '../../utils/formatters';
 import { SCOPE_META } from '../../pages/Analytics/scopeMeta';
@@ -194,27 +191,24 @@ const ReportChartSnapshots = forwardRef(function ReportChartSnapshots({ filters 
         setParetoData([]);
         setScopePareto({ 1: [], 2: [], 3: [] });
 
-        const [overviewRes, migrationRes, paretoRes, ...scopeParetoRes] = await Promise.all([
-          analyticsAPI.getOverview(analyticsParams),
-          analyticsAPI.getScopeMigration(analyticsParams),
-          analyticsAPI.getPareto(analyticsParams),
-          ...scopesToRender.map((s) =>
-            analyticsAPI.getPareto(reportFiltersToScopeParams(filters, s))
-          )
-        ]);
+        const bootstrap = await analyticsAPI.getBootstrap(analyticsParams);
 
         if (cancelled) return;
 
-        const periods = normalizePeriodData(migrationRes);
+        const periods = normalizePeriodData(bootstrap?.scopeMigration?.periodData);
         const nextScopePareto = { 1: [], 2: [], 3: [] };
-        scopesToRender.forEach((s, i) => {
-          nextScopePareto[s] = normalizePareto(scopeParetoRes[i]);
+
+        const allPareto = normalizePareto(bootstrap?.pareto?.paretoData);
+        scopesToRender.forEach((s) => {
+          nextScopePareto[s] = allPareto.filter((row) => Number(row.scope) === s);
         });
 
-        let overviewPareto = normalizePareto(paretoRes);
+        let overviewPareto = allPareto;
         if (!overviewPareto.length) {
           overviewPareto = mergeScopeParetoForOverview(nextScopePareto, scopesToRender);
         }
+
+        const overviewRes = bootstrap?.overview ?? bootstrap;
 
         setPeriodData(periods);
         setOverviewStats(mergeOverviewStats(overviewRes, periods));

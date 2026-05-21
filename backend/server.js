@@ -50,12 +50,16 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDevelopment ? 10000 : 1000,
+  max: isDevelopment ? 10000 : 2000,
   skip: () => isDevelopment,
-  message: { error: 'Too many requests from this IP, please try again later.' },
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    code: 'API_RATE_LIMIT'
+  },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: false,
+  // Count only failed responses so normal polling/analytics reads do not exhaust the cap
+  skipSuccessfulRequests: true,
   skipFailedRequests: false,
 });
 

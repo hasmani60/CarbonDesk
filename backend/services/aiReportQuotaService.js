@@ -2,10 +2,13 @@ const { Organisation, AIReport } = require('../models');
 const { resolveMaxAiReportsForTier } = require('../utils/organisationLimits');
 
 /**
- * Count AI report generation attempts for an organisation.
+ * Count AI report slots used (completed or in-flight — not failed/cancelled attempts).
  */
 async function countReportsUsed(organisationId) {
-  return AIReport.countDocuments({ organisation_id: organisationId });
+  return AIReport.countDocuments({
+    organisation_id: organisationId,
+    status: { $in: ['pending', 'processing', 'completed'] }
+  });
 }
 
 async function getOrganisationQuota(organisationId) {

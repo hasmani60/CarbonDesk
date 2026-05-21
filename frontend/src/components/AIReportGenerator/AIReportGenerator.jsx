@@ -24,6 +24,8 @@ import ReportGenerationProgress from '../ui/ReportGenerationProgress';
 import { SkeletonReportFilters, SkeletonChart } from '../ui/Skeleton';
 
 const POLL_MS = 4000;
+/** Set VITE_SKIP_REPORT_CHART_CAPTURE=true to test AI report without chart analytics/capture */
+const SKIP_CHART_CAPTURE = import.meta.env.VITE_SKIP_REPORT_CHART_CAPTURE === 'true';
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
 
 const STATUS_CONFIG = {
@@ -404,7 +406,15 @@ export default function AIReportGenerator() {
           clearInterval(pollRef.current);
         } else if (data.status === 'failed') {
           setShowReportViewer(false);
-          toast.error(data.error || 'Report generation failed');
+          const errText = data.error || 'Report generation failed';
+          if (/429|rate.?limit|openrouter/i.test(errText)) {
+            toast.error(
+              'AI provider rate limit (OpenRouter). Wait a few minutes and retry, or check your n8n/OpenRouter plan — this is not a daily Carbon Desk limit.',
+              { duration: 8000 }
+            );
+          } else {
+            toast.error(errText);
+          }
           clearInterval(pollRef.current);
         }
       } catch (err) {
@@ -421,6 +431,7 @@ export default function AIReportGenerator() {
       : activeReport?.metadata?.chartImages || [];
 
   useEffect(() => {
+    if (SKIP_CHART_CAPTURE) return undefined;
     if (activeReport?.status !== 'completed' || !activeReport?.id || !activeReport?.reportContent) {
       return undefined;
     }
@@ -541,8 +552,14 @@ export default function AIReportGenerator() {
       console.error(err);
       if (err.code === 'AI_REPORT_QUOTA_EXCEEDED' && err.quota) {
         setQuota(err.quota);
+        toast.error(err.message || 'AI report quota exhausted');
+      } else if (err.status === 429 || err.status === 'RATE_LIMITED') {
+        toast.error(
+          'Carbon Desk API rate limit reached. Wait 1–2 minutes, close extra tabs, and try again.'
+        );
+      } else {
+        toast.error(err.message || 'Failed to start report generation');
       }
-      toast.error(err.message || 'Failed to start report generation');
     } finally {
       setSubmitting(false);
     }
@@ -582,9 +599,11 @@ export default function AIReportGenerator() {
         style={{ opacity: 0.02, width: 720 }}
         aria-hidden
       >
-        {activeReport?.filters && (
-          <ReportChartSnapshots ref={chartCaptureRef} filters={activeReport.filters} />
-        )}
+        {activeReport?.filters &&
+          activeReport?.status === 'completed' &&
+          !SKIP_CHART_CAPTURE && (
+            <ReportChartSnapshots ref={chartCaptureRef} filters={activeReport.filters} />
+          )}
       </div>
       <div className="flex flex-wrap items-stretch gap-4">
         <div className="flex-1 min-w-[min(100%,260px)]">
