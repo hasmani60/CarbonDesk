@@ -17,8 +17,6 @@ router.get('/quota', ...orgUser, authorizeReportOrgAdmin, reportController.getRe
 
 router.get('/filter-options', ...orgUser, authorizeReportOrgAdmin, reportController.getFilterOptions);
 
-router.get('/engine', ...orgUser, authorizeReportOrgAdmin, reportController.getReportEngineInfo);
-
 router.post('/generate', ...orgUser, authorizeReportOrgAdmin, reportController.generateReport);
 
 router.post(

@@ -28,15 +28,6 @@ const POLL_MS = 4000;
 const SKIP_CHART_CAPTURE = import.meta.env.VITE_SKIP_REPORT_CHART_CAPTURE === 'true';
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
 
-function formatReportError(error) {
-  if (error == null) return 'Report generation failed';
-  if (typeof error === 'string') return error;
-  if (typeof error === 'object') {
-    return error.message || error.error?.message || JSON.stringify(error);
-  }
-  return String(error);
-}
-
 const STATUS_CONFIG = {
   pending: {
     label: 'Pending',
@@ -230,7 +221,6 @@ export default function AIReportGenerator() {
   const canGenerate = user?.role === 'admin';
 
   const [quota, setQuota] = useState(null);
-  const [reportEngine, setReportEngine] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
   const [loadingOptions, setLoadingOptions] = useState(true);
 
@@ -338,14 +328,8 @@ export default function AIReportGenerator() {
     let cancelled = false;
     (async () => {
       try {
-        const [q, engineInfo] = await Promise.all([
-          reportsAPI.getQuota(),
-          reportsAPI.getEngine().catch(() => null)
-        ]);
-        if (!cancelled) {
-          setQuota(q);
-          if (engineInfo) setReportEngine(engineInfo.engine);
-        }
+        const q = await reportsAPI.getQuota();
+        if (!cancelled) setQuota(q);
       } catch (err) {
         console.error(err);
       }
@@ -422,15 +406,10 @@ export default function AIReportGenerator() {
           clearInterval(pollRef.current);
         } else if (data.status === 'failed') {
           setShowReportViewer(false);
-          const errText = formatReportError(data.error);
-          if (/batching settings/i.test(errText)) {
+          const errText = data.error || 'Report generation failed';
+          if (/429|rate.?limit|openrouter/i.test(errText)) {
             toast.error(
-              'n8n hit OpenRouter rate limits. Set OPENROUTER_API_KEY on Render to use server-side generation with automatic retries, or add Batch Interval (ms) on the OpenRouter HTTP node in n8n.',
-              { duration: 10000 }
-            );
-          } else if (/429|rate.?limit|openrouter/i.test(errText)) {
-            toast.error(
-              'AI provider rate limit (OpenRouter). Wait a few minutes and retry, or set OPENROUTER_API_KEY on the Carbon Desk API server.',
+              'AI provider rate limit (OpenRouter). Wait a few minutes and retry, or check your n8n/OpenRouter plan — this is not a daily Carbon Desk limit.',
               { duration: 8000 }
             );
           } else {
@@ -559,22 +538,14 @@ export default function AIReportGenerator() {
         chartImages: []
       });
 
-      if (created.engine === 'backend') {
-        toast.success('Report queued — generating on the server (OpenRouter with retries)');
-      } else if (N8N_WEBHOOK_URL) {
-        try {
-          await triggerN8nWebhook(reportId, filters);
-          toast.success('Report queued — generating via n8n');
-        } catch (webhookErr) {
-          console.error(webhookErr);
-          toast.error(
-            webhookErr.message ||
-              'Report created but n8n webhook failed. Check VITE_N8N_REPORT_WEBHOOK_URL or set OPENROUTER_API_KEY on the API server.'
-          );
-        }
-      } else {
+      try {
+        await triggerN8nWebhook(reportId, filters);
+        toast.success('Report queued — generating in the background');
+      } catch (webhookErr) {
+        console.error(webhookErr);
         toast.error(
-          'No report engine configured. Set OPENROUTER_API_KEY on the API server (recommended) or VITE_N8N_REPORT_WEBHOOK_URL in the frontend.'
+          webhookErr.message ||
+            'Report created but automation webhook failed. Check n8n configuration.'
         );
       }
     } catch (err) {
@@ -784,24 +755,15 @@ export default function AIReportGenerator() {
                 />
               </CollapsibleSection>
 
-              {reportEngine === 'backend' ? (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-900 dark:text-emerald-100">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                  <p>
-                    Reports run on the Carbon Desk API with OpenRouter (automatic retries on rate
-                    limits). n8n is not required.
-                  </p>
-                </div>
-              ) : !N8N_WEBHOOK_URL ? (
+              {!N8N_WEBHOOK_URL && (
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                   <p>
-                    Set <code className="text-xs">OPENROUTER_API_KEY</code> on the API server
-                    (recommended), or <code className="text-xs">VITE_N8N_REPORT_WEBHOOK_URL</code>{' '}
-                    in the frontend for n8n.
+                    Set <code className="text-xs">VITE_N8N_REPORT_WEBHOOK_URL</code> in your
+                    frontend environment so n8n can process reports asynchronously.
                   </p>
                 </div>
-              ) : null}
+              )}
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button
