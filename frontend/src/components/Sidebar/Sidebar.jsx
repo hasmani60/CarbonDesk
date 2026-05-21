@@ -269,8 +269,8 @@ const Sidebar = () => {
           isMobile ? 'fixed inset-y-0 left-0 z-40' : ''
         } z-20`}
       >
-        {/* Logo/Brand Section */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 relative">
+        {/* Brand */}
+        <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 relative min-h-[72px]">
           {/* Toggle Button - Desktop */}
           {!isMobile && (
             <button
@@ -285,47 +285,22 @@ const Sidebar = () => {
             </button>
           )}
 
-          <div className={isCollapsed ? 'flex justify-center' : 'brand-lockup'}>
-            <div className="brand-mark" aria-hidden>
-              CD
-            </div>
-            {!isCollapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="brand-name truncate">Carbon Desk</p>
-                <p className="brand-tagline">Emissions intelligence</p>
-              </div>
-            )}
-          </div>
-          {!isCollapsed && (
-            <div className="mt-3 flex items-center gap-2 px-0.5">
-              <img
-                src={Sustain360Logo}
-                alt=""
-                className="h-5 w-auto opacity-60 dark:opacity-50 object-contain"
-                aria-hidden
-              />
-              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">by Sustain360</span>
-            </div>
-          )}
-
-          {user?.role && !isCollapsed && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="badge bg-zinc-50 text-zinc-600 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:border-zinc-700">
-                <userRoleInfo.icon className={`w-3 h-3 ${userRoleInfo.color}`} />
-                {userRoleInfo.label}
-              </span>
-              {user.role === 'contributor' && user.restrictions && (
-                <span className="text-caption text-amber-700 dark:text-amber-400">Restricted</span>
-              )}
-            </div>
-          )}
-
-          {/* Collapsed Role Indicator */}
-          {user?.role && isCollapsed && (
-            <div className="mt-2 flex justify-center">
-              <div className={`w-2 h-2 rounded-full ${userRoleInfo.bgColor}`}></div>
-            </div>
-          )}
+          <Link
+            to="/dashboard"
+            title="Carbon Desk"
+            className={
+              isCollapsed
+                ? 'flex justify-center py-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors'
+                : 'sidebar-brand-block rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors'
+            }
+          >
+            <img
+              src={Sustain360Logo}
+              alt="Carbon Desk"
+              className={isCollapsed ? 'sidebar-brand-logo' : 'sidebar-brand-logo-expanded'}
+            />
+            {!isCollapsed && <span className="brand-name">Carbon Desk</span>}
+          </Link>
         </div>
 
         {/* Navigation */}
@@ -508,6 +483,17 @@ const Sidebar = () => {
 
         {/* User Profile Section */}
         <div className={`p-4 border-t border-zinc-200 dark:border-zinc-800 ${isCollapsed ? 'px-2' : ''}`}>
+          {!isCollapsed && user?.role && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="badge bg-zinc-50 text-zinc-600 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:border-zinc-700">
+                <userRoleInfo.icon className={`w-3 h-3 ${userRoleInfo.color}`} />
+                {userRoleInfo.label}
+              </span>
+              {user.role === 'contributor' && user.restrictions && (
+                <span className="text-caption text-amber-700 dark:text-amber-400">Restricted</span>
+              )}
+            </div>
+          )}
           {!isCollapsed ? (
             <>
               <div className="flex items-center space-x-3 mb-3">
