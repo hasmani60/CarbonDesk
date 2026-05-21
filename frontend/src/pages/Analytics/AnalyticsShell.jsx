@@ -25,12 +25,16 @@ export default function AnalyticsShell() {
 
   if (error) {
     return (
-      <div className="space-y-8 w-full max-w-none">
-        <PageHeader title="Analytics" breadcrumb={[{ label: 'App', href: '/' }, { label: 'Analytics' }]} />
-        <div className="input-section-panel premium-glass-panel p-10 text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
-          <button type="button" onClick={loadAllData} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">
+      <div className="space-y-6 w-full max-w-none">
+        <PageHeader
+          eyebrow="Insights"
+          title="Analytics"
+          breadcrumb={[{ label: 'Home', href: '/dashboard' }, { label: 'Analytics' }]}
+        />
+        <div className="app-card p-10 text-center max-w-lg mx-auto">
+          <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">{error}</p>
+          <button type="button" onClick={loadAllData} className="btn-primary">
             Try again
           </button>
         </div>
@@ -40,52 +44,63 @@ export default function AnalyticsShell() {
 
   if (!overviewStats) {
     return (
-      <div className="space-y-8 w-full max-w-none">
-        <PageHeader title="Analytics" breadcrumb={[{ label: 'App', href: '/' }, { label: 'Analytics' }]} />
-        <div className="input-section-panel premium-glass-panel p-12 text-center">
-          <Database className="w-14 h-14 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Add emissions data to unlock analytics.</p>
+      <div className="space-y-6 w-full max-w-none">
+        <PageHeader
+          eyebrow="Insights"
+          title="Analytics"
+          breadcrumb={[{ label: 'Home', href: '/dashboard' }, { label: 'Analytics' }]}
+        />
+        <div className="app-card p-12 text-center max-w-md mx-auto">
+          <Database className="w-10 h-10 text-zinc-400 mx-auto mb-4" />
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Add emissions data to unlock analytics and reporting.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 w-full max-w-none pb-12">
+    <div className="space-y-6 w-full max-w-none pb-12">
       <PageHeader
+        eyebrow="Insights"
         title="Analytics"
-        breadcrumb={[{ label: 'App', href: '/' }, { label: 'Analytics' }]}
+        subtitle="Scope breakdowns, trends, and abatement opportunities for your organisation."
+        breadcrumb={[{ label: 'Home', href: '/dashboard' }, { label: 'Analytics' }]}
+        meta={
+          <>
+            {user?.organisation?.name && (
+              <span className="badge bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
+                {user.organisation.name}
+              </span>
+            )}
+            <span className="text-caption">Updated {formatDateTime(lastUpdate)}</span>
+            {refreshing && <span className="badge bg-zinc-100 text-zinc-600 border-zinc-200">Refreshing…</span>}
+            {chartsLoading && !refreshing && (
+              <span className="badge bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))] border-[hsl(var(--primary)/0.2)]">
+                Loading charts…
+              </span>
+            )}
+          </>
+        }
         action={
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={loadAllData}
               disabled={refreshing}
-              className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-slate-600 rounded-xl text-sm font-medium bg-white dark:bg-slate-800"
+              className="btn-secondary"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'motion-safe:animate-spin' : ''}`} />
               Refresh
             </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold shadow-teal-md"
-            >
+            <button type="button" onClick={handleExport} className="btn-primary">
               <Download className="w-4 h-4" />
               Export
             </button>
           </div>
         }
       />
-      <p className="text-sm text-zinc-600 dark:text-zinc-400 -mt-4 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {user?.organisation?.name && (
-          <span className="font-medium text-zinc-800 dark:text-zinc-200">{user.organisation.name}</span>
-        )}
-        {user?.organisation?.name && <span>·</span>}
-        <span>Updated {formatDateTime(lastUpdate)}</span>
-        {refreshing && <span className="text-caption">Refreshing…</span>}
-        {chartsLoading && !refreshing && <span className="text-caption">Loading charts…</span>}
-      </p>
       <AnalyticsTabNav />
       <div className="input-section-panel p-4 md:p-6 lg:p-8 w-full min-w-0 overflow-hidden">
         <Outlet />

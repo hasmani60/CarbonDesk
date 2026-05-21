@@ -591,14 +591,15 @@ const Input = () => {
   return (
     <div className="space-y-8 w-full max-w-none">
       <PageHeader
+        eyebrow="Data capture"
         title={sectionMeta.title}
+        subtitle={sectionMeta.subtitle}
         breadcrumb={[
-          { label: 'App', href: '/' },
+          { label: 'Home', href: '/dashboard' },
           { label: 'Input', href: '/input?section=emissions' },
           { label: sectionMeta.title }
         ]}
       />
-      <p className="text-sm text-gray-600 dark:text-gray-400 -mt-4">{sectionMeta.subtitle}</p>
 
       <InputSectionNav
         activeSection={activeSection}

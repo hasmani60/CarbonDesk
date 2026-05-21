@@ -265,7 +265,7 @@ const Sidebar = () => {
       <div 
         className={`${
           isCollapsed ? 'w-20' : 'w-64'
-        } bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-[width] duration-200 ease-out relative overflow-visible ${
+        } app-sidebar transition-[width] duration-200 ease-out relative overflow-visible ${
           isMobile ? 'fixed inset-y-0 left-0 z-40' : ''
         } z-20`}
       >
@@ -285,39 +285,37 @@ const Sidebar = () => {
             </button>
           )}
 
-          {/* Sustain360 Logo */}
-          <div className="flex items-center justify-center">
-            {!isCollapsed ? (
-              // Full logo when expanded
-              <img 
-                src={Sustain360Logo} 
-                alt="Sustain360" 
-                className="h-10 w-auto object-contain transition-all duration-300"
-              />
-            ) : (
-              // Compact logo icon when collapsed
-              <div className="w-10 h-10 flex items-center justify-center">
-                <img 
-                  src={Sustain360Logo} 
-                  alt="Sustain360" 
-                  className="h-8 w-8 object-contain transition-all duration-300"
-                />
+          <div className={isCollapsed ? 'flex justify-center' : 'brand-lockup'}>
+            <div className="brand-mark" aria-hidden>
+              CD
+            </div>
+            {!isCollapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="brand-name truncate">Carbon Desk</p>
+                <p className="brand-tagline">Emissions intelligence</p>
               </div>
             )}
           </div>
-          
-          {/* User Role Badge */}
+          {!isCollapsed && (
+            <div className="mt-3 flex items-center gap-2 px-0.5">
+              <img
+                src={Sustain360Logo}
+                alt=""
+                className="h-5 w-auto opacity-60 dark:opacity-50 object-contain"
+                aria-hidden
+              />
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">by Sustain360</span>
+            </div>
+          )}
+
           {user?.role && !isCollapsed && (
-            <div className="mt-3 flex items-center space-x-2">
-              <userRoleInfo.icon className={`w-4 h-4 ${userRoleInfo.color}`} />
-              <span className={`text-xs font-medium ${userRoleInfo.color}`}>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <span className="badge bg-zinc-50 text-zinc-600 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:border-zinc-700">
+                <userRoleInfo.icon className={`w-3 h-3 ${userRoleInfo.color}`} />
                 {userRoleInfo.label}
               </span>
-              {/* Show restrictions for contributors */}
               {user.role === 'contributor' && user.restrictions && (
-                <span className="text-xs text-orange-600">
-                  (Restricted)
-                </span>
+                <span className="text-caption text-amber-700 dark:text-amber-400">Restricted</span>
               )}
             </div>
           )}
@@ -331,7 +329,8 @@ const Sidebar = () => {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-4 overflow-x-visible overflow-y-auto">
+        <nav className="flex-1 py-3 overflow-x-visible overflow-y-auto">
+          {!isCollapsed && <p className="sidebar-section-label">Platform</p>}
           <ul className={`space-y-0.5 ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
             {navItems.map((item) => (
               <li 
@@ -508,11 +507,11 @@ const Sidebar = () => {
         </nav>
 
         {/* User Profile Section */}
-        <div className={`p-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 ${isCollapsed ? 'px-2' : ''}`}>
+        <div className={`p-4 border-t border-zinc-200 dark:border-zinc-800 ${isCollapsed ? 'px-2' : ''}`}>
           {!isCollapsed ? (
             <>
               <div className="flex items-center space-x-3 mb-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 bg-[hsl(var(--primary))] rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-white font-medium text-sm">
                     {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}
                   </span>
@@ -529,7 +528,7 @@ const Sidebar = () => {
             </>
           ) : (
             <div className="flex justify-center mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-full flex items-center justify-center">
+              <div className="w-9 h-9 bg-[hsl(var(--primary))] rounded-full flex items-center justify-center">
                 <span className="text-white font-medium text-sm">
                   {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}
                 </span>

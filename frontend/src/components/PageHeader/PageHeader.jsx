@@ -1,13 +1,13 @@
 import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export const PageHeader = ({ title, subtitle, breadcrumb = [], action, meta }) => {
+export const PageHeader = ({ eyebrow = 'Carbon Desk', title, subtitle, breadcrumb = [], action, meta }) => {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-2">
       <div className="min-w-0">
         {breadcrumb.length > 0 && (
           <nav
-            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400 mb-2"
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400 mb-2.5"
             aria-label="Breadcrumb"
           >
             {breadcrumb.map((item, index) => (
@@ -29,16 +29,17 @@ export const PageHeader = ({ title, subtitle, breadcrumb = [], action, meta }) =
             ))}
           </nav>
         )}
+        {eyebrow && <p className="page-eyebrow">{eyebrow}</p>}
         <h1 className="page-title">{title}</h1>
         {subtitle && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 max-w-2xl leading-relaxed">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 max-w-2xl leading-relaxed">
             {subtitle}
           </p>
         )}
-        {meta && <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-caption">{meta}</div>}
+        {meta && <div className="mt-3 flex flex-wrap items-center gap-2">{meta}</div>}
       </div>
-      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
-    </div>
+      {action && <div className="flex shrink-0 items-center gap-2 pt-1">{action}</div>}
+    </header>
   );
 };
 

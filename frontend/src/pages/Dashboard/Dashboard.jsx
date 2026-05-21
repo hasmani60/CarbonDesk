@@ -10,6 +10,8 @@ import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
+import KpiCard from '../../components/ui/KpiCard';
+import PanelHeader from '../../components/ui/PanelHeader';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
 
 const Dashboard = () => {
@@ -411,9 +413,10 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Overview"
         title={`${getGreeting()}, ${user?.name?.split(' ')[0] || 'there'}`}
         subtitle={getRoleDescription(user?.role)}
-        breadcrumb={[{ label: 'App', href: '/' }, { label: 'Dashboard' }]}
+        breadcrumb={[{ label: 'Home', href: '/dashboard' }, { label: 'Dashboard' }]}
         meta={
           <>
             {user?.organisation?.name && (
@@ -460,44 +463,41 @@ const Dashboard = () => {
 
       {/* Admin Summary (Admin Only) */}
       {isAdmin(user?.role) && adminData && (
-        <div className="app-card p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-heading font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
-              <Shield className="w-5 h-5 text-red-500" />
-              <span>System Overview</span>
-            </h2>
-            <button 
-              onClick={() => handleQuickAction('admin_panel')}
-              className="text-red-600 hover:text-red-700 text-sm font-medium"
-            >
-              View Details →
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 lg:gap-8">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">
-                {adminData.totalUsers || adminData.userStats?.total || 0}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Total Users</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">
-                {adminData.activityStats?.today || userActivityStats?.today || 0}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Activities Today</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-yellow-600">
-                {adminData.pendingReviews || adminData.emissionStats?.pending || 0}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Pending Reviews</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-purple-600">
-                {adminData.emissionStats?.total || dashboardData.totalEntries}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Total Entries</p>
-            </div>
+        <div className="app-card p-6 md:p-8">
+          <PanelHeader
+            title="Organisation pulse"
+            description="Live activity across your tenant"
+            action={
+              <button
+                type="button"
+                onClick={() => handleQuickAction('admin_panel')}
+                className="btn-ghost text-sm"
+              >
+                Admin panel →
+              </button>
+            }
+          />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
+              label="Users"
+              value={adminData.totalUsers || adminData.userStats?.total || 0}
+              icon={Users}
+            />
+            <KpiCard
+              label="Activities today"
+              value={adminData.activityStats?.today || userActivityStats?.today || 0}
+              icon={Activity}
+            />
+            <KpiCard
+              label="Pending review"
+              value={adminData.pendingReviews || adminData.emissionStats?.pending || 0}
+              icon={Shield}
+            />
+            <KpiCard
+              label="Total entries"
+              value={adminData.emissionStats?.total || dashboardData.totalEntries}
+              icon={Database}
+            />
           </div>
         </div>
       )}
@@ -511,73 +511,31 @@ const Dashboard = () => {
         />
       )}
 
-      {/* Key Metrics Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="app-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Entries</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {dashboardData.totalEntries}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Emission records</p>
-            </div>
-            <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <Database className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-            </div>
-          </div>
-        </div>
-
-        <div className="app-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 1 Entries</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {dashboardData.scope1.count}
-              </p>
-              <p className="text-xs text-emerald-600 mt-1">{formatNumber(dashboardData.scope1.total)} CO₂e</p>
-            </div>
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg">
-              <div className="w-6 h-6 bg-emerald-600 rounded flex items-center justify-center">
-                <span className="text-white text-sm font-bold">1</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="app-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 2 Entries</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {dashboardData.scope2.count}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">{formatNumber(dashboardData.scope2.total)} CO₂e</p>
-            </div>
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-              <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
-                <span className="text-white text-sm font-bold">2</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="app-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Scope 3 Entries</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {dashboardData.scope3.count}
-              </p>
-              <p className="text-xs text-red-600 mt-1">{formatNumber(dashboardData.scope3.total)} CO₂e</p>
-            </div>
-            <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
-              <div className="w-6 h-6 bg-red-600 rounded flex items-center justify-center">
-                <span className="text-white text-sm font-bold">3</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <KpiCard
+          label="Total entries"
+          value={dashboardData.totalEntries}
+          hint="Emission records"
+          icon={Database}
+        />
+        <KpiCard
+          label="Scope 1"
+          value={dashboardData.scope1.count}
+          hint={`${formatNumber(dashboardData.scope1.total)} tCO₂e`}
+          scope={1}
+        />
+        <KpiCard
+          label="Scope 2"
+          value={dashboardData.scope2.count}
+          hint={`${formatNumber(dashboardData.scope2.total)} tCO₂e`}
+          scope={2}
+        />
+        <KpiCard
+          label="Scope 3"
+          value={dashboardData.scope3.count}
+          hint={`${formatNumber(dashboardData.scope3.total)} tCO₂e`}
+          scope={3}
+        />
       </div>
 
       {/* Emission Scope Cards */}
@@ -589,9 +547,9 @@ const Dashboard = () => {
           const pieSlices = scopeData.topCategories.filter((c) => c.value > 0);
 
           return (
-            <div key={scope} className="app-card p-8">
+            <div key={scope} className="app-card app-card-interactive p-6 md:p-8">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-heading font-semibold text-gray-900 dark:text-white">
+                <h3 className="panel-title">
                   Scope {scopeNumber} Entries
                 </h3>
                 <div className="flex items-center space-x-2">

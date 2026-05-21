@@ -80,8 +80,8 @@ const Header = () => {
       .slice(0, 2) || 'U';
 
   return (
-    <header className="sticky top-0 z-40 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between gap-4 px-6 md:px-8 h-14">
+    <header className="app-topbar">
+      <div className="flex items-center justify-between gap-4 px-5 md:px-8 h-14 max-w-[1680px] mx-auto w-full">
         <nav className="hidden md:flex items-center gap-2">
           <Link to="/input" className="btn-primary">
             <PlusCircle className="w-4 h-4" />

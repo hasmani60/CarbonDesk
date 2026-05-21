@@ -34,8 +34,10 @@ const UserManagement = lazy(() => import('./pages/Admin/UserManagement'));
 
 function PageFallback() {
   return (
-    <div className="flex min-h-[40vh] items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3">
+      <div className="brand-mark">CD</div>
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-[hsl(var(--primary))] border-t-transparent" />
+      <p className="text-caption">Loading…</p>
     </div>
   );
 }

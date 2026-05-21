@@ -4,34 +4,137 @@
 @import 'tailwindcss/utilities';
 
 @layer components {
+  /* —— App shell (Carbon Desk) —— */
+  .app-shell {
+    @apply flex h-screen min-w-0 text-zinc-900 dark:text-zinc-100 antialiased;
+    background-color: hsl(var(--background));
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.35) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .dark .app-shell {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px);
+  }
+
+  .app-main {
+    @apply relative flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-5 py-6 md:px-8 md:py-8;
+  }
+
+  .app-sidebar {
+    @apply flex flex-col bg-white dark:bg-zinc-950 border-r border-zinc-200/80 dark:border-zinc-800/80;
+  }
+
+  .app-topbar {
+    @apply sticky top-0 z-40 h-14 shrink-0 border-b border-zinc-200/80 dark:border-zinc-800/80
+      bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md;
+  }
+
+  /* Brand */
+  .brand-lockup {
+    @apply flex items-center gap-3 min-w-0;
+  }
+
+  .brand-mark {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg
+      bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]
+      font-display text-xs font-bold tracking-tight shadow-sm;
+  }
+
+  .brand-name {
+    @apply font-display text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none;
+  }
+
+  .brand-tagline {
+    @apply text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-500 mt-1;
+  }
+
   /* Surfaces */
   .app-card {
-    @apply bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/90 dark:border-zinc-800 shadow-sm;
+    @apply bg-white dark:bg-zinc-900/80 rounded-xl border border-zinc-200/90 dark:border-zinc-800
+      shadow-[0_1px_2px_rgba(0,0,0,0.04)];
   }
 
   .app-card-interactive {
-    @apply motion-safe:transition-[box-shadow,border-color] motion-safe:duration-150
-      motion-safe:hover:border-zinc-300 dark:motion-safe:hover:border-zinc-700
-      motion-reduce:transition-none;
+    @apply motion-safe:transition-[border-color,box-shadow] motion-safe:duration-200
+      motion-safe:hover:border-zinc-300/90 dark:motion-safe:hover:border-zinc-700
+      motion-safe:hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] motion-reduce:transition-none;
   }
 
   .premium-glass-panel,
   .input-section-panel {
-    @apply bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden;
+    @apply bg-white dark:bg-zinc-900/90 rounded-xl border border-zinc-200/90 dark:border-zinc-800
+      shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden;
   }
 
   .premium-card-hover {
-    @apply motion-safe:transition-[border-color,box-shadow] motion-safe:duration-150
-      motion-safe:hover:border-zinc-300 dark:motion-safe:hover:border-zinc-700 motion-reduce:transition-none;
+    @apply app-card-interactive;
+  }
+
+  /* KPI & panels */
+  .kpi-card {
+    @apply app-card p-5;
+  }
+
+  .kpi-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400;
+  }
+
+  .kpi-value {
+    @apply mt-1 font-display text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 tabular-nums;
+  }
+
+  .kpi-hint {
+    @apply mt-1 text-xs font-medium text-[hsl(var(--primary))];
+  }
+
+  .kpi-icon-wrap {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg
+      bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400;
+  }
+
+  .panel-header {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-6;
+  }
+
+  .panel-title {
+    @apply font-display text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+  }
+
+  .panel-description {
+    @apply text-sm text-zinc-500 dark:text-zinc-400 mt-0.5;
+  }
+
+  .scope-pill {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold text-white;
+  }
+
+  .scope-pill-1 {
+    @apply bg-emerald-700 dark:bg-emerald-600;
+  }
+
+  .scope-pill-2 {
+    @apply bg-sky-700 dark:bg-sky-600;
+  }
+
+  .scope-pill-3 {
+    @apply bg-amber-700 dark:bg-amber-600;
   }
 
   /* Typography */
+  .page-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-[hsl(var(--primary))] mb-1;
+  }
+
   .page-title {
-    @apply text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+    @apply font-display text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
   }
 
   .section-title {
-    @apply text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+    @apply font-display text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
   }
 
   .text-caption {
@@ -39,7 +142,7 @@
   }
 
   .font-heading {
-    @apply font-semibold tracking-tight;
+    @apply font-display font-semibold tracking-tight;
   }
 
   .analytics-section-title {
@@ -79,10 +182,10 @@
 
   /* Buttons */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium rounded-md
-      bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]
-      transition-colors duration-150
-      hover:brightness-[0.92] dark:hover:brightness-110
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg
+      bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-sm
+      transition-[filter,transform] duration-150
+      hover:brightness-[0.94] active:scale-[0.98]
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2
       dark:focus-visible:ring-offset-zinc-950
       disabled:opacity-50 disabled:pointer-events-none;
@@ -128,11 +231,15 @@
   }
 
   .sidebar-nav-item-active {
-    @apply bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50;
+    @apply bg-[hsl(var(--primary)/0.08)] dark:bg-[hsl(var(--primary)/0.15)] text-zinc-900 dark:text-zinc-50;
   }
 
   .sidebar-nav-item-active-indicator {
     @apply border-l-[3px] border-l-[hsl(var(--primary))] pl-[calc(0.75rem-3px)];
+  }
+
+  .sidebar-section-label {
+    @apply px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 dark:text-zinc-500;
   }
 
   /* Collapsed sidebar: icon-only, centered (no left-border offset) */
@@ -143,8 +250,8 @@
   }
 
   .sidebar-nav-item-icon-active {
-    @apply bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50
-      ring-1 ring-inset ring-[hsl(var(--primary))]/30;
+    @apply bg-[hsl(var(--primary)/0.12)] dark:bg-[hsl(var(--primary)/0.2)] text-[hsl(var(--primary))]
+      ring-1 ring-inset ring-[hsl(var(--primary))]/35;
   }
 
   .sidebar-subnav-item {
@@ -159,8 +266,8 @@
 
   /* Segmented section tabs (Input, Analytics) */
   .segmented-nav {
-    @apply flex flex-col sm:flex-row sm:flex-wrap gap-1 p-1 rounded-lg
-      bg-zinc-100 dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-700;
+    @apply flex flex-col sm:flex-row sm:flex-wrap gap-1 p-1.5 rounded-xl
+      bg-zinc-100/80 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800;
   }
 
   .segmented-nav-item {
@@ -173,7 +280,10 @@
   }
 
   .segmented-nav-item-active {
-    @apply bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 font-medium shadow-sm ring-1 ring-zinc-200/90 dark:ring-zinc-600;
+    @apply bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 font-semibold shadow-sm
+      ring-1 ring-zinc-200/90 dark:ring-zinc-700
+      border border-transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   }
 
   .badge {
@@ -227,15 +337,15 @@
 }
 
 :root {
-  /* Neutral enterprise shell + brand green accent */
-  --background: 0 0% 98%;
-  --foreground: 240 6% 10%;
+  /* Carbon Desk — climate SaaS */
+  --background: 150 20% 97%;
+  --foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 240 6% 10%;
+  --card-foreground: 222 47% 11%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 6% 10%;
+  --popover-foreground: 222 47% 11%;
 
-  --primary: 162 72% 28%;
+  --primary: 161 84% 30%;
   --primary-foreground: 0 0% 100%;
 
   --secondary: 240 5% 96%;
@@ -314,18 +424,16 @@
 body {
   color: hsl(var(--foreground));
   background: hsl(var(--background));
-  font-feature-settings: "rlig" 1, "calt" 1;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  font-size: 16px;
-  line-height: 1.6;
+  font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  @apply font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
+  @apply font-display font-semibold tracking-tight text-zinc-900 dark:text-zinc-50;
 }
 
 /* Custom scrollbar - Green theme */
