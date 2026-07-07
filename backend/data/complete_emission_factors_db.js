@@ -232,17 +232,72 @@ const emissionFactors = {
   },
 
   scope2: {
-    // ==================== UK ELECTRICITY ====================
+    // ==================== INDIAN GRID ELECTRICITY (CEA) ====================
+    "Indian Grid Electricity": {
+      "Grid Electricity (kWh)": {
+        factor: 0.710,
+        unit: "kWh",
+        co2: 0.710,
+        ch4: 0,
+        n2o: 0,
+        description: "CEA FY 2024-25 weighted average Indian grid (0.710 tCO2/MWh = 0.710 kgCO2/kWh)",
+        source: "Central Electricity Authority (CEA)",
+        financialYear: "2024-25",
+        dataset: "Weighted Average Emission Factor (Considering Renewable Energy Generation) of Indian Grid"
+      }
+    },
+
+    // ==================== UK ELECTRICITY (legacy category name; CEA Indian grid factor) ====================
     "UK Electricity": {
-      "Grid Electricity (kWh)": { factor: 0.21233, unit: "kWh", co2: 0.21073, ch4: 0.0000421, n2o: 0.0015581, description: "UK grid electricity 2023" },
-      "Grid Electricity - Location Based (kWh)": { factor: 0.21233, unit: "kWh", co2: 0.21073, ch4: 0.0000421, n2o: 0.0015581, description: "UK grid - location based accounting" },
+      "Grid Electricity (kWh)": {
+        factor: 0.710,
+        unit: "kWh",
+        co2: 0.710,
+        ch4: 0,
+        n2o: 0,
+        description: "CEA FY 2024-25 weighted average Indian grid (0.710 tCO2/MWh = 0.710 kgCO2/kWh)",
+        source: "Central Electricity Authority (CEA)",
+        financialYear: "2024-25",
+        dataset: "Weighted Average Emission Factor (Considering Renewable Energy Generation) of Indian Grid"
+      },
+      "Grid Electricity - Location Based (kWh)": {
+        factor: 0.710,
+        unit: "kWh",
+        co2: 0.710,
+        ch4: 0,
+        n2o: 0,
+        description: "CEA FY 2024-25 Indian grid - location based accounting",
+        source: "Central Electricity Authority (CEA)",
+        financialYear: "2024-25",
+        dataset: "Weighted Average Emission Factor (Considering Renewable Energy Generation) of Indian Grid"
+      },
       "Grid Electricity - Market Based (kWh)": { factor: 0.39355, unit: "kWh", co2: 0.39070, ch4: 0.0000780, n2o: 0.0028875, description: "UK grid - market based (residual mix)" }
     },
 
     // ==================== UK ELECTRICITY FOR EVs ====================
     "UK Electricity for Electric Vehicles": {
-      "Grid Electricity for EVs (kWh)": { factor: 0.21233, unit: "kWh", co2: 0.21073, ch4: 0.0000421, n2o: 0.0015581, description: "UK grid electricity for EV charging" },
-      "Grid Electricity for EVs - Location Based (kWh)": { factor: 0.21233, unit: "kWh", co2: 0.21073, ch4: 0.0000421, n2o: 0.0015581, description: "EV charging - location based" },
+      "Grid Electricity for EVs (kWh)": {
+        factor: 0.710,
+        unit: "kWh",
+        co2: 0.710,
+        ch4: 0,
+        n2o: 0,
+        description: "CEA FY 2024-25 Indian grid electricity for EV charging",
+        source: "Central Electricity Authority (CEA)",
+        financialYear: "2024-25",
+        dataset: "Weighted Average Emission Factor (Considering Renewable Energy Generation) of Indian Grid"
+      },
+      "Grid Electricity for EVs - Location Based (kWh)": {
+        factor: 0.710,
+        unit: "kWh",
+        co2: 0.710,
+        ch4: 0,
+        n2o: 0,
+        description: "CEA FY 2024-25 EV charging - location based",
+        source: "Central Electricity Authority (CEA)",
+        financialYear: "2024-25",
+        dataset: "Weighted Average Emission Factor (Considering Renewable Energy Generation) of Indian Grid"
+      },
       "Grid Electricity for EVs - Market Based (kWh)": { factor: 0.39355, unit: "kWh", co2: 0.39070, ch4: 0.0000780, n2o: 0.0028875, description: "EV charging - market based" }
     },
 

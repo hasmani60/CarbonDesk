@@ -44,6 +44,14 @@ const emissionFactorSchema = new mongoose.Schema({
     type: String,
     default: 'UK Government GHG Conversion Factors'
   },
+  financialYear: {
+    type: String,
+    default: null
+  },
+  dataset: {
+    type: String,
+    default: null
+  },
   year: {
     type: Number,
     default: 2023

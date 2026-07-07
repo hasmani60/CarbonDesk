@@ -155,6 +155,7 @@ const Input = () => {
       'Delivery Vehicles - HGV': '🚛',
       
       // Scope 2
+      'Indian Grid Electricity': '🇮🇳',
       'UK Electricity': '⚡',
       'UK Electricity for Electric Vehicles': '🔌',
       'Transmission & Distribution Losses': '📊',

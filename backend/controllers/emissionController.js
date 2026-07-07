@@ -25,13 +25,14 @@ const { emissionFactors } = require('../data/complete_emission_factors_db');
  * Get emission factor from database with static fallback
  */
 const getEmissionFactor = async (scope, category, source) => {
-  // Try database lookup first
+  // Try database lookup first (prefer global factors over org-specific)
   try {
     const factorDoc = await EmissionFactor.findOne({
       scope: parseInt(scope),
       category: category,
       subcategory: source,
-      isActive: true
+      isActive: true,
+      $or: [{ organisation_id: null }, { organisation_id: { $exists: false } }]
     });
     
     if (factorDoc) {
