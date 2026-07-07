@@ -33,8 +33,7 @@ const TaskAssignmentModal = ({ onSubmit, onClose, loading = false }) => {
       'Refrigerants', 'Fuel from Generator', 'Natural Gas Consumption', 'Fleet Vehicle Usage'
     ],
     2: [
-      'UK Electricity', 'Electricity Purchased', 'UK Electricity for Electric Vehicles',
-      'Transmission & Distribution Losses', 'Steam Purchased', 'Heating & Cooling Purchased'
+      'Grid Electricity',
     ],
     3: [
       'Business Travel - Air - Domestic', 'Business Travel - Air - Short Haul', 'Business Travel - Air - Long Haul',

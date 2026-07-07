@@ -109,7 +109,9 @@ const Input = () => {
   // Get user-friendly description based on activity type
   const getActivityDescription = (categoryName, activityType) => {
     const descriptions = {
-      'fuel-based': `Select fuel type and enter quantity consumed`,
+      'fuel-based': categoryName === 'Grid Electricity'
+        ? 'Enter electricity consumed in kWh'
+        : `Select fuel type and enter quantity consumed`,
       'distance': categoryName.includes('Business Travel - Cars') ||
         categoryName.includes('Business Travel - Taxis') ||
         categoryName.includes('Business Travel - Motorbikes') ||
@@ -155,10 +157,7 @@ const Input = () => {
       'Delivery Vehicles - HGV': '🚛',
       
       // Scope 2
-      'Indian Grid Electricity': '🇮🇳',
-      'UK Electricity': '⚡',
-      'UK Electricity for Electric Vehicles': '🔌',
-      'Transmission & Distribution Losses': '📊',
+      'Grid Electricity': '⚡',
       
       // Scope 3
       'Business Travel - Air - Domestic': '✈️',

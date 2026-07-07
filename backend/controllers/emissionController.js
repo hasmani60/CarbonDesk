@@ -21,16 +21,50 @@ const { emissionFactors } = require('../data/complete_emission_factors_db');
 // HELPER FUNCTIONS
 // ============================================
 
+const {
+  GRID_ELECTRICITY_CATEGORY,
+  GRID_ELECTRICITY_SUBCATEGORY,
+  LEGACY_SCOPE2_CATEGORIES
+} = require('../services/gridElectricityEmissionFactorSeed');
+
+const LEGACY_SCOPE2_SOURCES = new Set([
+  'Grid Electricity (kWh)',
+  'Grid Electricity - Location Based (kWh)',
+  'Grid Electricity - Market Based (kWh)',
+  'Grid Electricity for EVs (kWh)',
+  'Grid Electricity for EVs - Location Based (kWh)',
+  'Grid Electricity for EVs - Market Based (kWh)',
+  'T&D Losses UK (kWh)',
+  'T&D Losses for EVs UK (kWh)'
+]);
+
+const normalizeScope2GridLookup = (scope, category, source) => {
+  if (parseInt(scope) !== 2) {
+    return { category, source };
+  }
+
+  if (LEGACY_SCOPE2_CATEGORIES.includes(category) || LEGACY_SCOPE2_SOURCES.has(source)) {
+    return {
+      category: GRID_ELECTRICITY_CATEGORY,
+      source: GRID_ELECTRICITY_SUBCATEGORY
+    };
+  }
+
+  return { category, source };
+};
+
 /**
  * Get emission factor from database with static fallback
  */
 const getEmissionFactor = async (scope, category, source) => {
+  const lookup = normalizeScope2GridLookup(scope, category, source);
+
   // Try database lookup first (prefer global factors over org-specific)
   try {
     const factorDoc = await EmissionFactor.findOne({
       scope: parseInt(scope),
-      category: category,
-      subcategory: source,
+      category: lookup.category,
+      subcategory: lookup.source,
       isActive: true,
       $or: [{ organisation_id: null }, { organisation_id: { $exists: false } }]
     });
@@ -53,12 +87,12 @@ const getEmissionFactor = async (scope, category, source) => {
   const scopeKey = `scope${scope}`;
   const scopeData = emissionFactors[scopeKey];
 
-  if (!scopeData || !scopeData[category] || !scopeData[category][source]) {
+  if (!scopeData || !scopeData[lookup.category] || !scopeData[lookup.category][lookup.source]) {
     logger.error('Emission factor not found', { scope, category, source });
     return null;
   }
 
-  return scopeData[category][source];
+  return scopeData[lookup.category][lookup.source];
 };
 
 /**

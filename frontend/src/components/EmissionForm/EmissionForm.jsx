@@ -935,11 +935,6 @@ const EmissionForm = ({ activity, scope, onClose, isInline = false }) => {
               {errors.source && (
                 <p className="text-red-500 text-xs mt-1">{errors.source}</p>
               )}
-              {factorData && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {factorData.description}
-                </p>
-              )}
             </div>
 
             {formData.source && useFlightRoute && (

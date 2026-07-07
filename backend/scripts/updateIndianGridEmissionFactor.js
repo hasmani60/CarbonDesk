@@ -1,14 +1,16 @@
 /**
- * Update Indian Grid electricity emission factor to CEA FY 2024-25 (0.710 kgCO2/kWh).
+ * Configure Scope 2 to a single Grid Electricity factor (CEA FY 2024-25).
  * Run: node backend/scripts/updateIndianGridEmissionFactor.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const {
-  ensureIndianGridElectricityFactors,
+  ensureGridElectricityFactor,
+  migrateScope2EmissionCategories,
   FACTOR_KG_PER_KWH,
-  INDIAN_GRID_CATEGORY
-} = require('../services/indianGridEmissionFactorSeed');
+  GRID_ELECTRICITY_CATEGORY,
+  GRID_ELECTRICITY_SUBCATEGORY
+} = require('../services/gridElectricityEmissionFactorSeed');
 
 async function main() {
   const mongoUri = process.env.MONGODB_URI;
@@ -19,22 +21,36 @@ async function main() {
   await mongoose.connect(mongoUri);
   console.log('Connected to MongoDB');
 
-  const { indianGrid, legacyUpdates } = await ensureIndianGridElectricityFactors();
+  const { gridFactor, deactivatedCount } = await ensureGridElectricityFactor();
+  const migratedEmissions = await migrateScope2EmissionCategories();
 
-  console.log('\nIndian Grid primary record:');
-  console.log(JSON.stringify(indianGrid.toObject(), null, 2));
+  console.log('\nGrid Electricity factor record:');
+  console.log(JSON.stringify(gridFactor.toObject(), null, 2));
+  console.log(`\nDeactivated ${deactivatedCount} legacy Scope 2 factor records.`);
+  console.log(`Migrated ${migratedEmissions} Scope 2 emission records to "${GRID_ELECTRICITY_CATEGORY}".`);
 
-  console.log(`\nUpdated ${legacyUpdates.length} legacy grid electricity records to ${FACTOR_KG_PER_KWH} kgCO2/kWh.`);
-
-  const verify = await mongoose.connection.db
-    .collection('emissionfactors')
-    .findOne({ category: INDIAN_GRID_CATEGORY, isActive: true });
+  const verify = await mongoose.connection.db.collection('emissionfactors').findOne({
+    scope: 2,
+    category: GRID_ELECTRICITY_CATEGORY,
+    subcategory: GRID_ELECTRICITY_SUBCATEGORY,
+    isActive: true
+  });
 
   if (!verify || verify.factor !== FACTOR_KG_PER_KWH) {
-    throw new Error('Verification failed: Indian Grid factor not set correctly in emissionfactors');
+    throw new Error('Verification failed: Grid Electricity factor not set correctly in emissionfactors');
   }
 
-  console.log('\nVerification passed: emissionfactors collection contains CEA FY 2024-25 factor.');
+  const activeLegacy = await mongoose.connection.db.collection('emissionfactors').countDocuments({
+    scope: 2,
+    category: { $in: ['Indian Grid Electricity', 'UK Electricity', 'UK Electricity for Electric Vehicles', 'Transmission & Distribution Losses'] },
+    isActive: true
+  });
+
+  if (activeLegacy > 0) {
+    throw new Error(`Verification failed: ${activeLegacy} legacy Scope 2 factors still active`);
+  }
+
+  console.log('\nVerification passed: only Grid Electricity is active for Scope 2.');
 
   await mongoose.disconnect();
   process.exit(0);
