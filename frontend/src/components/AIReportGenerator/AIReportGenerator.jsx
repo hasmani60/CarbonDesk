@@ -26,7 +26,6 @@ import { SkeletonReportFilters, SkeletonChart } from '../ui/Skeleton';
 const POLL_MS = 4000;
 /** Set VITE_SKIP_REPORT_CHART_CAPTURE=true to test AI report without chart analytics/capture */
 const SKIP_CHART_CAPTURE = import.meta.env.VITE_SKIP_REPORT_CHART_CAPTURE === 'true';
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_REPORT_WEBHOOK_URL;
 
 const STATUS_CONFIG = {
   pending: {
@@ -455,32 +454,6 @@ export default function AIReportGenerator() {
     captureAndSaveCharts
   ]);
 
-  const triggerN8nWebhook = async (reportId, filters) => {
-    if (!N8N_WEBHOOK_URL) {
-      throw new Error(
-        'N8N webhook URL is not configured (VITE_N8N_REPORT_WEBHOOK_URL)'
-      );
-    }
-
-    const payload = {
-      reportId,
-      organisationId: user.organisation_id,
-      userId: user.id,
-      ...filters
-    };
-
-    const res = await fetch(N8N_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `Webhook failed (${res.status})`);
-    }
-  };
-
   const handleCancel = async () => {
     if (!activeReport?.id) return;
     try {
@@ -538,21 +511,27 @@ export default function AIReportGenerator() {
         chartImages: []
       });
 
-      try {
-        await triggerN8nWebhook(reportId, filters);
-        toast.success('Report queued — generating in the background');
-      } catch (webhookErr) {
-        console.error(webhookErr);
+      if (created.webhookTriggered === false) {
         toast.error(
-          webhookErr.message ||
-            'Report created but automation webhook failed. Check n8n configuration.'
+          'Report created, but N8N_REPORT_WEBHOOK_URL is not set on the API host. Configure it so n8n can run.'
         );
+      } else {
+        toast.success('Report queued — generating in the background');
       }
     } catch (err) {
       console.error(err);
       if (err.code === 'AI_REPORT_QUOTA_EXCEEDED' && err.quota) {
         setQuota(err.quota);
         toast.error(err.message || 'AI report quota exhausted');
+      } else if (
+        err.code === 'N8N_WEBHOOK_FAILED' ||
+        err.response?.data?.code === 'N8N_WEBHOOK_FAILED'
+      ) {
+        toast.error(
+          err.response?.data?.message ||
+            err.message ||
+            'n8n webhook failed. Check the API N8N_REPORT_WEBHOOK_URL and that n8n is reachable.'
+        );
       } else if (err.status === 429 || err.status === 'RATE_LIMITED') {
         toast.error(
           'Carbon Desk API rate limit reached. Wait 1–2 minutes, close extra tabs, and try again.'
@@ -754,16 +733,6 @@ export default function AIReportGenerator() {
                   onChange={setSelectedCategories}
                 />
               </CollapsibleSection>
-
-              {!N8N_WEBHOOK_URL && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-100">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                  <p>
-                    Set <code className="text-xs">VITE_N8N_REPORT_WEBHOOK_URL</code> in your
-                    frontend environment so n8n can process reports asynchronously.
-                  </p>
-                </div>
-              )}
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button

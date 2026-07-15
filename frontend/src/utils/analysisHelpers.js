@@ -26,10 +26,16 @@ export const calculatePareto = (data, valueKey = 'value') => {
   });
 };
 
+const cumulativeAt = (item) => {
+  const value = Number(item?.cumulative ?? item?.cumulativePercentage);
+  return Number.isFinite(value) ? value : 0;
+};
+
 export const identifyTopContributors = (paretoData, threshold = 80) => {
-  const topItems = paretoData.filter(item => item.cumulative <= threshold);
+  const rows = Array.isArray(paretoData) ? paretoData : [];
+  const topItems = rows.filter((item) => cumulativeAt(item) <= threshold);
   const topCount = topItems.length;
-  const topPercentage = topItems.length > 0 ? topItems[topItems.length - 1].cumulative : 0;
+  const topPercentage = topItems.length > 0 ? cumulativeAt(topItems[topItems.length - 1]) : 0;
 
   return {
     items: topItems,
@@ -42,11 +48,11 @@ export const identifyTopContributors = (paretoData, threshold = 80) => {
 
 export const calculateConcentrationRisk = (paretoData) => {
   if (!paretoData || paretoData.length === 0) {
-    return { level: 'unknown', score: 0, message: 'No data available' };
+    return { level: 'unknown', score: 0, top3Percentage: '0.0', message: 'No data available' };
   }
 
   const top3Items = paretoData.slice(0, 3);
-  const top3Percentage = top3Items.length > 0 ? top3Items[top3Items.length - 1].cumulative : 0;
+  const top3Percentage = top3Items.length > 0 ? cumulativeAt(top3Items[top3Items.length - 1]) : 0;
 
   let level, score, message;
 
@@ -80,12 +86,13 @@ export const calculateConcentrationRisk = (paretoData) => {
 };
 
 export const calculateReductionPotential = (paretoData, reductionPercentage = 50, threshold = 80) => {
-  const topItems = paretoData.filter(item => item.cumulative <= threshold);
+  const rows = Array.isArray(paretoData) ? paretoData : [];
+  const topItems = rows.filter((item) => cumulativeAt(item) <= threshold);
   const totalTopValue = topItems.reduce((sum, item) => sum + (item.value || 0), 0);
   const potentialReduction = totalTopValue * (reductionPercentage / 100);
-  
-  const totalValue = paretoData.reduce((sum, item) => sum + (item.value || 0), 0);
-  const impactPercentage = (potentialReduction / totalValue) * 100;
+
+  const totalValue = rows.reduce((sum, item) => sum + (item.value || 0), 0);
+  const impactPercentage = totalValue > 0 ? (potentialReduction / totalValue) * 100 : 0;
 
   return {
     topItemsCount: topItems.length,

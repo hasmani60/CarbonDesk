@@ -190,6 +190,16 @@ apiClient.interceptors.response.use(
         status: 'SERVER_ERROR'
       });
     }
+
+    // 502 Bad Gateway — e.g. n8n webhook unreachable from API host
+    if (error.response?.status === 502) {
+      return Promise.reject({
+        message: error.response.data?.message || 'Upstream service failed.',
+        status: 502,
+        code: error.response.data?.code,
+        data: error.response.data?.data
+      });
+    }
     
     return Promise.reject(error);
   }

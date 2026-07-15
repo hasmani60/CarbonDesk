@@ -10,6 +10,37 @@ const logger = require('../utils/logger');
 const ALLOWED_STATUS = ['pending', 'processing', 'completed', 'failed'];
 
 /**
+ * Trigger n8n from the API (server-to-server) so the browser never hits CORS.
+ * Set N8N_REPORT_WEBHOOK_URL on the backend (Render), e.g. local tunnel or n8n.cloud URL.
+ */
+async function triggerN8nWebhook({ reportId, organisationId, userId, filters }) {
+  const webhookUrl = process.env.N8N_REPORT_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return { triggered: false, reason: 'N8N_REPORT_WEBHOOK_URL not configured' };
+  }
+
+  const payload = {
+    reportId,
+    organisationId,
+    userId,
+    ...(filters || {})
+  };
+
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `n8n webhook failed (${res.status})`);
+  }
+
+  return { triggered: true };
+}
+
+/**
  * @desc  Distinct filter dimensions for the organisation
  * @route GET /api/reports/filter-options
  */
@@ -60,20 +91,53 @@ const generateReport = async (req, res) => {
       }
     });
 
+    const reportId = report._id.toString();
+    let webhook = { triggered: false };
+
+    try {
+      webhook = await triggerN8nWebhook({
+        reportId,
+        organisationId: req.organisationId,
+        userId: req.user.id,
+        filters
+      });
+      if (!webhook.triggered) {
+        logger.warn('n8n webhook skipped', { reportId, reason: webhook.reason });
+      }
+    } catch (webhookError) {
+      logger.error('n8n webhook trigger failed', {
+        reportId,
+        error: webhookError.message
+      });
+      report.status = 'failed';
+      report.error = `Automation webhook failed: ${webhookError.message}`;
+      await report.save();
+      return res.status(502).json({
+        success: false,
+        message:
+          'Report created but n8n webhook failed. Check N8N_REPORT_WEBHOOK_URL and that n8n is reachable from the API host.',
+        code: 'N8N_WEBHOOK_FAILED',
+        data: { id: reportId, status: report.status }
+      });
+    }
+
     res.status(201).json({
       success: true,
       data: {
-        id: report._id.toString(),
+        id: reportId,
         status: report.status,
         filters: report.filters,
         createdAt: report.created_at,
+        webhookTriggered: Boolean(webhook.triggered),
         quota: {
           used: quota.used + 1,
           limit: quota.limit,
           remaining: Math.max(0, quota.remaining - 1)
         }
       },
-      message: 'Report generation started'
+      message: webhook.triggered
+        ? 'Report generation started'
+        : 'Report created — configure N8N_REPORT_WEBHOOK_URL on the API to start automation'
     });
   } catch (error) {
     logger.error('generateReport error', error);

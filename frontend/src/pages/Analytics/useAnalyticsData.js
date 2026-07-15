@@ -119,8 +119,11 @@ export default function useAnalyticsData() {
     }));
     setParetoGrouped(grouped);
     setParetoData(rows);
+    const hasCumulative = rows.some(
+      (row) => row.cumulative != null || row.cumulativePercentage != null
+    );
     setParetoInsights(
-      rows[0].percentage !== undefined ? generateParetoInsights(rows, 80) : generateParetoInsights(calculatePareto(grouped), 80)
+      generateParetoInsights(hasCumulative ? rows : calculatePareto(grouped), 80)
     );
     setSelectedParent(null);
   }, []);
