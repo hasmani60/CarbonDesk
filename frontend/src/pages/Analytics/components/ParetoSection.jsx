@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { Target, ChevronDown, ChevronUp } from 'lucide-react';
 import ChartFrame from '../../../components/charts/ChartFrame';
+import ExpandableAnalyticsPanel from './ExpandableAnalyticsPanel';
 import { formatLargeNumber } from '../../../utils/analysisHelpers';
 import { getChartTooltipProps, chartAxisProps } from '../../../utils/chartTheme';
 
@@ -38,6 +39,8 @@ export default function ParetoSection({
       </section>
     );
   }
+
+  const chartTitle = selectedParent ? `${selectedParent} breakdown` : 'Emission hotspots';
 
   return (
     <section className="analytics-tab-section">
@@ -70,70 +73,74 @@ export default function ParetoSection({
         </div>
       )}
 
-      <div className="app-card p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {selectedParent ? `${selectedParent} breakdown` : 'Emission hotspots'}
-          </h3>
-          {selectedParent && (
-            <button
-              type="button"
-              onClick={onResetDrillDown}
-              className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium"
-            >
-              <ChevronUp className="w-4 h-4" />
-              Back
-            </button>
-          )}
-        </div>
-        <div className="analytics-chart-wrap">
-          <ChartFrame height={400} className="min-w-[520px]">
-            {(width, height) => (
-              <ComposedChart width={width} height={height} data={paretoData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-                <XAxis
-                  {...chartAxisProps(rt, {
-                    dataKey: 'name',
-                    angle: -35,
-                    textAnchor: 'end',
-                    height: 88,
-                    interval: 'preserveStartEnd',
-                    tick: { fontSize: 10 }
-                  })}
-                />
-                <YAxis yAxisId="left" orientation="left" {...chartAxisProps(rt)} />
-                <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
-                <Tooltip {...getChartTooltipProps(rt)} />
-                <Legend wrapperStyle={{ color: rt.legendColor }} />
-                <Bar
-                  yAxisId="left"
-                  dataKey="value"
-                  fill="#10b981"
-                  name="Emissions"
-                  onClick={(data) => onDrillDown(data)}
-                  cursor={!selectedParent ? 'pointer' : 'default'}
-                  isAnimationActive={false}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="cumulative"
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                  name="Cumulative %"
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </ComposedChart>
+      <ExpandableAnalyticsPanel
+        title={chartTitle}
+        className="app-card p-6 mb-6"
+        content={({ expanded }) => (
+          <>
+            <div className="flex items-center justify-between mb-4 pr-16">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{chartTitle}</h3>
+              {selectedParent && (
+                <button
+                  type="button"
+                  onClick={onResetDrillDown}
+                  className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                  Back
+                </button>
+              )}
+            </div>
+            <div className="analytics-chart-wrap">
+              <ChartFrame height={expanded ? 520 : 400} className="min-w-[520px]">
+                {(width, height) => (
+                  <ComposedChart width={width} height={height} data={paretoData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
+                    <XAxis
+                      {...chartAxisProps(rt, {
+                        dataKey: 'name',
+                        angle: -35,
+                        textAnchor: 'end',
+                        height: 88,
+                        interval: 'preserveStartEnd',
+                        tick: { fontSize: 10 }
+                      })}
+                    />
+                    <YAxis yAxisId="left" orientation="left" {...chartAxisProps(rt)} />
+                    <YAxis yAxisId="right" orientation="right" {...chartAxisProps(rt)} />
+                    <Tooltip {...getChartTooltipProps(rt)} />
+                    <Legend wrapperStyle={{ color: rt.legendColor }} />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="value"
+                      fill="#10b981"
+                      name="Emissions"
+                      onClick={(data) => onDrillDown(data)}
+                      cursor={!selectedParent ? 'pointer' : 'default'}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="cumulative"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      name="Cumulative %"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </ComposedChart>
+                )}
+              </ChartFrame>
+            </div>
+            {!selectedParent && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
+                Click a bar to drill into sub-categories
+              </p>
             )}
-          </ChartFrame>
-        </div>
-        {!selectedParent && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 text-center">
-            Click a bar to drill into sub-categories
-          </p>
+          </>
         )}
-      </div>
+      />
 
       <div className="app-card overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/80">

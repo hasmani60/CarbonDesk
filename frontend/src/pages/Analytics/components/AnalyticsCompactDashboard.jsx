@@ -5,6 +5,7 @@ import { AlertTriangle, Plus } from 'lucide-react';
 import ChartFrame from '../../../components/charts/ChartFrame';
 import CompactKpiCell from './CompactKpiCell';
 import CompactParetoTable from './CompactParetoTable';
+import ExpandableAnalyticsPanel from './ExpandableAnalyticsPanel';
 import {
   StackedScopeTrendChart,
   EmissionsIntensityChart,
@@ -17,12 +18,28 @@ import {
 import { formatLargeNumber } from '../../../utils/analysisHelpers';
 import { getChartTooltipProps, getScopePieData } from '../../../utils/chartTheme';
 
-function ReportCell({ label, children, className = '', span = '' }) {
+function ReportCell({ label, children, className = '', span = '', expandable = true }) {
+  const body = (expanded) => (
+    <>
+      {label && (
+        <p className={`analytics-cell-label ${expandable && !expanded ? 'pr-16' : ''}`}>{label}</p>
+      )}
+      <div className="analytics-cell-body min-h-0 flex-1 flex flex-col">
+        {typeof children === 'function' ? children({ expanded }) : children}
+      </div>
+    </>
+  );
+
+  if (!expandable) {
+    return <div className={`analytics-report-cell ${span} ${className}`}>{body(false)}</div>;
+  }
+
   return (
-    <div className={`analytics-report-cell ${span} ${className}`}>
-      {label && <p className="analytics-cell-label">{label}</p>}
-      <div className="analytics-cell-body min-h-0 flex-1 flex flex-col">{children}</div>
-    </div>
+    <ExpandableAnalyticsPanel
+      title={label}
+      className={`analytics-report-cell ${span} ${className}`}
+      content={({ expanded }) => body(expanded)}
+    />
   );
 }
 
@@ -126,12 +143,14 @@ export default function AnalyticsCompactDashboard({
             />
           </div>
           <ReportCell label="Emissions trend by scope" span="col-span-12 lg:col-span-8">
-            <StackedScopeTrendChart
-              periods={scopeMigrationData}
-              rt={rt}
-              isDark={isDark}
-              height={168}
-            />
+            {({ expanded }) => (
+              <StackedScopeTrendChart
+                periods={scopeMigrationData}
+                rt={rt}
+                isDark={isDark}
+                height={expanded ? 420 : 168}
+              />
+            )}
           </ReportCell>
         </div>
 
@@ -168,23 +187,28 @@ export default function AnalyticsCompactDashboard({
             />
           </div>
           <ReportCell label="Scope mix" span="col-span-6 sm:col-span-3 lg:col-span-3">
-            <ScopeMixPie pieData={pieData} rt={rt} />
+            {({ expanded }) => <ScopeMixPie pieData={pieData} rt={rt} height={expanded ? 280 : 112} />}
           </ReportCell>
         </div>
 
         {/* Row 3: Top categories + table — equal halves */}
         <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Top emission categories" span="col-span-12 lg:col-span-6">
-            <ActivityBreakdownChart
-              chartData={paretoTop}
-              rt={rt}
-              isDark={isDark}
-              maxItems={6}
-            />
-            {paretoInsights?.summary && (
-              <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-2 line-clamp-2">
-                {paretoInsights.summary}
-              </p>
+            {({ expanded }) => (
+              <>
+                <ActivityBreakdownChart
+                  chartData={paretoTop}
+                  rt={rt}
+                  isDark={isDark}
+                  maxItems={expanded ? 12 : 6}
+                  height={expanded ? 420 : undefined}
+                />
+                {paretoInsights?.summary && (
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-2 line-clamp-2">
+                    {paretoInsights.summary}
+                  </p>
+                )}
+              </>
             )}
           </ReportCell>
           <ReportCell label="Category breakdown" span="col-span-12 lg:col-span-6">
@@ -200,22 +224,26 @@ export default function AnalyticsCompactDashboard({
         {/* Row 4: Intensity + trajectory */}
         <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Emissions intensity" span="col-span-12 lg:col-span-6">
-            <EmissionsIntensityChart
-              intensity={extended?.intensity}
-              rt={rt}
-              isDark={isDark}
-              height={188}
-              showNote
-            />
+            {({ expanded }) => (
+              <EmissionsIntensityChart
+                intensity={extended?.intensity}
+                rt={rt}
+                isDark={isDark}
+                height={expanded ? 420 : 188}
+                showNote
+              />
+            )}
           </ReportCell>
           <ReportCell label="Decarbonisation trajectory" span="col-span-12 lg:col-span-6">
-            <TrajectoryChart
-              trajectory={extended?.trajectory}
-              rt={rt}
-              isDark={isDark}
-              height={188}
-              compact
-            />
+            {({ expanded }) => (
+              <TrajectoryChart
+                trajectory={extended?.trajectory}
+                rt={rt}
+                isDark={isDark}
+                height={expanded ? 420 : 188}
+                compact={!expanded}
+              />
+            )}
           </ReportCell>
         </div>
 
@@ -223,34 +251,55 @@ export default function AnalyticsCompactDashboard({
         <div className="analytics-report-grid analytics-report-section">
           {showYoY && (
             <ReportCell label="Year-over-year" span="col-span-12 lg:col-span-6">
-              <YoYComparisonChart yoy={extended?.yoy} rt={rt} isDark={isDark} height={188} compact />
+              {({ expanded }) => (
+                <YoYComparisonChart
+                  yoy={extended?.yoy}
+                  rt={rt}
+                  isDark={isDark}
+                  height={expanded ? 420 : 188}
+                  compact={!expanded}
+                />
+              )}
             </ReportCell>
           )}
           <ReportCell
             label="Gross vs net (offsets)"
             span={showYoY ? 'col-span-12 lg:col-span-6' : 'col-span-12'}
           >
-            <GrossNetOffsetsChart grossNet={extended?.grossNet} rt={rt} isDark={isDark} height={188} compact />
+            {({ expanded }) => (
+              <GrossNetOffsetsChart
+                grossNet={extended?.grossNet}
+                rt={rt}
+                isDark={isDark}
+                height={expanded ? 420 : 188}
+                compact={!expanded}
+              />
+            )}
           </ReportCell>
         </div>
 
         {/* Row 6: Activities + Scope 3 */}
         <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Top activities" span="col-span-12 lg:col-span-6">
-            <ActivityBreakdownChart
-              chartData={extended?.activityBreakdown?.chartData}
-              rt={rt}
-              isDark={isDark}
-              maxItems={6}
-            />
+            {({ expanded }) => (
+              <ActivityBreakdownChart
+                chartData={extended?.activityBreakdown?.chartData}
+                rt={rt}
+                isDark={isDark}
+                maxItems={expanded ? 14 : 6}
+                height={expanded ? 420 : undefined}
+              />
+            )}
           </ReportCell>
           <ReportCell label="Scope 3 — commute &amp; transport" span="col-span-12 lg:col-span-6">
-            <Scope3MiniPies
-              scope3Split={extended?.scope3Split}
-              scope3Transport={extended?.scope3Transport}
-              rt={rt}
-              pieHeight={120}
-            />
+            {({ expanded }) => (
+              <Scope3MiniPies
+                scope3Split={extended?.scope3Split}
+                scope3Transport={extended?.scope3Transport}
+                rt={rt}
+                pieHeight={expanded ? 220 : 120}
+              />
+            )}
           </ReportCell>
         </div>
 
@@ -294,51 +343,59 @@ export default function AnalyticsCompactDashboard({
         {/* Row 8: MACC */}
         <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Marginal abatement (MACC)" span="col-span-12">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              {maccData && maccOpportunities?.length > 0 ? (
-                <div className="flex flex-wrap gap-4 text-xs">
-                  <span>
-                    <strong className="text-zinc-900 dark:text-zinc-100">
-                      {formatLargeNumber(maccData.totalAbatementPotential)}
-                    </strong>{' '}
-                    t abatement
-                  </span>
-                  <span>
-                    <strong>{maccOpportunities.length}</strong> opportunities
-                  </span>
-                  <span>
-                    High priority: <strong>{maccData.highPriorityCount ?? 0}</strong>
-                  </span>
+            {({ expanded }) => (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  {maccData && maccOpportunities?.length > 0 ? (
+                    <div className="flex flex-wrap gap-4 text-xs">
+                      <span>
+                        <strong className="text-zinc-900 dark:text-zinc-100">
+                          {formatLargeNumber(maccData.totalAbatementPotential)}
+                        </strong>{' '}
+                        t abatement
+                      </span>
+                      <span>
+                        <strong>{maccOpportunities.length}</strong> opportunities
+                      </span>
+                      <span>
+                        High priority: <strong>{maccData.highPriorityCount ?? 0}</strong>
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">Add reduction opportunities to build your MACC.</p>
+                  )}
+                  <button type="button" onClick={onAddMacc} className="btn-primary text-xs py-1.5 px-3">
+                    <Plus className="w-3.5 h-3.5" />
+                    Add opportunity
+                  </button>
                 </div>
-              ) : (
-                <p className="text-xs text-zinc-500">Add reduction opportunities to build your MACC.</p>
-              )}
-              <button type="button" onClick={onAddMacc} className="btn-primary text-xs py-1.5 px-3">
-                <Plus className="w-3.5 h-3.5" />
-                Add opportunity
-              </button>
-            </div>
-            {maccOpportunities?.length > 0 && (
-              <div className="analytics-compact-table-wrap max-h-32 overflow-auto">
-                <table className="analytics-compact-table w-full">
-                  <thead>
-                    <tr>
-                      <th>Opportunity</th>
-                      <th className="text-right">$/tCO₂e</th>
-                      <th className="text-right">Potential</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {maccOpportunities.slice(0, 5).map((o) => (
-                      <tr key={o._id || o.id || o.name}>
-                        <td className="truncate max-w-[200px]">{o.name}</td>
-                        <td className="text-right tabular-nums">${Number(o.costPerTon).toFixed(0)}</td>
-                        <td className="text-right tabular-nums">{formatLargeNumber(o.abatementPotential)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                {maccOpportunities?.length > 0 && (
+                  <div
+                    className={`analytics-compact-table-wrap overflow-auto ${
+                      expanded ? 'max-h-[60vh]' : 'max-h-32'
+                    }`}
+                  >
+                    <table className="analytics-compact-table w-full">
+                      <thead>
+                        <tr>
+                          <th>Opportunity</th>
+                          <th className="text-right">$/tCO₂e</th>
+                          <th className="text-right">Potential</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(expanded ? maccOpportunities : maccOpportunities.slice(0, 5)).map((o) => (
+                          <tr key={o._id || o.id || o.name}>
+                            <td className="truncate max-w-[200px]">{o.name}</td>
+                            <td className="text-right tabular-nums">${Number(o.costPerTon).toFixed(0)}</td>
+                            <td className="text-right tabular-nums">{formatLargeNumber(o.abatementPotential)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
           </ReportCell>
         </div>

@@ -271,6 +271,31 @@
     @apply space-y-4 w-full min-w-0 max-w-full;
   }
 
+  .analytics-expandable {
+    @apply relative min-w-0;
+  }
+
+  .analytics-expand-btn {
+    @apply absolute top-1.5 right-1.5 z-10 inline-flex items-center gap-1 rounded-md border border-zinc-200/90
+      bg-white/95 px-1.5 py-1 text-[10px] font-medium text-zinc-600 shadow-sm
+      opacity-0 pointer-events-none transition-opacity
+      group-hover/expand:opacity-100 group-hover/expand:pointer-events-auto
+      focus-visible:opacity-100 focus-visible:pointer-events-auto
+      hover:bg-zinc-50 hover:text-zinc-900
+      dark:border-zinc-600 dark:bg-zinc-900/95 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100;
+  }
+
+  @media (hover: none) {
+    .analytics-expand-btn {
+      @apply opacity-100 pointer-events-auto;
+    }
+  }
+
+  .analytics-expand-modal-body .analytics-report-cell,
+  .analytics-expand-modal-body .analytics-cell-body {
+    @apply min-h-0;
+  }
+
   .form-stack {
     @apply space-y-4;
   }

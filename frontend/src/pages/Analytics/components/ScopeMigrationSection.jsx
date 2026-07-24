@@ -2,6 +2,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'r
 import { Activity, AlertTriangle } from 'lucide-react';
 import ChartFrame from '../../../components/charts/ChartFrame';
 import ChartTooltip from './ChartTooltip';
+import ExpandableAnalyticsPanel from './ExpandableAnalyticsPanel';
 import { chartAxisProps, getScopeLineColors } from '../../../utils/chartTheme';
 
 export default function ScopeMigrationSection({
@@ -15,12 +16,47 @@ export default function ScopeMigrationSection({
 
   const scopeLineColors = getScopeLineColors(isDark);
   const burdenShift = migrationInsights?.burdenShifting;
+  const title = highlightScope ? `Scope ${highlightScope} trend` : 'Emissions by scope over time';
+
+  const chart = (height) => (
+    <ChartFrame height={height}>
+      {(width, h) => (
+        <LineChart width={width} height={h} data={scopeMigrationData}>
+          <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
+          <XAxis
+            {...chartAxisProps(rt, {
+              dataKey: 'period',
+              angle: -35,
+              textAnchor: 'end',
+              height: 72,
+              tick: { fontSize: 10 }
+            })}
+          />
+          <YAxis {...chartAxisProps(rt)} />
+          <Tooltip content={<ChartTooltip isDark={isDark} />} />
+          <Legend wrapperStyle={{ color: rt.legendColor }} />
+          {(!highlightScope || highlightScope === 1) && (
+            <Line type="monotone" dataKey="scope1" stroke={scopeLineColors.scope1} strokeWidth={2} name="Scope 1" dot={false} isAnimationActive={false} />
+          )}
+          {(!highlightScope || highlightScope === 2) && (
+            <Line type="monotone" dataKey="scope2" stroke={scopeLineColors.scope2} strokeWidth={2} name="Scope 2" dot={false} isAnimationActive={false} />
+          )}
+          {(!highlightScope || highlightScope === 3) && (
+            <Line type="monotone" dataKey="scope3" stroke={scopeLineColors.scope3} strokeWidth={2} name="Scope 3" dot={false} isAnimationActive={false} />
+          )}
+          {!highlightScope && (
+            <Line type="monotone" dataKey="total" stroke={isDark ? '#94a3b8' : '#64748b'} strokeWidth={2} name="Total" dot={false} isAnimationActive={false} />
+          )}
+        </LineChart>
+      )}
+    </ChartFrame>
+  );
 
   return (
     <section className="analytics-tab-section">
       <h2 className="analytics-section-title">
         <Activity className="w-6 h-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        {highlightScope ? `Scope ${highlightScope} trend` : 'Emissions by scope over time'}
+        {title}
       </h2>
 
       {burdenShift?.detected && !highlightScope && (
@@ -35,39 +71,11 @@ export default function ScopeMigrationSection({
         </div>
       )}
 
-      <div className="app-card p-6 min-w-0">
-        <ChartFrame height={400}>
-          {(width, height) => (
-            <LineChart width={width} height={height} data={scopeMigrationData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-              <XAxis
-                {...chartAxisProps(rt, {
-                  dataKey: 'period',
-                  angle: -35,
-                  textAnchor: 'end',
-                  height: 72,
-                  tick: { fontSize: 10 }
-                })}
-              />
-              <YAxis {...chartAxisProps(rt)} />
-              <Tooltip content={<ChartTooltip isDark={isDark} />} />
-              <Legend wrapperStyle={{ color: rt.legendColor }} />
-              {(!highlightScope || highlightScope === 1) && (
-                <Line type="monotone" dataKey="scope1" stroke={scopeLineColors.scope1} strokeWidth={2} name="Scope 1" dot={false} isAnimationActive={false} />
-              )}
-              {(!highlightScope || highlightScope === 2) && (
-                <Line type="monotone" dataKey="scope2" stroke={scopeLineColors.scope2} strokeWidth={2} name="Scope 2" dot={false} isAnimationActive={false} />
-              )}
-              {(!highlightScope || highlightScope === 3) && (
-                <Line type="monotone" dataKey="scope3" stroke={scopeLineColors.scope3} strokeWidth={2} name="Scope 3" dot={false} isAnimationActive={false} />
-              )}
-              {!highlightScope && (
-                <Line type="monotone" dataKey="total" stroke={isDark ? '#94a3b8' : '#64748b'} strokeWidth={2} name="Total" dot={false} isAnimationActive={false} />
-              )}
-            </LineChart>
-          )}
-        </ChartFrame>
-      </div>
+      <ExpandableAnalyticsPanel
+        title={title}
+        className="app-card p-6 min-w-0"
+        content={({ expanded }) => chart(expanded ? 520 : 400)}
+      />
     </section>
   );
 }

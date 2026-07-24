@@ -16,6 +16,7 @@ import EmployeeCommuteEmissionsSummary from '../../../components/EmployeeCommute
 import { ActivityBreakdownChart } from '../components/ExtendedAnalyticsCharts';
 import { filterActivitiesByScope } from '../components/extendedChartUtils';
 import { SkeletonAnalyticsScope } from '../../../components/ui/Skeleton';
+import ExpandableAnalyticsPanel from '../components/ExpandableAnalyticsPanel';
 
 export default function AnalyticsScopeTab({ scope }) {
   const meta = SCOPE_META[scope];
@@ -161,19 +162,23 @@ export default function AnalyticsScopeTab({ scope }) {
             <Target className="w-6 h-6 shrink-0 text-emerald-600" />
             Monthly emissions (Scope {scope})
           </h2>
-          <div className="app-card p-6 md:p-8">
-            <ChartFrame height={360}>
-              {(width, height) => (
-                <BarChart width={width} height={height} data={monthlyScope}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
-                  <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
-                  <YAxis {...chartAxisProps(rt)} />
-                  <Tooltip />
-                  <Bar dataKey="emissions" fill={meta.chart} name="CO₂e" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              )}
-            </ChartFrame>
-          </div>
+          <ExpandableAnalyticsPanel
+            title={`Monthly emissions (Scope ${scope})`}
+            className="app-card p-6 md:p-8"
+            content={({ expanded }) => (
+              <ChartFrame height={expanded ? 480 : 360}>
+                {(width, height) => (
+                  <BarChart width={width} height={height} data={monthlyScope}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
+                    <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
+                    <YAxis {...chartAxisProps(rt)} />
+                    <Tooltip />
+                    <Bar dataKey="emissions" fill={meta.chart} name="CO₂e" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                )}
+              </ChartFrame>
+            )}
+          />
         </section>
       )}
 
@@ -183,9 +188,19 @@ export default function AnalyticsScopeTab({ scope }) {
             <Target className="w-6 h-6 shrink-0 text-emerald-600" />
             Top activities (Scope {scope})
           </h2>
-          <div className="app-card p-6 md:p-8">
-            <ActivityBreakdownChart chartData={scopeActivities} rt={rt} isDark={isDark} />
-          </div>
+          <ExpandableAnalyticsPanel
+            title={`Top activities (Scope ${scope})`}
+            className="app-card p-6 md:p-8"
+            content={({ expanded }) => (
+              <ActivityBreakdownChart
+                chartData={scopeActivities}
+                rt={rt}
+                isDark={isDark}
+                maxItems={expanded ? 16 : 10}
+                height={expanded ? 480 : undefined}
+              />
+            )}
+          />
         </section>
       )}
 
