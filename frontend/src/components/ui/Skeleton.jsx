@@ -94,7 +94,104 @@ export function SkeletonDashboard() {
   );
 }
 
-export function SkeletonAnalytics() {
+/** Overview tab — 8 spaced sections matching AnalyticsCompactDashboard rows */
+export function SkeletonAnalyticsOverview() {
+  return (
+    <div className="analytics-report" aria-busy="true" aria-label="Loading overview">
+      <Skeleton className="h-10 w-full rounded-lg" />
+      <div className="analytics-report-body">
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 lg:col-span-3 h-[188px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-9 h-[188px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="col-span-6 sm:col-span-3 h-[140px] rounded-lg" />
+            ))}
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 lg:col-span-5 h-[220px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-7 h-[220px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 lg:col-span-6 h-[200px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-6 h-[200px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 h-[200px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 lg:col-span-6 h-[220px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-6 h-[220px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 h-[100px] rounded-lg" />
+          </div>
+        </div>
+        <div className="analytics-report-section">
+          <div className="analytics-report-grid">
+            <Skeleton className="col-span-12 h-[140px] rounded-lg" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Scope 1/2/3 — header + migration + monthly + activities + pareto + tips (+ scope3 extras) */
+export function SkeletonAnalyticsScope({ scope = 1 }) {
+  const isScope3 = Number(scope) === 3;
+  return (
+    <div className="analytics-tab-panel space-y-6" aria-busy="true" aria-label={`Loading scope ${scope}`}>
+      <div className="app-card p-6 md:p-8 space-y-5">
+        <Skeleton className="h-3 w-20" rounded="rounded-md" />
+        <Skeleton className="h-8 w-64 max-w-full" rounded="rounded-md" />
+        <Skeleton className="h-4 w-96 max-w-full" rounded="rounded-md" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+        </div>
+      </div>
+      {isScope3 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+        </div>
+      )}
+      <SkeletonChart height="h-72" />
+      <SkeletonChart height="h-72" />
+      <SkeletonChart height="h-64" />
+      <div className="app-card p-6 space-y-3">
+        <Skeleton className="h-6 w-40" rounded="rounded-md" />
+        <Skeleton className="h-4 w-full" rounded="rounded-md" />
+        <Skeleton className="h-4 w-5/6" rounded="rounded-md" />
+        <Skeleton className="h-4 w-4/5" rounded="rounded-md" />
+      </div>
+    </div>
+  );
+}
+
+export function SkeletonAnalytics({ variant = 'overview', scope } = {}) {
+  const panel =
+    variant === 'scope' ? (
+      <SkeletonAnalyticsScope scope={scope} />
+    ) : (
+      <SkeletonAnalyticsOverview />
+    );
+
   return (
     <div className="space-y-6 w-full max-w-none pb-12 page-enter" aria-busy="true" aria-label="Loading analytics">
       <Skeleton className="h-10 w-56" rounded="rounded-md" />
@@ -104,18 +201,7 @@ export function SkeletonAnalytics() {
           <Skeleton key={i} className="h-[72px] flex-1 min-w-[160px]" rounded="rounded-xl" />
         ))}
       </div>
-      <div className="input-section-panel p-2 sm:p-3 md:p-4 space-y-0 min-h-[50vh] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
-        <Skeleton className="h-8 w-full rounded-none" rounded="rounded-none" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-zinc-200/90 dark:bg-zinc-700/80 border-t-2 border-zinc-300 dark:border-zinc-600">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <SkeletonCard key={i} className="h-28 rounded-none border-0" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-zinc-200/90 dark:bg-zinc-700/80 border-t-2 border-zinc-300 dark:border-zinc-600">
-          <SkeletonChart height="h-56" className="rounded-none border-0" />
-          <SkeletonChart height="h-56" className="rounded-none border-0" />
-        </div>
-      </div>
+      <div className="input-section-panel p-2 sm:p-3 md:p-4 w-full min-w-0 overflow-hidden">{panel}</div>
     </div>
   );
 }

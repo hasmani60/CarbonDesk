@@ -15,6 +15,7 @@ import Scope3TransportSummary from '../../../components/Scope3TransportSummary/S
 import EmployeeCommuteEmissionsSummary from '../../../components/EmployeeCommuteEmissionsSummary/EmployeeCommuteEmissionsSummary';
 import { ActivityBreakdownChart } from '../components/ExtendedAnalyticsCharts';
 import { filterActivitiesByScope } from '../components/extendedChartUtils';
+import { SkeletonAnalyticsScope } from '../../../components/ui/Skeleton';
 
 export default function AnalyticsScopeTab({ scope }) {
   const meta = SCOPE_META[scope];
@@ -30,6 +31,8 @@ export default function AnalyticsScopeTab({ scope }) {
     getParetoForScope,
     getScopeShare,
     extendedCharts,
+    chartsLoading,
+    initialLoading
   } = useAnalytics();
 
   const scopeActivities = useMemo(
@@ -96,6 +99,10 @@ export default function AnalyticsScopeTab({ scope }) {
       })),
     [scopeMigrationData, scopeKey]
   );
+
+  if (initialLoading || (chartsLoading && !extendedCharts && scopeMigrationData.length === 0)) {
+    return <SkeletonAnalyticsScope scope={scope} />;
+  }
 
   return (
     <div className="analytics-tab-panel">

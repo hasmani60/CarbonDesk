@@ -1,17 +1,27 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { RefreshCw, Download, AlertCircle, Database } from 'lucide-react';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import { formatDateTime } from '../../utils/formatters';
 import { useAnalytics } from './AnalyticsContext';
 import AnalyticsTabNav from './components/AnalyticsTabNav';
-import { SkeletonAnalytics } from '../../components/ui/Skeleton';
+import {
+  SkeletonAnalyticsOverview,
+  SkeletonAnalyticsScope
+} from '../../components/ui/Skeleton';
+
+function contentSkeletonForPath(pathname) {
+  if (pathname.includes('/scope-1')) return <SkeletonAnalyticsScope scope={1} />;
+  if (pathname.includes('/scope-2')) return <SkeletonAnalyticsScope scope={2} />;
+  if (pathname.includes('/scope-3')) return <SkeletonAnalyticsScope scope={3} />;
+  return <SkeletonAnalyticsOverview />;
+}
 
 export default function AnalyticsShell() {
+  const location = useLocation();
   const {
     user,
     initialLoading,
     refreshing,
-    chartsLoading,
     error,
     lastUpdate,
     overviewStats,
@@ -19,11 +29,9 @@ export default function AnalyticsShell() {
     handleExport
   } = useAnalytics();
 
-  if (initialLoading) {
-    return <SkeletonAnalytics />;
-  }
+  const showContentSkeleton = initialLoading;
 
-  if (error) {
+  if (error && !overviewStats) {
     return (
       <div className="space-y-6 w-full max-w-none">
         <PageHeader
@@ -42,7 +50,7 @@ export default function AnalyticsShell() {
     );
   }
 
-  if (!overviewStats) {
+  if (!initialLoading && !overviewStats) {
     return (
       <div className="space-y-6 w-full max-w-none">
         <PageHeader
@@ -74,13 +82,10 @@ export default function AnalyticsShell() {
                 {user.organisation.name}
               </span>
             )}
-            <span className="text-caption">Updated {formatDateTime(lastUpdate)}</span>
-            {refreshing && <span className="badge bg-zinc-100 text-zinc-600 border-zinc-200">Refreshing…</span>}
-            {chartsLoading && !refreshing && (
-              <span className="badge bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))] border-[hsl(var(--primary)/0.2)]">
-                Loading charts…
-              </span>
+            {!showContentSkeleton && (
+              <span className="text-caption">Updated {formatDateTime(lastUpdate)}</span>
             )}
+            {refreshing && <span className="badge bg-zinc-100 text-zinc-600 border-zinc-200">Refreshing…</span>}
           </>
         }
         action={
@@ -88,13 +93,18 @@ export default function AnalyticsShell() {
             <button
               type="button"
               onClick={loadAllData}
-              disabled={refreshing}
+              disabled={refreshing || showContentSkeleton}
               className="btn-secondary"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'motion-safe:animate-spin' : ''}`} />
               Refresh
             </button>
-            <button type="button" onClick={handleExport} className="btn-primary">
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={showContentSkeleton}
+              className="btn-primary"
+            >
               <Download className="w-4 h-4" />
               Export
             </button>
@@ -103,7 +113,7 @@ export default function AnalyticsShell() {
       />
       <AnalyticsTabNav />
       <div className="input-section-panel p-2 sm:p-3 md:p-4 w-full min-w-0 overflow-hidden">
-        <Outlet />
+        {showContentSkeleton ? contentSkeletonForPath(location.pathname) : <Outlet />}
       </div>
     </div>
   );

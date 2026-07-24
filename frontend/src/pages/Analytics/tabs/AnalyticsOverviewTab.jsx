@@ -3,21 +3,10 @@ import DeferredMount from '../../../components/charts/DeferredMount';
 import { useTheme } from '../../../context/ThemeContext';
 import { useAnalytics } from '../AnalyticsContext';
 import { getRechartsTheme } from '../../../utils/chartTheme';
+import { SkeletonAnalyticsOverview } from '../../../components/ui/Skeleton';
 
 const AnalyticsCompactDashboard = lazy(() => import('../components/AnalyticsCompactDashboard'));
 const MACCModal = lazy(() => import('../components/MACCModal'));
-
-function SectionFallback() {
-  return (
-    <div
-      className="analytics-report w-full rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden"
-      aria-hidden
-    >
-      <div className="analytics-report-band opacity-60">Emissions overview</div>
-      <div className="analytics-report-body min-h-[480px] bg-zinc-50 dark:bg-zinc-900 animate-pulse" />
-    </div>
-  );
-}
 
 export default function AnalyticsOverviewTab() {
   const { theme } = useTheme();
@@ -44,14 +33,17 @@ export default function AnalyticsOverviewTab() {
     initialLoading
   } = useAnalytics();
 
-  if (initialLoading || (chartsLoading && extendedCharts == null && !(paretoData?.length))) {
-    return <SectionFallback />;
+  const waitingForData =
+    initialLoading || (chartsLoading && extendedCharts == null && !(paretoData?.length));
+
+  if (waitingForData) {
+    return <SkeletonAnalyticsOverview />;
   }
 
   return (
     <div className="analytics-tab-panel analytics-tab-panel--compact">
       <DeferredMount minHeight={520}>
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SkeletonAnalyticsOverview />}>
           <AnalyticsCompactDashboard
             stats={stats}
             scopeMigrationData={scopeMigrationData}
