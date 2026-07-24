@@ -208,7 +208,7 @@
   }
 
   .analytics-report-cell--kpi {
-    @apply min-h-0 h-full justify-between;
+    @apply min-h-[140px] h-full justify-between;
   }
 
   .analytics-report-cell--link {

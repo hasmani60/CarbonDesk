@@ -44,7 +44,10 @@ function ReportCell({ label, children, className = '', span = '', expandable = t
 }
 
 function sparkFromPeriods(periods, key = 'total') {
-  return (periods ?? []).map((p) => ({ v: p[key] ?? 0 }));
+  return (periods ?? []).map((p) => ({
+    v: p[key] ?? 0,
+    period: p.period
+  }));
 }
 
 function periodDelta(periods) {
@@ -140,6 +143,7 @@ export default function AnalyticsCompactDashboard({
               sparkData={totalSpark}
               sparkColor="#059669"
               compare={mom ? [{ label: 'vs prior month', text: mom.text, up: mom.up }] : []}
+              expandable
             />
           </div>
           <ReportCell label="Emissions trend by scope" span="col-span-12 lg:col-span-8">
@@ -164,6 +168,7 @@ export default function AnalyticsCompactDashboard({
               sparkData={sparkFromPeriods(scopeMigrationData, 'scope1')}
               sparkColor={isDark ? '#34d399' : '#065f46'}
               to="/analytics/scope-1"
+              expandable
             />
           </div>
           <div className="col-span-6 sm:col-span-3 lg:col-span-3">
@@ -174,6 +179,7 @@ export default function AnalyticsCompactDashboard({
               sparkData={sparkFromPeriods(scopeMigrationData, 'scope2')}
               sparkColor={isDark ? '#60a5fa' : '#1e40af'}
               to="/analytics/scope-2"
+              expandable
             />
           </div>
           <div className="col-span-6 sm:col-span-3 lg:col-span-3">
@@ -184,6 +190,7 @@ export default function AnalyticsCompactDashboard({
               sparkData={sparkFromPeriods(scopeMigrationData, 'scope3')}
               sparkColor={isDark ? '#fb923c' : '#c2410c'}
               to="/analytics/scope-3"
+              expandable
             />
           </div>
           <ReportCell label="Scope mix" span="col-span-6 sm:col-span-3 lg:col-span-3">
