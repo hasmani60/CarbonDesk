@@ -102,8 +102,8 @@ export function SkeletonAnalyticsOverview() {
       <div className="analytics-report-body">
         <div className="analytics-report-section">
           <div className="analytics-report-grid">
-            <Skeleton className="col-span-12 lg:col-span-3 h-[188px] rounded-lg" />
-            <Skeleton className="col-span-12 lg:col-span-9 h-[188px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-4 h-[168px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-8 h-[168px] rounded-lg" />
           </div>
         </div>
         <div className="analytics-report-section">
@@ -115,8 +115,8 @@ export function SkeletonAnalyticsOverview() {
         </div>
         <div className="analytics-report-section">
           <div className="analytics-report-grid">
-            <Skeleton className="col-span-12 lg:col-span-5 h-[220px] rounded-lg" />
-            <Skeleton className="col-span-12 lg:col-span-7 h-[220px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-6 h-[200px] rounded-lg" />
+            <Skeleton className="col-span-12 lg:col-span-6 h-[200px] rounded-lg" />
           </div>
         </div>
         <div className="analytics-report-section">

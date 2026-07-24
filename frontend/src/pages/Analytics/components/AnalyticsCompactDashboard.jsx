@@ -42,8 +42,8 @@ function periodDelta(periods) {
   };
 }
 
-function ScopeMixPie({ pieData, rt, height = 130 }) {
-  if (!pieData?.length) return <p className="analytics-empty">No scope data</p>;
+function ScopeMixPie({ pieData, rt, height = 112 }) {
+  if (!pieData?.length) return <p className="analytics-empty py-4">No scope data</p>;
   return (
     <ChartFrame height={height}>
       {(width, h) => (
@@ -53,9 +53,9 @@ function ScopeMixPie({ pieData, rt, height = 130 }) {
             dataKey="value"
             nameKey="name"
             cx="50%"
-            cy="50%"
-            innerRadius={28}
-            outerRadius={48}
+            cy="42%"
+            innerRadius={22}
+            outerRadius={40}
             isAnimationActive={false}
           >
             {pieData.map((entry, i) => (
@@ -63,7 +63,7 @@ function ScopeMixPie({ pieData, rt, height = 130 }) {
             ))}
           </Pie>
           <Tooltip {...getChartTooltipProps(rt)} />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
+          <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="bottom" height={28} />
         </PieChart>
       )}
     </ChartFrame>
@@ -113,9 +113,9 @@ export default function AnalyticsCompactDashboard({
           </div>
         )}
 
-        {/* Row 1: Total KPI + stacked trend */}
+        {/* Row 1: Total KPI + stacked trend — balanced 4/8 */}
         <div className="analytics-report-grid analytics-report-section">
-          <div className="col-span-12 lg:col-span-3">
+          <div className="col-span-12 lg:col-span-4">
             <CompactKpiCell
               label="Total emissions"
               value={stats.totalEmissions}
@@ -125,12 +125,12 @@ export default function AnalyticsCompactDashboard({
               compare={mom ? [{ label: 'vs prior month', text: mom.text, up: mom.up }] : []}
             />
           </div>
-          <ReportCell label="Emissions trend by scope" span="col-span-12 lg:col-span-9">
+          <ReportCell label="Emissions trend by scope" span="col-span-12 lg:col-span-8">
             <StackedScopeTrendChart
               periods={scopeMigrationData}
               rt={rt}
               isDark={isDark}
-              height={188}
+              height={168}
             />
           </ReportCell>
         </div>
@@ -172,23 +172,22 @@ export default function AnalyticsCompactDashboard({
           </ReportCell>
         </div>
 
-        {/* Row 3: Top categories chart + table */}
+        {/* Row 3: Top categories + table — equal halves */}
         <div className="analytics-report-grid analytics-report-section">
-          <ReportCell label="Top emission categories" span="col-span-12 lg:col-span-5">
+          <ReportCell label="Top emission categories" span="col-span-12 lg:col-span-6">
             <ActivityBreakdownChart
               chartData={paretoTop}
               rt={rt}
               isDark={isDark}
-              height={200}
               maxItems={6}
             />
             {paretoInsights?.summary && (
-              <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1 line-clamp-2">
+              <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-2 line-clamp-2">
                 {paretoInsights.summary}
               </p>
             )}
           </ReportCell>
-          <ReportCell label="Category breakdown" span="col-span-12 lg:col-span-7">
+          <ReportCell label="Category breakdown" span="col-span-12 lg:col-span-6">
             <CompactParetoTable
               data={paretoData}
               onDrillDown={onDrillDown}
@@ -242,8 +241,7 @@ export default function AnalyticsCompactDashboard({
               chartData={extended?.activityBreakdown?.chartData}
               rt={rt}
               isDark={isDark}
-              height={200}
-              maxItems={8}
+              maxItems={6}
             />
           </ReportCell>
           <ReportCell label="Scope 3 — commute &amp; transport" span="col-span-12 lg:col-span-6">

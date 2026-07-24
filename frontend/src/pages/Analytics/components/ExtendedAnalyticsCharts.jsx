@@ -52,12 +52,19 @@ export const StackedScopeTrendChart = memo(function StackedScopeTrendChart({
   return (
     <ChartFrame height={height}>
       {(width, height) => (
-        <BarChart width={width} height={height} data={periods}>
+        <BarChart
+          width={width}
+          height={height}
+          data={periods}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          barCategoryGap={periods.length <= 3 ? '28%' : periods.length <= 6 ? '18%' : '12%'}
+          maxBarSize={periods.length <= 3 ? 64 : 44}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
           <XAxis {...chartAxisProps(rt, { dataKey: 'period', tick: { fontSize: 10 } })} />
-          <YAxis {...chartAxisProps(rt)} />
+          <YAxis {...chartAxisProps(rt)} width={48} />
           <Tooltip content={<ChartTooltip isDark={isDark} />} />
-          <Legend wrapperStyle={{ color: rt.legendColor }} />
+          <Legend wrapperStyle={{ color: rt.legendColor, fontSize: 11 }} />
           <Bar dataKey="scope1" stackId="s" fill={scopeColors.scope1} name="Scope 1" isAnimationActive={false} />
           <Bar dataKey="scope2" stackId="s" fill={scopeColors.scope2} name="Scope 2" isAnimationActive={false} />
           <Bar dataKey="scope3" stackId="s" fill={scopeColors.scope3} name="Scope 3" radius={[4, 4, 0, 0]} isAnimationActive={false} />
@@ -189,7 +196,7 @@ export const ActivityBreakdownChart = memo(function ActivityBreakdownChart({
   const data = (chartData ?? []).slice(0, maxItems);
   if (!data.length) return <EmptyChart message="No activity-level emissions in this period." />;
 
-  const chartH = height ?? Math.min(220, Math.max(140, data.length * 28));
+  const chartH = height ?? Math.min(200, Math.max(36 + data.length * 32, data.length * 34));
 
   return (
     <ChartFrame height={chartH}>
@@ -199,13 +206,21 @@ export const ActivityBreakdownChart = memo(function ActivityBreakdownChart({
           height={height}
           data={data}
           layout={horizontal ? 'vertical' : 'horizontal'}
-          margin={horizontal ? { left: 8, right: 16 } : undefined}
+          margin={horizontal ? { top: 4, left: 4, right: 12, bottom: 4 } : { top: 8, right: 8, left: 0, bottom: 0 }}
+          barCategoryGap={horizontal ? 12 : undefined}
+          maxBarSize={horizontal ? 22 : 48}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} />
+          <CartesianGrid strokeDasharray="3 3" stroke={rt.grid} horizontal={!horizontal} vertical={horizontal} />
           {horizontal ? (
             <>
               <XAxis type="number" {...chartAxisProps(rt)} />
-              <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: rt.tick }} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={108}
+                tick={{ fontSize: 10, fill: rt.tick }}
+                interval={0}
+              />
             </>
           ) : (
             <>
