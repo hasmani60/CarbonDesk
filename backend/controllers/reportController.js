@@ -19,6 +19,14 @@ async function triggerN8nWebhook({ reportId, organisationId, userId, filters }) 
     return { triggered: false, reason: 'N8N_REPORT_WEBHOOK_URL not configured' };
   }
 
+  // Render (or any cloud API) cannot call localhost on your laptop.
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(webhookUrl)) {
+    throw new Error(
+      `N8N_REPORT_WEBHOOK_URL points to localhost (${webhookUrl}). ` +
+        'Use an n8n.cloud URL or a public tunnel (ngrok/Cloudflare) that Render can reach.'
+    );
+  }
+
   const payload = {
     reportId,
     organisationId,
@@ -26,15 +34,23 @@ async function triggerN8nWebhook({ reportId, organisationId, userId, filters }) 
     ...(filters || {})
   };
 
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let res;
+  try {
+    res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (networkErr) {
+    throw new Error(
+      `Cannot reach n8n at ${webhookUrl}: ${networkErr.message}. ` +
+        'If n8n is local, expose it with a tunnel and set that HTTPS URL on Render.'
+    );
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(text || `n8n webhook failed (${res.status})`);
+    throw new Error(text || `n8n webhook returned HTTP ${res.status}`);
   }
 
   return { triggered: true };
@@ -107,6 +123,7 @@ const generateReport = async (req, res) => {
     } catch (webhookError) {
       logger.error('n8n webhook trigger failed', {
         reportId,
+        webhookUrl: process.env.N8N_REPORT_WEBHOOK_URL,
         error: webhookError.message
       });
       report.status = 'failed';
@@ -114,8 +131,7 @@ const generateReport = async (req, res) => {
       await report.save();
       return res.status(502).json({
         success: false,
-        message:
-          'Report created but n8n webhook failed. Check N8N_REPORT_WEBHOOK_URL and that n8n is reachable from the API host.',
+        message: webhookError.message,
         code: 'N8N_WEBHOOK_FAILED',
         data: { id: reportId, status: report.status }
       });

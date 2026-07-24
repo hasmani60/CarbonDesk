@@ -464,28 +464,19 @@ export default function ExtendedAnalyticsPanel({ extended, rt, isDark }) {
       <section className="analytics-tab-section">
         <h2 className="analytics-section-title">Reporting &amp; offsets</h2>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
-          <ChartCard title="Year-over-year comparison" subtitle="Same calendar months across consecutive years">
-            <YoYComparisonChart yoy={extended?.yoy} rt={rt} isDark={isDark} />
-          </ChartCard>
-          <ChartCard title="Gross vs net emissions" subtitle="After offset utilisation for the reporting year">
+          {extended?.yoy?.hasData && (
+            <ChartCard title="Year-over-year comparison" subtitle="Same calendar months across consecutive years">
+              <YoYComparisonChart yoy={extended?.yoy} rt={rt} isDark={isDark} />
+            </ChartCard>
+          )}
+          <ChartCard
+            title="Gross vs net emissions"
+            subtitle="After offset utilisation for the reporting year"
+            className={extended?.yoy?.hasData ? '' : 'xl:col-span-2'}
+          >
             <GrossNetOffsetsChart grossNet={extended?.grossNet} rt={rt} isDark={isDark} />
           </ChartCard>
         </div>
-      </section>
-
-      <section className="analytics-tab-section">
-        <h2 className="analytics-section-title">Sites, data quality &amp; period bridge</h2>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-8">
-          <ChartCard title="Emissions by location" subtitle="Top sites or facilities">
-            <LocationBreakdownChart byLocation={extended?.byLocation} rt={rt} isDark={isDark} />
-          </ChartCard>
-          <ChartCard title="Data quality by status" subtitle="Entry counts and associated CO₂e">
-            <DataQualityChart byStatus={extended?.byStatus} rt={rt} isDark={isDark} />
-          </ChartCard>
-        </div>
-        <ChartCard title="Period bridge (waterfall)" subtitle="How emissions changed between the first and last month" className="mt-6 lg:mt-8">
-          <EmissionsWaterfallChart waterfall={extended?.waterfall} rt={rt} isDark={isDark} />
-        </ChartCard>
       </section>
     </div>
   );

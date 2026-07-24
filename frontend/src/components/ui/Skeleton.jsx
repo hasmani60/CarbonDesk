@@ -96,7 +96,7 @@ export function SkeletonDashboard() {
 
 export function SkeletonAnalytics() {
   return (
-    <div className="space-y-8 w-full max-w-none pb-12 page-enter" aria-busy="true" aria-label="Loading analytics">
+    <div className="space-y-6 w-full max-w-none pb-12 page-enter" aria-busy="true" aria-label="Loading analytics">
       <Skeleton className="h-10 w-56" rounded="rounded-md" />
       <Skeleton className="h-4 w-72 max-w-full" rounded="rounded-md" />
       <div className="flex flex-col sm:flex-row gap-3 p-2 rounded-2xl bg-gray-100/80 dark:bg-slate-800/60">
@@ -104,16 +104,16 @@ export function SkeletonAnalytics() {
           <Skeleton key={i} className="h-[72px] flex-1 min-w-[160px]" rounded="rounded-xl" />
         ))}
       </div>
-      <div className="input-section-panel premium-glass-panel p-6 md:p-8 space-y-8 min-h-[50vh]">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="input-section-panel p-2 sm:p-3 md:p-4 space-y-0 min-h-[50vh] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+        <Skeleton className="h-8 w-full rounded-none" rounded="rounded-none" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-zinc-200/90 dark:bg-zinc-700/80 border-t-2 border-zinc-300 dark:border-zinc-600">
           {Array.from({ length: 4 }).map((_, i) => (
-            <SkeletonCard key={i} className="h-28" />
+            <SkeletonCard key={i} className="h-28 rounded-none border-0" />
           ))}
         </div>
-        <SkeletonChart height="h-96" />
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          <SkeletonChart height="h-96" />
-          <SkeletonChart height="h-96" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-zinc-200/90 dark:bg-zinc-700/80 border-t-2 border-zinc-300 dark:border-zinc-600">
+          <SkeletonChart height="h-56" className="rounded-none border-0" />
+          <SkeletonChart height="h-56" className="rounded-none border-0" />
         </div>
       </div>
     </div>

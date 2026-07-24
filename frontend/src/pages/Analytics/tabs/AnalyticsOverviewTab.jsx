@@ -39,8 +39,14 @@ export default function AnalyticsOverviewTab() {
     handleDrillDown,
     resetDrillDown,
     handleSaveMaccOpportunity,
-    extendedCharts
+    extendedCharts,
+    chartsLoading,
+    initialLoading
   } = useAnalytics();
+
+  if (initialLoading || (chartsLoading && extendedCharts == null && !(paretoData?.length))) {
+    return <SectionFallback />;
+  }
 
   return (
     <div className="analytics-tab-panel analytics-tab-panel--compact">

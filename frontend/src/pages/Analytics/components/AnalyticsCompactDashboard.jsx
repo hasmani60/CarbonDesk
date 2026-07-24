@@ -12,10 +12,7 @@ import {
   ActivityBreakdownChart,
   Scope3MiniPies,
   YoYComparisonChart,
-  GrossNetOffsetsChart,
-  LocationBreakdownChart,
-  DataQualityChart,
-  EmissionsWaterfallChart
+  GrossNetOffsetsChart
 } from './ExtendedAnalyticsCharts';
 import { formatLargeNumber } from '../../../utils/analysisHelpers';
 import { getChartTooltipProps, getScopePieData } from '../../../utils/chartTheme';
@@ -103,6 +100,8 @@ export default function AnalyticsCompactDashboard({
     }));
   }, [paretoData]);
 
+  const showYoY = Boolean(extended?.yoy?.hasData);
+
   return (
     <div className="analytics-report">
       <div className="analytics-report-band">Emissions overview</div>
@@ -115,7 +114,7 @@ export default function AnalyticsCompactDashboard({
         )}
 
         {/* Row 1: Total KPI + stacked trend */}
-        <div className="analytics-report-grid">
+        <div className="analytics-report-grid analytics-report-section">
           <div className="col-span-12 lg:col-span-3">
             <CompactKpiCell
               label="Total emissions"
@@ -137,7 +136,7 @@ export default function AnalyticsCompactDashboard({
         </div>
 
         {/* Row 2: Scope KPIs + scope mix */}
-        <div className="analytics-report-grid">
+        <div className="analytics-report-grid analytics-report-section">
           <div className="col-span-6 sm:col-span-3 lg:col-span-3">
             <CompactKpiCell
               label="Scope 1"
@@ -174,7 +173,7 @@ export default function AnalyticsCompactDashboard({
         </div>
 
         {/* Row 3: Top categories chart + table */}
-        <div className="analytics-report-grid">
+        <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Top emission categories" span="col-span-12 lg:col-span-5">
             <ActivityBreakdownChart
               chartData={paretoTop}
@@ -200,7 +199,7 @@ export default function AnalyticsCompactDashboard({
         </div>
 
         {/* Row 4: Intensity + trajectory */}
-        <div className="analytics-report-grid">
+        <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Emissions intensity" span="col-span-12 lg:col-span-6">
             <EmissionsIntensityChart
               intensity={extended?.intensity}
@@ -221,18 +220,23 @@ export default function AnalyticsCompactDashboard({
           </ReportCell>
         </div>
 
-        {/* Row 5: YoY + gross/net */}
-        <div className="analytics-report-grid">
-          <ReportCell label="Year-over-year" span="col-span-12 lg:col-span-6">
-            <YoYComparisonChart yoy={extended?.yoy} rt={rt} isDark={isDark} height={188} compact />
-          </ReportCell>
-          <ReportCell label="Gross vs net (offsets)" span="col-span-12 lg:col-span-6">
+        {/* Row 5: YoY (only with 2+ calendar years) + gross/net */}
+        <div className="analytics-report-grid analytics-report-section">
+          {showYoY && (
+            <ReportCell label="Year-over-year" span="col-span-12 lg:col-span-6">
+              <YoYComparisonChart yoy={extended?.yoy} rt={rt} isDark={isDark} height={188} compact />
+            </ReportCell>
+          )}
+          <ReportCell
+            label="Gross vs net (offsets)"
+            span={showYoY ? 'col-span-12 lg:col-span-6' : 'col-span-12'}
+          >
             <GrossNetOffsetsChart grossNet={extended?.grossNet} rt={rt} isDark={isDark} height={188} compact />
           </ReportCell>
         </div>
 
         {/* Row 6: Activities + Scope 3 */}
-        <div className="analytics-report-grid">
+        <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Top activities" span="col-span-12 lg:col-span-6">
             <ActivityBreakdownChart
               chartData={extended?.activityBreakdown?.chartData}
@@ -252,33 +256,9 @@ export default function AnalyticsCompactDashboard({
           </ReportCell>
         </div>
 
-        {/* Row 7: Location + data quality */}
-        <div className="analytics-report-grid">
-          <ReportCell label="Emissions by location" span="col-span-12 lg:col-span-6">
-            <LocationBreakdownChart
-              byLocation={extended?.byLocation}
-              rt={rt}
-              isDark={isDark}
-              height={200}
-            />
-          </ReportCell>
-          <ReportCell label="Data quality by status" span="col-span-12 lg:col-span-6">
-            <DataQualityChart byStatus={extended?.byStatus} rt={rt} isDark={isDark} height={188} />
-          </ReportCell>
-        </div>
-
-        {/* Row 8: Waterfall + velocity */}
-        <div className="analytics-report-grid">
-          <ReportCell label="Period bridge" span="col-span-12 lg:col-span-6">
-            <EmissionsWaterfallChart
-              waterfall={extended?.waterfall}
-              rt={rt}
-              isDark={isDark}
-              height={188}
-              compact
-            />
-          </ReportCell>
-          <ReportCell label="Velocity &amp; acceleration" span="col-span-12 lg:col-span-6">
+        {/* Row 7: Velocity */}
+        <div className="analytics-report-grid analytics-report-section">
+          <ReportCell label="Velocity &amp; acceleration" span="col-span-12">
             {velocityData?.periods?.length ? (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                 <div>
@@ -313,8 +293,8 @@ export default function AnalyticsCompactDashboard({
           </ReportCell>
         </div>
 
-        {/* Row 9: MACC */}
-        <div className="analytics-report-grid">
+        {/* Row 8: MACC */}
+        <div className="analytics-report-grid analytics-report-section">
           <ReportCell label="Marginal abatement (MACC)" span="col-span-12">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               {maccData && maccOpportunities?.length > 0 ? (

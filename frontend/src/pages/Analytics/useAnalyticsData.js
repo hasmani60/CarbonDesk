@@ -286,15 +286,13 @@ export default function useAnalyticsData() {
           if (!silent) toast.error(msg);
         }
 
-        if (showShellSpinner) {
-          setInitialLoading(false);
-        }
-
         if (!hasLoggedView.current) {
           hasLoggedView.current = true;
           logActivity('viewed_analytics', 'analytics', null, 'Viewed analytics dashboard');
         }
 
+        // Keep the skeleton until chart/bootstrap data is ready so empty states
+        // (e.g. "No category data") do not flash before the API responds.
         await loadChartData();
       } catch (err) {
         console.error('Error loading analytics:', err);

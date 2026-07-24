@@ -19,7 +19,7 @@ export default function AnalyticsShell() {
     handleExport
   } = useAnalytics();
 
-  if (initialLoading && overviewStats == null) {
+  if (initialLoading) {
     return <SkeletonAnalytics />;
   }
 
