@@ -20,6 +20,17 @@ export function getDisplayedCo2e(emission) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** API emissions are stored in kg CO2e; show them as tonnes where the UI labels tCO2e. */
+export function formatKgCo2eAsTonnes(value) {
+  const kg = Number(value);
+  if (!Number.isFinite(kg)) return '0.0';
+
+  const tonnes = kg / 1000;
+  if (tonnes >= 1_000_000) return `${(tonnes / 1_000_000).toFixed(1)}M`;
+  if (tonnes >= 1000) return `${(tonnes / 1000).toFixed(1)}K`;
+  return tonnes.toFixed(1);
+}
+
 /** Name shown for “entered by” — API stores Mongo `created_by_name`, legacy/local used `userName`. */
 export function getContributorDisplayName(emission) {
   const raw =

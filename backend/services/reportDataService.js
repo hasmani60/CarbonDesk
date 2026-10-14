@@ -69,7 +69,17 @@ function buildAiReportContext(prepared) {
     summary: {
       totalCo2eKg: summary?.totalCo2eKg,
       entryCount: summary?.entryCount,
-      verifiedPercent: summary?.verifiedPercent
+      internalReview: {
+        reviewedEntryCount: summary?.verifiedCount ?? 0,
+        reviewedPercent: summary?.verifiedPercent ?? 0,
+        meaning:
+          'Carbon Desk internal record review only. It is not independent ACVA verification, audit assurance, or regulatory acceptance.'
+      },
+      independentAssurance: {
+        status: 'not_recorded',
+        meaning:
+          'No independent ACVA verification or regulatory acceptance evidence is recorded in this report data.'
+      }
     },
     scopeBreakdown,
     recentMonthlyEmissions: recentMonthly,
@@ -78,9 +88,12 @@ function buildAiReportContext(prepared) {
     paretoHotspots: (topSources?.paretoHotspots || []).slice(0, AI_LIST_CAP),
     emissionsVelocity: velocityBrief,
     reductionTrajectory: reductions?.trajectoryMetrics || null,
-    dataQualitySummary: (dataQuality?.byStatus || []).slice(0, 6),
+    dataQualitySummary: (dataQuality?.byStatus || []).slice(0, 6).map((row) => ({
+      ...row,
+      status: row.status === 'verified' ? 'internally_reviewed' : row.status
+    })),
     writingRequirements:
-      'Write a COMPLETE markdown report. Do not stop early. Required ## sections: Overview; Scope 1 — Direct emissions; Scope 2 — Energy indirect; Scope 3 — Value chain; Data quality; Reduction opportunities and recommendations. Use scopeBreakdown totals and topHotspots in each scope section. Target at least 1200 words.',
+      'Write a COMPLETE markdown report. Do not stop early. Required ## sections: Overview; Scope 1 — Direct emissions; Scope 2 — Energy indirect; Scope 3 — Value chain; Data quality; Reduction opportunities and recommendations. Use scopeBreakdown totals and topHotspots in each scope section. Target at least 1200 words. Describe Carbon Desk review as internal record review only. Never call records, reports, or the organisation independently verified, ACVA-verified, audited, CCTS-compliant, or regulator-accepted unless explicit evidence for that exact status is present in the input.',
     reportStructure: {
       sections: [
         'Overview',

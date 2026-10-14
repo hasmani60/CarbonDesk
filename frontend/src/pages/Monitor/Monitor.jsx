@@ -28,12 +28,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useActivity } from '../../context/ActivityContext';
-import { monitorAPI, emissionsAPI, employeesAPI } from '../../services/api';
+import { monitorAPI, emissionsAPI, dashboardAPI } from '../../services/api';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import KpiCard from '../../components/ui/KpiCard';
 import {
   getDisplayedActivityQuantity,
   getDisplayedCo2e,
+  formatKgCo2eAsTonnes,
   getContributorDisplayName,
   getContributorId
 } from '../../utils/emissionDisplay';
@@ -72,6 +73,8 @@ const Monitor = () => {
     scope2: 0,
     scope3: 0
   });
+  const [emissionStatsError, setEmissionStatsError] = useState(false);
+  const [activityLoadError, setActivityLoadError] = useState('');
 
   // Task assignment state
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -185,6 +188,7 @@ const Monitor = () => {
     const silent = options.silent === true;
     try {
       if (!silent) setLoading(true);
+      setActivityLoadError('');
 
       console.log('📊 Loading activities from MongoDB for organisation:', user?.organisation_id);
       
@@ -195,43 +199,33 @@ const Monitor = () => {
         return;
       }
 
-      // MONGODB: Fetch emissions from API instead of localStorage
-      const result = await emissionsAPI.getAll();
-      const allEmissions = Array.isArray(result) ? result : (result.data || []);
-      
-      console.log(`✅ Loaded ${allEmissions.length} emissions from MongoDB`);
-      
-      // Calculate emission stats
-      const stats = {
-        scope1: { total: 0 },
-        scope2: { total: 0 },
-        scope3: { total: 0 }
-      };
-      
-      allEmissions.forEach((emission) => {
-        const emissionValue = getDisplayedCo2e(emission);
-        if (emission.scope === 1) stats.scope1.total += emissionValue;
-        else if (emission.scope === 2) stats.scope2.total += emissionValue;
-        else if (emission.scope === 3) stats.scope3.total += emissionValue;
-      });
+      // Use the same unfiltered emissions summary as Dashboard for headline totals.
+      // The emissions list remains the source for activity rows and client-side filters.
+      const [emissionsResponse, dashboardResponse] = await Promise.allSettled([
+        emissionsAPI.getAll({ limit: 1000 }),
+        dashboardAPI.getSummary()
+      ]);
 
-      try {
-        const commuteRes = await employeesAPI.getCommuteTotal();
-        const commutePayload = commuteRes?.data?.data ?? commuteRes?.data ?? commuteRes;
-        const commuteKg = Number(commutePayload?.total_co2e_kg) || 0;
-        if (commuteKg > 0) {
-          stats.scope3.total += commuteKg;
-        }
-      } catch (commuteErr) {
-        console.warn('Could not load employee commute total for Monitor stats:', commuteErr);
+      if (dashboardResponse.status === 'fulfilled') {
+        const summary = dashboardResponse.value;
+        setEmissionStats({
+          total: Number(summary?.overview?.total_emissions) || 0,
+          scope1: Number(summary?.by_scope?.scope_1?.total_co2e) || 0,
+          scope2: Number(summary?.by_scope?.scope_2?.total_co2e) || 0,
+          scope3: Number(summary?.by_scope?.scope_3?.total_co2e) || 0
+        });
+        setEmissionStatsError(false);
+      } else {
+        console.warn('Could not load shared Dashboard totals for Monitor:', dashboardResponse.reason);
+        setEmissionStatsError(true);
       }
-      
-      setEmissionStats({
-        total: stats.scope1.total + stats.scope2.total + stats.scope3.total,
-        scope1: stats.scope1.total,
-        scope2: stats.scope2.total,
-        scope3: stats.scope3.total
-      });
+
+      if (emissionsResponse.status === 'rejected') throw emissionsResponse.reason;
+
+      const result = emissionsResponse.value;
+      const allEmissions = Array.isArray(result) ? result : (result.data || []);
+
+      console.log(`✅ Loaded ${allEmissions.length} emissions from MongoDB`);
       
       // Process activities for display
       let processedActivities = allEmissions.map((emission) => {
@@ -309,6 +303,7 @@ const Monitor = () => {
       }
     } catch (error) {
       console.error('❌ Error loading activities:', error);
+      setActivityLoadError(error?.message || 'Could not load emission activities.');
       if (!silent) toast.error('Failed to load activities');
     } finally {
       if (!silent) setLoading(false);
@@ -567,11 +562,7 @@ const Monitor = () => {
     setPagination(prev => ({ ...prev, currentPage: page }));
   };
 
-  const formatNumber = (value) => {
-    if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
-    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
-    return value.toFixed(1);
-  };
+  const formatNumber = formatKgCo2eAsTonnes;
 
   const getScopeColor = (scope) => {
     switch (scope) {
@@ -626,7 +617,7 @@ const Monitor = () => {
   };
 
   // Show empty state if no data
-  if (!loading && pagination.totalItems === 0 && activeTab === 'activities') {
+  if (!loading && pagination.totalItems === 0 && !activityLoadError && activeTab === 'activities') {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -647,11 +638,38 @@ const Monitor = () => {
           }
         />
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <KpiCard
+            label="Total emissions"
+            value={emissionStatsError ? '—' : formatNumber(emissionStats.total)}
+            hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+            icon={TrendingUp}
+          />
+          <KpiCard
+            label="Scope 1"
+            value={emissionStatsError ? '—' : formatNumber(emissionStats.scope1)}
+            hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+            scope={1}
+          />
+          <KpiCard
+            label="Scope 2"
+            value={emissionStatsError ? '—' : formatNumber(emissionStats.scope2)}
+            hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+            scope={2}
+          />
+          <KpiCard
+            label="Scope 3"
+            value={emissionStatsError ? '—' : formatNumber(emissionStats.scope3)}
+            hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+            scope={3}
+          />
+        </div>
+
         <div className="app-card p-12 text-center">
           <Database className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Activities Found</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No emission records to display</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-2">
-            No emission activities available for your organisation.
+            No emission activity records are available for your organisation. Scope totals above use the same summary as Dashboard and may include employee commuting.
           </p>
           {user?.organisation?.name && (
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
@@ -731,16 +749,49 @@ const Monitor = () => {
       {/* Tab Content */}
       {activeTab === 'activities' && (
         <>
+          {activityLoadError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100"
+            >
+              <span>
+                Emission activities could not be loaded, so the empty state may not reflect your data.
+                {' '}{activityLoadError}
+              </span>
+              <button
+                type="button"
+                onClick={() => loadActivities({ silent: false })}
+                className="font-medium underline underline-offset-2"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Total emissions"
-              value={`${formatNumber(emissionStats.total)}`}
-              hint="tCO₂e"
+              value={emissionStatsError ? '—' : formatNumber(emissionStats.total)}
+              hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
               icon={TrendingUp}
             />
-            <KpiCard label="Scope 1" value={formatNumber(emissionStats.scope1)} hint="tCO₂e" scope={1} />
-            <KpiCard label="Scope 2" value={formatNumber(emissionStats.scope2)} hint="tCO₂e" scope={2} />
-            <KpiCard label="Scope 3" value={formatNumber(emissionStats.scope3)} hint="tCO₂e" scope={3} />
+            <KpiCard
+              label="Scope 1"
+              value={emissionStatsError ? '—' : formatNumber(emissionStats.scope1)}
+              hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+              scope={1}
+            />
+            <KpiCard
+              label="Scope 2"
+              value={emissionStatsError ? '—' : formatNumber(emissionStats.scope2)}
+              hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+              scope={2}
+            />
+            <KpiCard
+              label="Scope 3"
+              value={emissionStatsError ? '—' : formatNumber(emissionStats.scope3)}
+              hint={emissionStatsError ? 'Totals unavailable' : 'tCO₂e'}
+              scope={3}
+            />
           </div>
 
           <div className="app-card p-4 md:p-5">
@@ -888,7 +939,7 @@ const Monitor = () => {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900 dark:text-white font-medium text-right tabular-nums">
-                          {formatNumber(activity.emissions)} CO₂e
+                          {formatNumber(activity.emissions)} tCO₂e
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
                           {activity.accountingPeriod}

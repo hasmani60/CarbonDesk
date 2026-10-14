@@ -7,6 +7,7 @@ import { formatDateTime } from '../../utils/formatters';
 import { useNotifications } from '../../context/NotificationContext';
 import { useActivity } from '../../context/ActivityContext';
 import { dashboardAPI, adminAPI, isAdmin, canViewAllData } from '../../services/api';
+import { formatKgCo2eAsTonnes } from '../../utils/emissionDisplay';
 import PageHeader from '../../components/PageHeader/PageHeader';
 import NotificationCard from '../../components/NotificationCard/NotificationCard';
 import TaskWidget from '../../components/TaskWidget/TaskWidget';
@@ -262,11 +263,7 @@ const Dashboard = () => {
     };
   };
 
-  const formatNumber = (value) => {
-    if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
-    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
-    return value.toFixed(1);
-  };
+  const formatNumber = formatKgCo2eAsTonnes;
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
@@ -275,7 +272,7 @@ const Dashboard = () => {
         <div className="bg-white dark:bg-gray-800 p-3 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-900 dark:text-white">{data.payload.fullName}</p>
           <p style={{ color: data.color }}>
-            Value: {formatNumber(data.value)} CO₂e
+            Value: {formatNumber(data.value)} tCO₂e
           </p>
           <p style={{ color: data.color }}>
             Percentage: {data.payload.percentage.toFixed(1)}%
@@ -607,7 +604,7 @@ const Dashboard = () => {
                     <div className="text-lg font-bold text-gray-900 dark:text-white">
                       {formatNumber(scopeData.total)}
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-gray-400">CO₂e</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">tCO₂e</div>
                   </div>
                 </div>
               </div>

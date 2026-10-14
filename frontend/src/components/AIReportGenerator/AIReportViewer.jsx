@@ -93,11 +93,18 @@ function bodyMarkdown(markdown, title) {
 }
 
 function exportOptions(title, periodLabel, generatedAt, markdown, chartImages) {
+  const assuranceNotice =
+    '> Assurance status: “Verified” in Carbon Desk means internal record review only. This AI-generated report is not independently verified by an ACVA and is not evidence of regulatory acceptance.';
+  const reportMarkdown = markdown || '';
+  const markdownWithNotice = reportMarkdown.includes(assuranceNotice)
+    ? reportMarkdown
+    : `${reportMarkdown.trim()}\n\n---\n\n${assuranceNotice}`;
+
   return {
     title: title || 'Carbon Report',
     periodLabel: periodLabel || '',
     generatedAt: generatedAt ? formatDateTime(generatedAt) : '',
-    markdown: markdown || '',
+    markdown: markdownWithNotice,
     chartImages: chartImages || []
   };
 }
@@ -191,6 +198,14 @@ export default function AIReportViewer({
 
       <article className="flex-1 overflow-y-auto px-6 md:px-10 py-8 bg-white dark:bg-slate-900 report-markdown-body max-h-[min(70vh,900px)]">
         <div className="max-w-3xl mx-auto">
+          <aside
+            role="note"
+            className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100"
+          >
+            <strong>Assurance status:</strong> “Verified” in Carbon Desk means internal record
+            review only. This AI-generated report is not independently verified by an ACVA and is
+            not evidence of regulatory acceptance.
+          </aside>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {content}
           </ReactMarkdown>

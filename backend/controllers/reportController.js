@@ -8,6 +8,14 @@ const {
 const logger = require('../utils/logger');
 
 const ALLOWED_STATUS = ['pending', 'processing', 'completed', 'failed'];
+const REPORT_ASSURANCE_NOTICE =
+  '> Assurance status: “Verified” in Carbon Desk means internal record review only. This AI-generated report is not independently verified by an ACVA and is not evidence of regulatory acceptance.';
+
+function ensureReportAssuranceNotice(content) {
+  const markdown = String(content || '').trim();
+  if (!markdown || markdown.includes(REPORT_ASSURANCE_NOTICE)) return markdown;
+  return `${markdown}\n\n---\n\n${REPORT_ASSURANCE_NOTICE}`;
+}
 
 /**
  * Trigger n8n from the API (server-to-server) so the browser never hits CORS.
@@ -287,7 +295,7 @@ const reportCallback = async (req, res) => {
     }
 
     if (status) report.status = status;
-    if (reportContent != null) report.reportContent = reportContent;
+    if (reportContent != null) report.reportContent = ensureReportAssuranceNotice(reportContent);
     if (error != null) report.error = error;
     if (metadata) {
       report.metadata = { ...(report.metadata || {}), callback: metadata };
@@ -332,7 +340,7 @@ const getReportById = async (req, res) => {
         id: report._id.toString(),
         status: report.status,
         filters: report.filters,
-        reportContent: report.reportContent,
+        reportContent: ensureReportAssuranceNotice(report.reportContent),
         error: report.error,
         generatedAt: report.generatedAt,
         createdAt: report.created_at,
